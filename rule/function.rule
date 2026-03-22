@@ -1,0 +1,4 @@
+App đăng nhập bằng tài khoản mật khẩu, phải verify gmail (nodemailer) mới vô dc app, có quên mật khẩu
+JWT token, refreshToken lưu http only cookie
+Công nhân dùng trình duyệt web (mobile) mở trang hệ thống → quét QR bằng camera (webcam hoặc camera điện thoại).
+Hệ thống nhận diện ID tài sản → hiển thị thông tin tài sản + checklist liên quan (tự động lấy từ kho tài nguyên số hoặc lịch bảo trì gần nhất)

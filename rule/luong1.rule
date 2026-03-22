@@ -1,0 +1,68 @@
+CREATE TABLE AssetCounters (
+    AssetID INT PRIMARY KEY, -- Bỏ AUTO_INCREMENT vì đây là ID tham chiếu từ bảng Assets
+    TotalAccumulatedHours BIGINT DEFAULT 0,
+    LastReadingValue INT DEFAULT 0,
+    AverageHoursPerDay DECIMAL(5,2) DEFAULT 0,
+    EstimatedNextPMDate DATE,
+    LastMaintenanceTotal BIGINT DEFAULT 0,
+    LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (AssetID) REFERENCES Assets(AssetID)
+);
+
+CREATE TABLE AssetRuntimeLogs (
+    LogID BIGINT AUTO_INCREMENT PRIMARY KEY,
+    AssetID INT NOT NULL, -- Sửa thành INT cho đồng bộ với bảng Assets
+    ReadingValue INT NOT NULL, -- Giá trị công tơ mét/số giờ chạy tại thời điểm ghi nhận
+    DeltaHours INT NOT NULL, -- Số giờ chạy tăng thêm so với lần ghi nhận trước
+    ChecklistID INT, -- Liên kết nếu dữ liệu này được ghi lại trong lúc đi kiểm tra Checklist
+    CaptureTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    DataSource ENUM(
+        'MANUAL',    -- Nhân viên nhập tay
+        'IOT_SENSOR', -- Cảm biến tự động gửi về
+        'SYSTEM'     -- Hệ thống tự tính toán/ước tính
+    ) NOT NULL DEFAULT 'MANUAL',
+    FOREIGN KEY (AssetID) REFERENCES Assets(AssetID),
+    FOREIGN KEY (ChecklistID) REFERENCES ChecklistResults(ChecklistID)
+);
+
+
+Dùng để bảo trì định kỳ khác với thông thường:
+Định kỳ thông thường (Calendar): Ông ấn định ngày 30/03 bảo trì. Dù máy chạy 24/24 hay đắp chiếu đứng yên thì đến 30/03 nó vẫn báo
+=> Dự đoán dựa trên chỉ số (Usage-based Predictive): Nếu tháng này nhà máy Sông Gianh vào mùa vụ, máy chạy tăng ca 16h/ngày, hệ thống sẽ tự động đẩy lịch bảo trì lên sớm hơn. Ngược lại, nếu máy ít chạy, lịch sẽ tự động lùi lại.
+
+Đây là bước công nhân nhập số liệu từ màn hình máy vào App.
+Step 1: Kỹ thuật viên quét QR mã máy -> App hiển thị Form Checklist.
+Step 2: Trong Form có ô nhập ReadingValue (Số giờ hiện tại trên mặt đồng hồ máy).
+Step 3: Khi bấm "Gửi", hệ thống thực hiện các phép tính Backend:
+Lấy giá trị cũ: Tìm trong bảng AssetCounters giá trị LastReadingValue của máy đó.
+Tính Delta: DeltaHours = ReadingValue - LastReadingValue.
+Cập nhật Tổng: TotalAccumulatedHours = TotalAccumulatedHours + DeltaHours.
+Step 4: Ghi log vào bảng AssetRuntimeLogs để lưu lịch sử phục vụ việc tính trung bình sau này.
+ Luồng Xác định Ngưỡng (Threshold Mapping)
+Khi Dev viết hàm tính toán, hệ thống sẽ thực hiện các bước kiểm tra logic sau:
+Bước 1: Tìm trong bảng MaintenanceSchedules xem máy đó (AssetID) có lịch bảo trì nào không.
+Bước 2: Kiểm tra cột FrequencyUnit.
+Nếu Unit = ‘Hours’: Hệ thống hiểu FrequencyValue chính là Ngưỡng số giờ chạy 
+Ví dụ: FrequencyValue = 500, Unit = ‘Hours' => Cứ 500 giờ chạy là bảo trì.
+Bước 3: Nếu Unit là 'Days' hoặc 'Months', hệ thống sẽ chạy theo luồng Định kỳ thời gian thông thường, không dùng bộ đếm giờ này để dự báo.
+TÍNH TOÁN CHỈ SỐ DỰ BÁO
+Tính Tốc độ vận hành trung bình (AvgHoursPerDay):
+Backend tính tổng DeltaHours trong 30 ngày gần nhất từ AssetRuntimeLogs.
+AvgHoursPerDay = Tổng Delta / 30
+(Lưu ý: Nếu máy mới hoạt động < 30 ngày, chia cho số ngày thực tế tính từ bản ghi Log đầu tiên).
+Tính Số giờ đã tiêu thụ trong chu kỳ (HoursUsed):
+HoursUsed = TotalAccumulatedHours - LastMaintenanceTotal.
+Tính Số giờ còn lại (HoursRemain):
+HoursRemain = T - HoursUsed.
+Tính Ngày dự báo (EstimatedNextPMDate):
+Nếu AvgHoursPerDay > 0:
+DaysLeft = HoursRemain / AvgHoursPerDay
+EstimatedNextPMDate = Ngày hôm nay + DaysLeft.
+Nếu AvgHoursPerDay = 0: EstimatedNextPMDate = NULL(Máy không chạy thì không dự báo được).
+
+PHẢN HỒI VÀ CẢNH BÁO
+
+Cập nhật Database: Ghi EstimatedNextPMDate và AvgHoursPerDay vào bảng AssetCounters.
+Trigger thông báo: * Nếu HoursRemain <= 0: Tự động tạo WorkOrder (Trạng thái: Pending, Loại: Predictive).
+Nếu DaysLeft <= 7: Gửi thông báo đến App của Quản lý: "Máy [Name] dự kiến đạt ngưỡng bảo trì sau [DaysLeft] ngày".
+

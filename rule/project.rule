@@ -1,0 +1,121 @@
+1. Giới thiệu và Mục Tiêu Đề Tài
+1.1. Giới thiệu
+Đề tài tập trung xây dựng phần mềm web nội bộ hỗ trợ quản lý bảo trì tài sản sản xuất tại Nhà máy Xi măng Sông Gianh. Hệ thống tích hợp quản lý tài nguyên số (DAM) để lưu trữ, phê duyệt và truy cập tài liệu kỹ thuật, với trọng tâm là hiện trường sản xuất (tài sản như lò nung, máy nghiền clinker, băng chuyền, silo).
+Phần mềm giúp:
+Giảm downtime thiết bị (thời gian ngừng máy) 20-30%.
+Tăng an toàn lao động qua QR code và checklist số hóa.
+Tối ưu chi phí bảo trì và minh bạch quy trình (lập lịch, phê duyệt, báo cáo).
+Phạm vi: Chỉ bảo trì (không toàn vòng đời EAM), prototype demo web app (không production-ready).
+1.2. Mục tiêu
+Tổng quát: Tạo công cụ hỗ trợ quản lý bảo trì, tích hợp tài nguyên số để giảm thủ công (Excel, giấy tờ), tăng hiệu quả (tìm kiếm tài liệu nhanh từ 1-2 giờ xuống phút).
+Chi tiết:
+Quản lý danh mục tài sản và nhân sự (đăng ký, cập nhật, phân nhóm).
+Lập lịch bảo trì và điều phối (định kỳ/dự đoán, phân công, nhắc nhở).
+Quản lý kho tài nguyên số (upload, phiên bản, tag tìm kiếm).
+Quy trình phê duyệt đa cấp (2-3 level, linh hoạt cho tài liệu nhạy cảm).
+QR & Checklist hiện trường (quét QR mở checklist, nhập kết quả, cập nhật trạng thái).
+Báo cáo và dashboard (thống kê downtime, kết quả checklist, phê duyệt).
+Phần mềm là prototype web app, tập trung demo các chức năng chính.
+2. Yêu Cầu Chức Năng (Functional Requirements)
+Phân hệ 1: Quản lý danh mục tài sản và nhân sự
+1.1. Quản lý thông tin thiết bị:
+Đăng ký: Form thêm mới tài sản với chi tiết (Mã ID tự sinh, tên, loại, vị trí, trạng thái, ngày sử dụng, nhà sản xuất, serial, ảnh, mô tả, QR tự sinh).
+Cập nhật: Sửa thông tin, thay ảnh.
+Xóa: Soft delete (chuyển sang archive).
+Input: Form web. Output: Danh sách tài sản với filter (loại, trạng thái, vị trí).
+1.2. Quản lý nhân sự và phân nhóm:
+Đăng ký nhân viên: Hồ sơ (mã, tên, chức vụ, phòng ban, username, password, email).
+Chia nhóm bảo trì: Tạo nhóm, thêm thành viên (M:N).
+Input: Form thêm/sửa. Output: Danh sách nhân viên/nhóm với filter.
+1.3. Khởi tạo mã QR:
+Sinh QR động khi đăng ký tài sản (chứa AssetID, link đến checklist).
+Xuất file in (PDF).
+Input: AssetID. Output: Ảnh QR tải về.
+Phân hệ 2: Lập lịch và điều phối bảo trì
+2.1. Quản lý kế hoạch bảo trì:
+Thiết lập loại bảo trì (định kỳ, dự đoán, khắc phục, ưu tiên).
+Các loại bảo trì
+Bảo trì khắc phục: Sửa chữa khi hỏng hóc xảy ra, mang tính phản ứng.(Khi 
+Bảo trì phòng ngừa (định kỳ): Kiểm tra và bảo dưỡng định kỳ theo kế hoạch, giúp giảm hỏng hóc và thời gian ngừng máy. 
+Bảo trì dự đoán: Theo dõi thông số thời gian thực để giúp dự báo và ngăn chừa hỏng hóc trước khi xảy ra. (nếu trạng thái “Cảnh báo” từ checklist QR)
+Input: Form với tần suất, ngày bắt đầu/kết thúc. Output: Lịch calendar view.
+2.2. Điều phối phiếu việc (Work Order):
+Tạo phiếu từ lịch (phân công người/nhóm, theo dõi tiến độ, trạng thái).
+Input: Form với ước tính giờ. Output: Danh sách phiếu với filter.
+2.3. Cảnh báo và nhắc nhở:
+Tự động gửi thông báo (email/in-app) trước hạn.
+Input: Lịch. Output: Notification list.
+Phân hệ 3: Quản trị tài nguyên số (DAM)
+3.1. Quản lý kho tệp tin kỹ thuật:
+Upload, phân loại (tag), liên kết với tài sản.
+Input: File + tag. Output: Danh sách file với search.
+3.2. Kiểm soát phiên bản và lưu trữ:
+Quản lý lịch sử thay đổi, thu hồi/lưu trữ cũ.
+Input: Update file. Output: Version history view.
+Phân hệ 4: Quản lý quy trình phê duyệt (Workflow)
+4.1. Xét duyệt hồ sơ đa cấp:
+Luồng từ Draft → Pending → Approved/Rejected/Revise.
+Input: Submit file. Output: Trạng thái update.
+4.2. Ban hành và giám sát lịch sử:
+Cấp quyền sử dụng file duyệt, lưu vết (audit trail).
+Input: Approve. Output: Log view.
+Phân hệ 5: Quản lý Checklist và Hiện trường
+5.1. Quản lý mẫu Checklist:
+Thiết lập bộ câu hỏi cho loại thiết bị.
+Input: Form thêm câu hỏi. Output: Mẫu list.
+5.2. Thực hiện kiểm tra hiện trường:
+Quét QR truy xuất tài liệu, nhập checklist, upload ảnh.
+Input: Scan QR + điền form. Output: Kết quả lưu.
+5.3. Đồng bộ và cập nhật dữ liệu:
+Ghi log kết quả, tự động cập nhật trạng thái thiết bị.
+Input: Submit checklist. Output: Update status.
+Phân hệ 6: Báo cáo và Dashboard
+6.1. Báo cáo hiệu suất và tình trạng:
+Thống kê downtime, trạng thái tài sản, tỷ lệ hoàn thành kế hoạch.
+Input: Filter. Output: Biểu đồ/table.
+6.2. Thống kê Checklist và Phê duyệt:
+Tổng hợp kết quả NG/OK, khối lượng tài liệu duyệt.
+Input: Filter. Output: Report.
+6.3. Trích xuất dữ liệu:
+Bộ lọc và xuất PDF/Excel.
+Input: Export button. Output: File tải về.
+
+1. Workflow Chi tiết cho các Loại bảo trì (EAM Logic)
+Loại 1: Bảo trì định kỳ (Preventive)
+Dựa vào: Lịch (Ngày/Tháng) hoặc Chỉ số sử dụng (Số giờ chạy).
+Luồng: 1. Hệ thống ghi nhận số giờ máy chạy hàng ngày. 2. Khi Số giờ thực tế chạm ngưỡng Số giờ định mức trong bảng MaintenanceSchedules. 3. Tự động tạo một WorkOrder.
+Mục tiêu: Làm theo kế hoạch để ngăn ngừa hỏng hóc.
+Loại 2: Bảo trì dự đoán (Predictive)
+Dựa vào: Tình trạng thực tế (Nhiệt độ, độ rung, âm thanh) được ghi nhận qua Checklist QR.
+Luồng: 1. Thợ quét mã QR thực hiện kiểm tra nhanh. 2. Hệ thống phát hiện các chỉ số đang mấp mé ngưỡng nguy hiểm (Trạng thái "Cảnh báo"). 3. Hệ thống tính toán và đưa ra cảnh báo sớm để lên lịch sửa chữa trước khi số giờ chạy đạt ngưỡng định kỳ.
+Mục tiêu: Sửa đúng lúc máy cần, không sớm quá (lãng phí) và không muộn quá (hỏng máy).
+Loại 3: Bảo trì khắc phục (Corrective)
+Dựa vào: Sự cố bất ngờ (Máy dừng, gãy búa, đứt băng tải).
+Luồng: 1. Công nhân bấm nút "Báo hỏng" trên App. 2. Hệ thống ngắt toàn bộ lịch định kỳ/dự đoán của máy đó. 3. Tập trung toàn lực tạo phiếu sửa chữa khẩn cấp để đưa máy về trạng thái Ready.
+
+
+
+2. Workflow Phê duyệt và Cách lấy CSDL
+Quy trình (Workflow):
+Gửi duyệt: Bản ghi trong bảng DigitalAssets hoặc MaintenanceSchedules được tạo với Status = 'Draft'.
+Khởi tạo luồng: Dev quét bảng WorkflowSteps để biết Level 1 là ai (ví dụ: Trưởng ca).
+Xử lý: Người duyệt nhấn nút $\rightarrow$ Ghi một dòng vào ApprovalLogs với Action tương ứng.
+Cách lấy CSDL để code:
+Query hiển thị cho sếp: SELECT * FROM ApprovalLogs WHERE ApproverID = [Current_User_ID] AND Status = 'Pending'.
+Logic chuyển trạng thái: Sau mỗi lần Approve, Dev phải kiểm tra: IF (CurrentLevel == TotalLevels) THEN Update Status = 'Approved' ELSE Update Status = 'Pending Level [Next]'.
+
+3. Checklist và Tài nguyên số đi kèm
+Lưu trữ: Kết quả được lưu vào bảng ChecklistResults (thông tin chung) và ChecklistDetail_Logs (từng câu trả lời).
+Khi công nhân quét QR:
+Hiển thị Checklist: Hệ thống lấy AssetTypeID của máy đó để truy vấn bảng ChecklistTemplates, hiện ra các câu hỏi tương ứng.
+Tài nguyên đi kèm: Dev thực hiện lệnh JOIN bảng Assets với DigitalAssets thông qua AssetID. Kết quả trên màn hình điện thoại sẽ có 2 Tab: [Checklist cần điền] và [Tài liệu hướng dẫn/SOP]. Công nhân có thể vừa xem PDF bản vẽ vừa tích Checklist.
+
+4. Cơ chế Cấp quyền (Access Control)
+Sử dụng mô hình RBAC (Role-Based Access Control) dựa trên bảng Roles_Permissions:
+Logic phân quyền: Mỗi khi người dùng vào một trang hoặc nhấn một nút, Frontend gửi Role và Permission về Backend để kiểm tra.
+Ví dụ:
+Nút "Duyệt cuối" chỉ hiện lên nếu User.Role == 'Manager'.
+Quyền "Xóa tài sản" chỉ dành cho Admin.
+Phân quyền theo bảng: Sử dụng trường Department trong bảng Employees để lọc dữ liệu. Nhân viên phòng Sản xuất chỉ thấy tài sản Sản xuất, không thấy tài sản phòng Điện.
+
+

@@ -1,0 +1,6 @@
+/**
+ * index.css — Entry Tailwind (@tailwind layers).
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
