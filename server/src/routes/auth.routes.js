@@ -1,23 +1,36 @@
 /**
- * auth.routes.js — /api/auth/* (cookie httpOnly sẽ set trong controller khi có logic).
+ * auth.routes.js — /api/auth/* (public + protected).
+ * function.rule: đăng nhập, verify Gmail, quên mật khẩu, refresh, logout.
+ * Liên quan: controllers/auth.controller.js, validators/auth.validator.js.
  */
 import { Router } from 'express';
+import { requireAuth } from '../middleware/auth.middleware.js';
+import { validate } from '../middleware/validate.js';
 import {
-  postForgotPassword,
-  postLogin,
-  postLogout,
-  postRefresh,
-  postRegister,
-  postResetPassword,
-  postVerifyEmail,
+  registerSchema,
+  loginSchema,
+  verifyEmailSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from '../validators/auth.validator.js';
+import {
+  register,
+  login,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
+  refresh,
+  logout,
+  getMe,
 } from '../controllers/auth.controller.js';
 
 export const authRouter = Router();
 
-authRouter.post('/register', postRegister);
-authRouter.post('/login', postLogin);
-authRouter.post('/verify-email', postVerifyEmail);
-authRouter.post('/forgot-password', postForgotPassword);
-authRouter.post('/reset-password', postResetPassword);
-authRouter.post('/refresh', postRefresh);
-authRouter.post('/logout', postLogout);
+authRouter.post('/register',        validate(registerSchema),        register);
+authRouter.post('/login',           validate(loginSchema),           login);
+authRouter.post('/verify-email',    validate(verifyEmailSchema),     verifyEmail);
+authRouter.post('/forgot-password', validate(forgotPasswordSchema),  forgotPassword);
+authRouter.post('/reset-password',  validate(resetPasswordSchema),   resetPassword);
+authRouter.post('/refresh',                                          refresh);
+authRouter.post('/logout',                                           logout);
+authRouter.get('/me',               requireAuth,                     getMe);

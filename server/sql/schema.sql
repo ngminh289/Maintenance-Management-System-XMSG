@@ -54,6 +54,8 @@ CREATE TABLE Employees (
     Username VARCHAR(50) NOT NULL UNIQUE,
     PasswordHash VARCHAR(255) NOT NULL,
     Email VARCHAR(100) NOT NULL UNIQUE,
+    EmailVerified BOOLEAN NOT NULL DEFAULT FALSE,
+    IsActive      BOOLEAN NOT NULL DEFAULT TRUE,
     Phone VARCHAR(20),
     PositionID INT NOT NULL,
     DepartmentID INT NOT NULL,
@@ -162,19 +164,35 @@ CREATE TABLE MaintenanceSchedules (
 CREATE TABLE WorkOrders (
     WO_ID INT AUTO_INCREMENT PRIMARY KEY,
     ScheduleID INT,
-    AssetID INT NOT NULL, -- Đồng bộ kiểu INT với bảng Assets
+    AssetID INT NOT NULL,
     PlannedDate DATE NOT NULL,
     ActualDate DATE,
     EstimatedHours DECIMAL(5,2),
     ActualHours DECIMAL(5,2),
+
+    -- Trạng thái
     Status ENUM(
-        'PENDING_APPROVAL', -- Chờ phê duyệt
-        'WAITING',          -- Đang chờ
-        'IN_PROGRESS',      -- Đang thực hiện
-        'PAUSED',           -- Tạm dừng
-        'COMPLETED',        -- Đã hoàn thành
-        'CANCELLED'         -- Đã hủy
+        'PENDING_APPROVAL',
+        'WAITING',
+        'IN_PROGRESS',
+        'PAUSED',
+        'COMPLETED',
+        'CANCELLED'
     ) NOT NULL DEFAULT 'WAITING',
+
+    WO_Source ENUM(
+        'SCHEDULE',     -- Định kỳ
+        'PREDICTIVE',   -- Dự đoán (gấp)
+        'MANUAL'        -- Báo lỗi trực tiếp
+    ) NOT NULL,
+
+    Priority ENUM(
+        'EMERGENCY',
+        'HIGH',
+        'MEDIUM',
+        'LOW'
+    ) NOT NULL DEFAULT 'MEDIUM',
+
     FOREIGN KEY (ScheduleID) REFERENCES MaintenanceSchedules(ScheduleID),
     FOREIGN KEY (AssetID) REFERENCES Assets(AssetID)
 );
@@ -205,7 +223,6 @@ CREATE TABLE WorkflowTemplates (
     DocumentType ENUM(
         'DIGITAL_ASSET',    -- Tài liệu số
         'WORK_ORDER',       -- Phiếu công việc
-        'PURCHASE_REQUEST', -- Yêu cầu mua sắm
         'MAINTENANCE_PLAN'  -- Kế hoạch bảo trì
     ) NOT NULL,
     TotalLevels INT NOT NULL DEFAULT 1, -- Số cấp phê duyệt (VD: 2 cấp, 3 cấp)
@@ -228,7 +245,6 @@ CREATE TABLE ApprovalLogs (
     ResourceType ENUM(
         'DIGITAL_ASSET',    -- Tài liệu số
         'WORK_ORDER',       -- Phiếu công việc
-        'PURCHASE_REQUEST', -- Yêu cầu mua sắm
         'MAINTENANCE_PLAN'  -- Kế hoạch bảo trì (Đã thêm vào cho khớp)
     ) NOT NULL,
     CurrentLevel INT NOT NULL,

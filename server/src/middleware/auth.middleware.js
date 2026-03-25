@@ -1,6 +1,8 @@
 /**
- * auth.middleware.js — Đọc JWT access từ cookie httpOnly hoặc header Authorization.
- * Dùng sau khi triển khai đăng nhập (function.rule).
+ * auth.middleware.js — Đọc JWT access từ cookie httpOnly hoặc header Authorization Bearer.
+ * function.rule: accessToken lưu httpOnly cookie.
+ * Dùng trong: tất cả routes yêu cầu xác thực.
+ * Liên quan: config/jwt.js, utils/cookie.js.
  */
 import { verifyAccessToken } from '../config/jwt.js';
 import { fail } from '../utils/response.js';

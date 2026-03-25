@@ -1,41 +1,69 @@
 /**
- * auth.controller.js — Đăng nhập, xác thực Gmail, refresh, quên mật khẩu (skeleton).
- * Triển khai đầy đủ: Employees + verify token lưu DB + nodemailer.
+ * auth.controller.js — HTTP handler: /api/auth/*.
+ * Chỉ xử lý request/response + cookie. Logic trong auth.service.js.
+ * function.rule: JWT + refreshToken httpOnly cookie, verify Gmail, quên mật khẩu.
+ * Liên quan: services/auth.service.js, utils/cookie.js, routes/auth.routes.js.
  */
-import { authStub } from '../services/auth.service.js';
-import { fail } from '../utils/response.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { ok, fail } from '../utils/response.js';
+import { setTokenCookies, clearTokenCookies, REFRESH_COOKIE } from '../utils/cookie.js';
+import * as authService from '../services/auth.service.js';
 
-export async function postRegister(req, res) {
-  const out = await authStub('register');
-  return fail(res, out.message, 501);
-}
+export const register = asyncHandler(async (req, res) => {
+  const data = await authService.register(req.body);
+  return ok(res, { ...data, message: 'Đăng ký thành công. Kiểm tra email để xác thực tài khoản.' }, 201);
+});
 
-export async function postLogin(req, res) {
-  const out = await authStub('login');
-  return fail(res, out.message, 501);
-}
+export const login = asyncHandler(async (req, res) => {
+  const { accessToken, refreshToken, user } = await authService.login(req.body);
+  setTokenCookies(res, { accessToken, refreshToken });
+  return ok(res, { user });
+});
 
-export async function postVerifyEmail(req, res) {
-  const out = await authStub('verifyEmail');
-  return fail(res, out.message, 501);
-}
+export const verifyEmail = asyncHandler(async (req, res) => {
+  await authService.verifyEmail(req.body.token);
+  return ok(res, { message: 'Xác thực email thành công. Bạn có thể đăng nhập.' });
+});
 
-export async function postForgotPassword(req, res) {
-  const out = await authStub('forgotPassword');
-  return fail(res, out.message, 501);
-}
+export const forgotPassword = asyncHandler(async (req, res) => {
+  await authService.forgotPassword(req.body.email);
+  // Luôn trả success để không lộ email tồn tại
+  return ok(res, { message: 'Nếu email tồn tại, một liên kết đặt lại đã được gửi.' });
+});
 
-export async function postResetPassword(req, res) {
-  const out = await authStub('resetPassword');
-  return fail(res, out.message, 501);
-}
+export const resetPassword = asyncHandler(async (req, res) => {
+  await authService.resetPassword(req.body);
+  return ok(res, { message: 'Đặt lại mật khẩu thành công.' });
+});
 
-export async function postRefresh(req, res) {
-  const out = await authStub('refresh');
-  return fail(res, out.message, 501);
-}
+export const refresh = asyncHandler(async (req, res) => {
+  const token = req.cookies?.[REFRESH_COOKIE];
+  const { accessToken } = await authService.refreshTokens(token);
+  // Chỉ cập nhật access cookie, giữ nguyên refresh
+  res.cookie('accessToken', accessToken, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 15 * 60 * 1000,
+  });
+  return ok(res, { message: 'Làm mới token thành công.' });
+});
 
-export async function postLogout(req, res) {
-  const out = await authStub('logout');
-  return fail(res, out.message, 501);
-}
+export const logout = asyncHandler(async (req, res) => {
+  clearTokenCookies(res);
+  return ok(res, { message: 'Đăng xuất thành công.' });
+});
+
+export const getMe = asyncHandler(async (req, res) => {
+  const data = await authService.getMe(req.user.sub);
+  return ok(res, data);
+});
+
+// Giữ để không break routes cũ (đã thay thế hết)
+export const postRegister = register;
+export const postLogin = login;
+export const postVerifyEmail = verifyEmail;
+export const postForgotPassword = forgotPassword;
+export const postResetPassword = resetPassword;
+export const postRefresh = refresh;
+export const postLogout = logout;
