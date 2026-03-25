@@ -132,6 +132,18 @@ export async function updatePassword(id, passwordHash) {
   await getPool().query('UPDATE Employees SET PasswordHash = ? WHERE EmployeeID = ?', [passwordHash, id]);
 }
 
+/** Tìm nhân viên theo Level chức vụ (dùng để gửi notification cho quản lý) */
+export async function findAllByLevel(minLevel) {
+  const [rows] = await getPool().query(
+    `SELECT e.EmployeeID AS employeeId, e.FullName AS fullName
+     FROM Employees e
+     JOIN Positions p ON p.PositionID = e.PositionID
+     WHERE p.Level >= ? AND e.IsActive = TRUE`,
+    [minLevel],
+  );
+  return rows;
+}
+
 export async function setActive(id, isActive) {
   const [result] = await getPool().query(
     'UPDATE Employees SET IsActive = ? WHERE EmployeeID = ?',

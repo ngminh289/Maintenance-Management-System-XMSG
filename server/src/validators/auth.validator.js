@@ -16,9 +16,10 @@ export function registerSchema(body) {
 }
 
 export function loginSchema(body) {
-  const { identifier, password } = body;
+  // Chấp nhận cả ba field: identifier, email, username
+  const identifier = body.identifier || body.email || body.username;
   if (!identifier?.trim()) return 'Username hoặc email không được để trống';
-  if (!password) return 'Mật khẩu không được để trống';
+  if (!body.password) return 'Mật khẩu không được để trống';
   return null;
 }
 

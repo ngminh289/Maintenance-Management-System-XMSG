@@ -1,0 +1,141 @@
+/**
+ * approval.service.js — Luồng phê duyệt đa cấp (WorkOrder, DigitalAsset, MaintenancePlan).
+ * luongpheduyet.rule: PENDING_APPROVAL → cấp duyệt → APPROVED/REJECTED.
+ * Liên quan: models/approvalLog.model.js, services/notification.service.js.
+ */
+import { getPool } from '../config/database.js';
+import { createError } from '../utils/createError.js';
+import * as model from '../models/approvalLog.model.js';
+import * as notifService from './notification.service.js';
+import * as employeeModel from '../models/employee.model.js';
+
+// Mapping ResourceType → trạng thái khi approved/rejected/revise
+const STATUS_MAP = {
+  WORK_ORDER:       { table: 'WorkOrders',          idCol: 'WO_ID',          approved: 'WAITING',   rejected: 'CANCELLED', revise: null },
+  DIGITAL_ASSET:    { table: 'DigitalAssets',        idCol: 'DigitalAssetID', approved: 'APPROVED',  rejected: 'REJECTED',  revise: 'DRAFT' },
+  MAINTENANCE_PLAN: { table: 'MaintenanceSchedules', idCol: 'ScheduleID',     approved: 'PENDING',   rejected: null,        revise: null },
+};
+
+async function updateResourceStatus(resourceType, resourceId, status) {
+  const map = STATUS_MAP[resourceType];
+  if (!map || !status) return;
+  await getPool().query(
+    `UPDATE ${map.table} SET Status = ? WHERE ${map.idCol} = ?`,
+    [status, resourceId],
+  );
+}
+
+async function notifyApproversForStep(workflowId, level, message) {
+  const step = await model.getWorkflowStep(workflowId, level);
+  if (!step) return;
+  const approvers = await employeeModel.findAllByLevel(1);
+  const filtered = [];
+  // Lấy employees có đúng positionId của step
+  const [rows] = await getPool().query(
+    'SELECT EmployeeID AS employeeId FROM Employees WHERE PositionID = ? AND IsActive = TRUE',
+    [step.positionId],
+  );
+  for (const r of rows) {
+    await notifService.send(r.employeeId, message, 'APPROVAL_REQUEST');
+  }
+}
+
+/** Gửi tài nguyên vào luồng phê duyệt — tạo ApprovalLog cấp 1 */
+export async function submit({ resourceType, resourceId, submitterId, workflowId: wfId }) {
+  const wf = wfId
+    ? await getPool().query('SELECT WorkflowID AS workflowId, TotalLevels AS totalLevels FROM WorkflowTemplates WHERE WorkflowID = ?', [wfId]).then(([r]) => r[0])
+    : await model.getDefaultWorkflow(resourceType);
+
+  if (!wf) throw createError(`Không tìm thấy workflow cho ${resourceType}`, 404);
+
+  const logId = await model.create({
+    resourceId, resourceType,
+    workflowId: wf.workflowId,
+    submittedBy: submitterId,
+    currentLevel: 1,
+    status: 'PENDING',
+  });
+
+  // Notify approvers ở cấp 1
+  await notifyApproversForStep(wf.workflowId, 1, `Có yêu cầu phê duyệt mới (${resourceType} #${resourceId})`);
+  return logId;
+}
+
+async function verifyApprover(log, approverId) {
+  const step = await model.getWorkflowStep(log.workflowId, log.currentLevel);
+  if (!step) throw createError('Không tìm thấy bước phê duyệt', 404);
+
+  const emp = await employeeModel.findById(approverId);
+  if (!emp) throw createError('Không tìm thấy nhân viên', 404);
+  if (emp.positionId !== step.positionId) throw createError('Bạn không có quyền phê duyệt bước này', 403);
+  return { emp, step };
+}
+
+/** Duyệt — nếu là cấp cuối thì cập nhật resource thành APPROVED/WAITING */
+export async function approve({ logId, approverId, comment }) {
+  const log = await model.findById(logId);
+  if (!log) throw createError('Không tìm thấy approval log', 404);
+  if (log.status !== 'PENDING') throw createError('Log này đã được xử lý', 400);
+
+  await verifyApprover(log, approverId);
+  await model.update(logId, { approverId, status: 'APPROVED', comment });
+
+  if (log.currentLevel < log.totalLevels) {
+    // Tạo log cho cấp tiếp theo
+    const nextLogId = await model.create({
+      resourceId: log.resourceId, resourceType: log.resourceType,
+      workflowId: log.workflowId, submittedBy: log.submittedBy,
+      currentLevel: log.currentLevel + 1, status: 'PENDING',
+    });
+    await notifyApproversForStep(log.workflowId, log.currentLevel + 1,
+      `Yêu cầu phê duyệt cấp ${log.currentLevel + 1} (${log.resourceType} #${log.resourceId})`);
+    return { nextLogId };
+  }
+
+  // Cấp cuối cùng → cập nhật resource
+  await updateResourceStatus(log.resourceType, log.resourceId, STATUS_MAP[log.resourceType]?.approved);
+
+  // Thông báo người gửi
+  if (log.submittedBy) {
+    await notifService.send(log.submittedBy, `Yêu cầu của bạn (${log.resourceType} #${log.resourceId}) đã được phê duyệt`, 'APPROVAL_REQUEST');
+  }
+  return { approved: true };
+}
+
+/** Từ chối */
+export async function reject({ logId, approverId, comment }) {
+  const log = await model.findById(logId);
+  if (!log) throw createError('Không tìm thấy approval log', 404);
+  if (log.status !== 'PENDING') throw createError('Log này đã được xử lý', 400);
+
+  await verifyApprover(log, approverId);
+  await model.update(logId, { approverId, status: 'REJECTED', comment });
+  await updateResourceStatus(log.resourceType, log.resourceId, STATUS_MAP[log.resourceType]?.rejected);
+
+  if (log.submittedBy) {
+    await notifService.send(log.submittedBy, `Yêu cầu (${log.resourceType} #${log.resourceId}) đã bị từ chối. Lý do: ${comment || 'Không có'}`, 'APPROVAL_REQUEST');
+  }
+}
+
+/** Yêu cầu chỉnh sửa → tài nguyên về DRAFT */
+export async function requestChanges({ logId, approverId, comment }) {
+  const log = await model.findById(logId);
+  if (!log) throw createError('Không tìm thấy approval log', 404);
+  if (log.status !== 'PENDING') throw createError('Log này đã được xử lý', 400);
+
+  await verifyApprover(log, approverId);
+  await model.update(logId, { approverId, status: 'REQUEST_CHANGES', comment });
+  await updateResourceStatus(log.resourceType, log.resourceId, STATUS_MAP[log.resourceType]?.revise);
+
+  if (log.submittedBy) {
+    await notifService.send(log.submittedBy, `Yêu cầu chỉnh sửa (${log.resourceType} #${log.resourceId}): ${comment || ''}`, 'APPROVAL_REQUEST');
+  }
+}
+
+export async function getPendingForMe(positionId) {
+  return model.findPendingForPosition(positionId);
+}
+
+export async function getHistory(resourceType, resourceId) {
+  return model.findByResource(resourceId, resourceType);
+}

@@ -8,10 +8,15 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { env } from './config/env.js';
 import { apiRouter } from './routes/index.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createApp() {
   const app = express();
@@ -40,6 +45,9 @@ export function createApp() {
     legacyHeaders: false,
   });
   app.use('/api', limiter);
+
+  // Serve uploaded files (e.g. /uploads/documents/file.pdf)
+  app.use('/uploads', express.static(join(__dirname, '..', 'uploads')));
 
   app.use('/api', apiRouter);
 

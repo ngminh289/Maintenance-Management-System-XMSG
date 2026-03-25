@@ -7,6 +7,7 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ok, fail } from '../utils/response.js';
 import { setTokenCookies, clearTokenCookies, REFRESH_COOKIE } from '../utils/cookie.js';
+import { logAction } from '../utils/audit.js';
 import * as authService from '../services/auth.service.js';
 
 export const register = asyncHandler(async (req, res) => {
@@ -15,8 +16,11 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const { accessToken, refreshToken, user } = await authService.login(req.body);
+  // Normalize: chấp nhận identifier | email | username
+  const identifier = req.body.identifier || req.body.email || req.body.username;
+  const { accessToken, refreshToken, user } = await authService.login({ identifier, password: req.body.password });
   setTokenCookies(res, { accessToken, refreshToken });
+  await logAction({ employeeId: user.employeeId, action: 'LOGIN', tableName: 'Employees', recordId: user.employeeId });
   return ok(res, { user });
 });
 
@@ -50,6 +54,9 @@ export const refresh = asyncHandler(async (req, res) => {
 });
 
 export const logout = asyncHandler(async (req, res) => {
+  if (req.user?.sub) {
+    await logAction({ employeeId: req.user.sub, action: 'LOGOUT', tableName: 'Employees', recordId: req.user.sub });
+  }
   clearTokenCookies(res);
   return ok(res, { message: 'Đăng xuất thành công.' });
 });
