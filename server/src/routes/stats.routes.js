@@ -15,3 +15,4 @@ statsRouter.get('/',               ctrl.summary);           // Tổng hợp dash
 statsRouter.get('/checklist-trend',ctrl.checklistTrend);    // Xu hướng OK/NG/WARNING 30 ngày
 statsRouter.get('/top-faulty',     ctrl.topFaultyAssets);   // Top tài sản hay hỏng
 statsRouter.get('/wo-completion',  ctrl.workOrderCompletion); // Hoàn thành WO theo tuần
+statsRouter.get('/digital-assets', ctrl.digitalAssetReport);  // BFD 6.3: Báo cáo tài nguyên số

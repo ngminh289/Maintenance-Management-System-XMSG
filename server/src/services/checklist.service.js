@@ -69,25 +69,46 @@ export async function getQRInfo(assetId) {
   const template = await templateModel.findByAssetTypeId(asset.assetTypeId);
   const checklistTemplate = template ? await templateModel.findById(template.templateId) : null;
 
-  // Tab 2: Tài liệu SOP/hướng dẫn APPROVED gắn với tài sản (project.rule: 2 Tab)
-  // SELECT * FROM DigitalAssets WHERE AssetID = ? AND Status = 'APPROVED'
+  // Tab 2: Tài liệu SOP/hướng dẫn APPROVED gắn với tài sản, kèm tags để lọc đúng tài liệu.
+  // BFD 1.3/3.3: "bộ lọc logic hiển thị đúng tài liệu khi quét QR theo tags"
   const { getPool } = await import('../config/database.js');
   const [documents] = await getPool().query(
-    `SELECT da.DigitalAssetID AS digitalAssetId, da.FileName AS fileName, da.FileType AS fileType,
-            da.Description AS description, da.CurrentVersion AS currentVersion, da.FilePath AS filePath
+    `SELECT da.DigitalAssetID AS digitalAssetId,
+            da.FileName       AS fileName,
+            da.FileType       AS fileType,
+            da.Description    AS description,
+            da.CurrentVersion AS currentVersion,
+            da.FilePath       AS filePath,
+            GROUP_CONCAT(t.TagName ORDER BY t.TagName SEPARATOR '||') AS tagNames,
+            GROUP_CONCAT(t.TagID   ORDER BY t.TagName SEPARATOR '||') AS tagIds
      FROM DigitalAssets da
+     LEFT JOIN AssetTags at2 ON at2.DigitalAssetID = da.DigitalAssetID
+     LEFT JOIN Tags t        ON t.TagID = at2.TagID
      WHERE da.AssetID = ? AND da.Status = 'APPROVED'
+     GROUP BY da.DigitalAssetID
      ORDER BY da.UploadDate DESC`,
     [assetId],
   );
+  // Parse tags: "An toàn||Kỹ thuật" → [{tagId, tagName}, ...]
+  const documentsWithTags = documents.map(doc => ({
+    ...doc,
+    tags: doc.tagNames
+      ? doc.tagNames.split('||').map((name, i) => ({
+          tagId:   Number(doc.tagIds.split('||')[i]),
+          tagName: name,
+        }))
+      : [],
+    tagNames: undefined,
+    tagIds:   undefined,
+  }));
 
   // Lịch sử checklist gần nhất
   const recentResults = await resultModel.findByAsset(assetId, 5);
 
   return {
     asset,
-    checklistTemplate,   // Tab Checklist
-    documents,           // Tab Tài liệu SOP / hướng dẫn (project.rule)
+    checklistTemplate,        // Tab Checklist
+    documents: documentsWithTags, // Tab Tài liệu — mỗi doc kèm tags[]
     recentResults,
   };
 }

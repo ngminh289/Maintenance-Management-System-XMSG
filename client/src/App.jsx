@@ -19,6 +19,7 @@ import { ApprovalsPage }   from './pages/approvals/ApprovalsPage.jsx';
 import { EmployeesPage }   from './pages/employees/EmployeesPage.jsx';
 import { SchedulesPage }   from './pages/schedules/SchedulesPage.jsx';
 import { DocumentsPage }   from './pages/documents/DocumentsPage.jsx';
+import { ReportsPage }     from './pages/reports/ReportsPage.jsx';
 
 export default function App() {
   return (
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/documents"     element={<DocumentsPage />} />
             <Route path="/approvals"     element={<ApprovalsPage />} />
             <Route path="/employees"     element={<EmployeesPage />} />
+            <Route path="/reports"       element={<ReportsPage />} />
             <Route path="/settings"      element={<Navigate to="/" replace />} />
             <Route path="/profile"       element={<Navigate to="/" replace />} />
           </Route>

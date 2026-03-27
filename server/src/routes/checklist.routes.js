@@ -4,9 +4,10 @@
  * Liên quan: controllers/checklist.controller.js.
  */
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAuth }  from '../middleware/auth.middleware.js';
 import { requireLevel } from '../middleware/requireRole.js';
-import { validate } from '../middleware/validate.js';
+import { validate }     from '../middleware/validate.js';
+import { uploadPhoto }  from '../config/upload.js';
 import { templateSchema, submitChecklistSchema } from '../validators/checklist.validator.js';
 import * as ctrl from '../controllers/checklist.controller.js';
 
@@ -29,7 +30,11 @@ checklistRouter.delete('/items/:itemId',             requireLevel(2), ctrl.remov
 // QR Scan — công nhân quét QR lấy thông tin tài sản + template
 checklistRouter.get('/qr/:assetId', ctrl.getQRInfo);
 
-// Results
-checklistRouter.post('/results', validate(submitChecklistSchema), ctrl.submitResult);
+// Results — hỗ trợ upload ảnh minh chứng (field: "photo", tùy chọn)
+checklistRouter.post('/results',
+  uploadPhoto.single('photo'),
+  validate(submitChecklistSchema),
+  ctrl.submitResult,
+);
 checklistRouter.get('/results/:id', ctrl.getResultById);
 checklistRouter.get('/results/asset/:assetId', ctrl.getResultsByAsset);

@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS ChecklistTemplateItems (
 CREATE TABLE IF NOT EXISTS MaintenanceSchedules (
     ScheduleID      INT          AUTO_INCREMENT PRIMARY KEY,
     AssetID         INT          NOT NULL,
+    ScheduleName    VARCHAR(200) NOT NULL DEFAULT '',
     MaintenanceType ENUM('CORRECTIVE','PREVENTIVE','PREDICTIVE') NOT NULL,
     Description     TEXT         NOT NULL,
     Frequency       VARCHAR(50),

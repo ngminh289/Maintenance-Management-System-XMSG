@@ -42,8 +42,18 @@ export const getQRInfo = asyncHandler(async (req, res) =>
   ok(res, await service.getQRInfo(req.params.assetId)));
 
 // ── Results ───────────────────────────────────────────────────────────────────
-export const submitResult = asyncHandler(async (req, res) =>
-  ok(res, await service.submitResult({ ...req.body, checkerId: req.user.sub }), 201));
+export const submitResult = asyncHandler(async (req, res) => {
+  // Hỗ trợ multipart (khi có upload ảnh) và JSON thuần
+  const body    = req.body;
+  const details = typeof body.details === 'string' ? JSON.parse(body.details) : (body.details ?? []);
+  const evidencePhoto = req.file?.path ?? body.evidencePhoto ?? null;
+  return ok(res, await service.submitResult({
+    ...body,
+    details,
+    evidencePhoto,
+    checkerId: req.user.sub,
+  }), 201);
+});
 
 export const getResultById = asyncHandler(async (req, res) =>
   ok(res, await service.getResultById(req.params.id)));

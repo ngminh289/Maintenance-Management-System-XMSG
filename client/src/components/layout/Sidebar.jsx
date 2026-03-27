@@ -5,7 +5,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, Users, Settings, ShieldCheck, ChevronRight,
-  Factory,
+  Factory, BarChart2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 
@@ -30,6 +30,12 @@ const MENU = [
     items: [
       { to: '/documents',   icon: FileText,     label: 'Kho tài liệu số' },
       { to: '/approvals',   icon: ShieldCheck,  label: 'Phê duyệt' },
+    ],
+  },
+  {
+    label: 'Báo cáo',
+    items: [
+      { to: '/reports',     icon: BarChart2,    label: 'Thống kê & Báo cáo' },
     ],
   },
   {

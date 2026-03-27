@@ -25,8 +25,11 @@ digitalAssetRouter.post('/',
 
 digitalAssetRouter.put('/:id', ctrl.update);
 
+// Lịch sử phiên bản
+digitalAssetRouter.get('/:id/versions', ctrl.getVersions);
+
 // Upload phiên bản mới (trở về DRAFT để chờ duyệt lại)
-digitalAssetRouter.post('/:id/new-version',
+digitalAssetRouter.post('/:id/versions',
   uploadDocument.single('file'),
   ctrl.newVersion,
 );

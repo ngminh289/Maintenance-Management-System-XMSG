@@ -100,6 +100,60 @@ export const topFaultyAssets = asyncHandler(async (req, res) => {
   return ok(res, rows);
 });
 
+/** BFD 6.3 — Báo cáo sử dụng tài nguyên số */
+export const digitalAssetReport = asyncHandler(async (_req, res) => {
+  const pool = getPool();
+
+  // Phân bố trạng thái
+  const [[statusSummary]] = await pool.query(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(Status = 'DRAFT')     AS draft,
+      SUM(Status = 'PENDING')   AS pending,
+      SUM(Status = 'APPROVED')  AS approved,
+      SUM(Status = 'REJECTED')  AS rejected,
+      SUM(Status = 'ARCHIVED')  AS archived
+    FROM DigitalAssets
+  `);
+
+  // Upload theo tháng (6 tháng gần nhất)
+  const [uploadTrend] = await pool.query(`
+    SELECT
+      DATE_FORMAT(UploadDate, '%Y-%m') AS month,
+      COUNT(*) AS count
+    FROM DigitalAssets
+    WHERE UploadDate >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+    GROUP BY DATE_FORMAT(UploadDate, '%Y-%m')
+    ORDER BY month ASC
+  `);
+
+  // Tài liệu có nhiều phiên bản nhất (tài liệu được cập nhật nhiều)
+  const [mostVersioned] = await pool.query(`
+    SELECT da.DigitalAssetID AS digitalAssetId, da.FileName AS fileName,
+           da.CurrentVersion AS currentVersion, a.AssetName AS assetName
+    FROM DigitalAssets da
+    LEFT JOIN Assets a ON a.AssetID = da.AssetID
+    ORDER BY da.CurrentVersion DESC
+    LIMIT 10
+  `);
+
+  // Tài liệu cũ chưa cập nhật (> 180 ngày, vẫn APPROVED)
+  const [staleDocuments] = await pool.query(`
+    SELECT da.DigitalAssetID AS digitalAssetId, da.FileName AS fileName,
+           da.CurrentVersion AS currentVersion, da.UploadDate AS uploadDate,
+           a.AssetName AS assetName,
+           DATEDIFF(NOW(), da.UploadDate) AS daysSinceUpload
+    FROM DigitalAssets da
+    LEFT JOIN Assets a ON a.AssetID = da.AssetID
+    WHERE da.Status = 'APPROVED'
+      AND da.UploadDate < DATE_SUB(NOW(), INTERVAL 180 DAY)
+    ORDER BY daysSinceUpload DESC
+    LIMIT 20
+  `);
+
+  return ok(res, { statusSummary, uploadTrend, mostVersioned, staleDocuments });
+});
+
 /** Phiếu việc hoàn thành theo tuần (12 tuần gần nhất) */
 export const workOrderCompletion = asyncHandler(async (_req, res) => {
   const pool = getPool();

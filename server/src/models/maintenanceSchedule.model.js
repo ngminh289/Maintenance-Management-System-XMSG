@@ -9,6 +9,7 @@ const COLS = `
   ms.AssetID         AS assetId,
   a.AssetName        AS assetName,
   at.TypeName        AS assetTypeName,
+  ms.ScheduleName    AS scheduleName,
   ms.MaintenanceType AS maintenanceType,
   ms.Description     AS description,
   ms.FrequencyValue  AS frequencyValue,
@@ -73,18 +74,18 @@ export async function findHourlyByAsset(assetId) {
 }
 
 export async function create(data) {
-  const { assetId, maintenanceType, description, frequencyValue, frequencyUnit, startDate, endDate, estimatedTime, priority, digitalAssetId, createdBy } = data;
+  const { assetId, scheduleName, maintenanceType, description, frequencyValue, frequencyUnit, startDate, endDate, estimatedTime, priority, digitalAssetId, createdBy } = data;
   const [result] = await getPool().query(
     `INSERT INTO MaintenanceSchedules
-     (AssetID, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, EndDate, EstimatedTime, Priority, DigitalAssetID, CreatedBy)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [assetId, maintenanceType, description, frequencyValue || null, frequencyUnit || 'HOURS', startDate, endDate || null, estimatedTime || null, priority || 'MEDIUM', digitalAssetId || null, createdBy || null],
+     (AssetID, ScheduleName, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, EndDate, EstimatedTime, Priority, DigitalAssetID, CreatedBy)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [assetId, scheduleName || '', maintenanceType, description, frequencyValue || null, frequencyUnit || 'HOURS', startDate, endDate || null, estimatedTime || null, priority || 'MEDIUM', digitalAssetId || null, createdBy || null],
   );
   return result.insertId;
 }
 
 export async function update(id, data) {
-  const map = { description: 'Description', frequencyValue: 'FrequencyValue', frequencyUnit: 'FrequencyUnit', startDate: 'StartDate', endDate: 'EndDate', estimatedTime: 'EstimatedTime', priority: 'Priority', status: 'Status' };
+  const map = { scheduleName: 'ScheduleName', description: 'Description', frequencyValue: 'FrequencyValue', frequencyUnit: 'FrequencyUnit', startDate: 'StartDate', endDate: 'EndDate', estimatedTime: 'EstimatedTime', priority: 'Priority', status: 'Status' };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {

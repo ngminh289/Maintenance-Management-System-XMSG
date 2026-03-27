@@ -35,6 +35,7 @@ export async function create(data, createdBy) {
   // Normalize ENUM về uppercase trước khi INSERT
   const normalized = {
     ...data,
+    scheduleName:    data.scheduleName?.trim() || '',
     maintenanceType: data.maintenanceType?.toUpperCase(),
     frequencyUnit:   data.frequencyUnit?.toUpperCase(),
     priority:        data.priority?.toUpperCase(),
@@ -71,7 +72,7 @@ export async function generateWorkOrder(scheduleId, createdBy) {
     assetId:     schedule.assetId,
     woSource:    'SCHEDULE',
     priority:    schedule.priority === 'URGENT' ? 'HIGH' : (schedule.priority || 'MEDIUM'),
-    description: `Phiếu từ lịch bảo trì #${scheduleId}: ${schedule.description}`,
+    description: `Phiếu từ lịch "${schedule.scheduleName || `#${scheduleId}`}": ${schedule.description}`,
     createdBy,
   });
   return { workOrderId: woId, scheduleId };

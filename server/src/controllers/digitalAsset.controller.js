@@ -40,7 +40,13 @@ export const update = asyncHandler(async (req, res) =>
 export const submitForApproval = asyncHandler(async (req, res) =>
   ok(res, await service.submitForApproval(req.params.id, req.user.sub, req.body.workflowId)));
 
-/** POST /api/digital-assets/:id/new-version — multipart/form-data */
+/** GET /api/digital-assets/:id/versions */
+export const getVersions = asyncHandler(async (req, res) => {
+  const da = await service.getById(req.params.id);
+  return ok(res, da.versions ?? []);
+});
+
+/** POST /api/digital-assets/:id/versions — multipart/form-data */
 export const newVersion = asyncHandler(async (req, res) => {
   if (!req.file) return fail(res, 'Chưa chọn file để upload', 400);
   const result = await service.addVersion(req.params.id, {

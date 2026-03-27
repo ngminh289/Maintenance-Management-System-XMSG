@@ -3,8 +3,8 @@
  * luongxulykiemtra.rule: Quét QR → hiển thị 2 Tab (Checklist + Tài liệu SOP) → Submit → Auto-logic.
  * project.rule 5.2: "Quét QR truy xuất tài liệu, nhập checklist, upload ảnh".
  */
-import { useState } from 'react';
-import { QrCode, FileText, CheckSquare, AlertTriangle, XCircle, CheckCircle, ExternalLink } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { QrCode, FileText, CheckSquare, AlertTriangle, XCircle, CheckCircle, ExternalLink, Tag } from 'lucide-react';
 import { checklistApi } from '../../api/checklist.api.js';
 import { Button }  from '../../components/ui/Button.jsx';
 import { Input, Textarea, Select } from '../../components/ui/Input.jsx';
@@ -36,6 +36,26 @@ export function ChecklistPage() {
   const [answers,     setAnswers]     = useState({});
   const [submitting,  setSubmitting]  = useState(false);
   const [submitted,   setSubmitted]   = useState(null);
+  const [evidencePhoto, setEvidencePhoto] = useState(null);
+  const [activeTagFilter, setActiveTagFilter] = useState('ALL');
+
+  // Tập hợp tất cả tags từ documents để hiển thị bộ lọc
+  const allDocTags = useMemo(() => {
+    if (!qrData?.documents?.length) return [];
+    const map = new Map();
+    qrData.documents.forEach(doc =>
+      doc.tags?.forEach(t => map.set(t.tagId, t.tagName)),
+    );
+    return [...map.entries()].map(([tagId, tagName]) => ({ tagId, tagName }));
+  }, [qrData]);
+
+  const filteredDocs = useMemo(() => {
+    if (!qrData?.documents) return [];
+    if (activeTagFilter === 'ALL') return qrData.documents;
+    return qrData.documents.filter(doc =>
+      doc.tags?.some(t => String(t.tagId) === String(activeTagFilter)),
+    );
+  }, [qrData, activeTagFilter]);
 
   const handleScan = async () => {
     if (!assetInput.trim()) return;
@@ -64,18 +84,30 @@ export function ChecklistPage() {
         answerValue: String(value),
         isOk: value !== 'false' && value !== '0' && value !== 'NG',
       }));
-      const payload = {
-        assetId:       qrData.asset.assetId,
-        overallStatus,
-        notes,
-        checkerId:     user?.employeeId,
-        ...(readingValue && { readingValue: Number(readingValue) }),
-        details,
-      };
-      const res = await checklistApi.submit(payload);
+
+      // Nếu có ảnh minh chứng → dùng FormData (multipart)
+      let res;
+      if (evidencePhoto) {
+        const fd = new FormData();
+        fd.append('photo',         evidencePhoto);
+        fd.append('assetId',       qrData.asset.assetId);
+        fd.append('overallStatus', overallStatus);
+        fd.append('notes',         notes);
+        if (readingValue) fd.append('readingValue', readingValue);
+        fd.append('details', JSON.stringify(details));
+        res = await checklistApi.submitWithPhoto(fd);
+      } else {
+        res = await checklistApi.submit({
+          assetId: qrData.asset.assetId, overallStatus, notes,
+          ...(readingValue && { readingValue: Number(readingValue) }),
+          details,
+        });
+      }
+
       setSubmitted(res.data.data);
       toast.success('Đã gửi kết quả kiểm tra thành công!');
       setQrData(null);
+      setEvidencePhoto(null);
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'Lỗi gửi checklist');
     } finally { setSubmitting(false); }
@@ -264,6 +296,23 @@ export function ChecklistPage() {
                   onChange={e => setNotes(e.target.value)}
                 />
 
+                {/* Upload ảnh minh chứng — BFD 5.2 */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 block mb-1">
+                    Ảnh minh chứng (tuỳ chọn)
+                  </label>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp"
+                    onChange={e => setEvidencePhoto(e.target.files[0] ?? null)}
+                    className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100"
+                  />
+                  {evidencePhoto && (
+                    <p className="text-xs text-green-600 mt-1 font-medium">✓ Đã chọn: {evidencePhoto.name}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">JPG/PNG/WEBP, tối đa 10MB</p>
+                </div>
+
                 <Button className="w-full justify-center" loading={submitting} onClick={handleSubmit}>
                   Gửi kết quả kiểm tra
                 </Button>
@@ -274,30 +323,72 @@ export function ChecklistPage() {
           {/* Tab: Tài liệu SOP */}
           {activeTab === 'docs' && (
             <Card title="Tài liệu hướng dẫn / SOP">
-              {qrData.documents?.length === 0
-                ? <p className="text-sm text-gray-400 py-6 text-center">Chưa có tài liệu đã duyệt cho tài sản này</p>
-                : (
-                  <div className="space-y-2">
-                    {qrData.documents.map(doc => (
-                      <div key={doc.digitalAssetId} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                        <FileText size={18} className="text-blue-500 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{doc.fileName}</p>
-                          <p className="text-xs font-medium text-gray-600">{doc.fileType?.toUpperCase()} · v{doc.currentVersion}</p>
-                          {doc.description && <p className="text-xs font-medium text-gray-700 mt-0.5">{doc.description}</p>}
-                        </div>
-                        <a
-                          href={`${import.meta.env.VITE_API_BASE?.replace('/api', '') || 'http://localhost:4000'}/uploads/documents/${doc.filePath?.split('/').pop()}`}
-                          target="_blank" rel="noopener noreferrer"
-                          className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 flex-shrink-0"
+              {qrData.documents?.length === 0 ? (
+                <p className="text-sm text-gray-400 py-6 text-center">Chưa có tài liệu đã duyệt cho tài sản này</p>
+              ) : (
+                <div className="space-y-4">
+                  {/* Bộ lọc theo tag — BFD 1.3/3.3 */}
+                  {allDocTags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setActiveTagFilter('ALL')}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors
+                          ${activeTagFilter === 'ALL'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'border-gray-300 text-gray-600 hover:border-blue-400'}`}
+                      >
+                        <Tag size={11} /> Tất cả ({qrData.documents.length})
+                      </button>
+                      {allDocTags.map(t => (
+                        <button
+                          key={t.tagId}
+                          onClick={() => setActiveTagFilter(String(t.tagId))}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors
+                            ${activeTagFilter === String(t.tagId)
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'border-gray-300 text-gray-600 hover:border-blue-400'}`}
                         >
-                          <ExternalLink size={15} />
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                )
-              }
+                          <Tag size={11} /> {t.tagName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Danh sách tài liệu đã lọc */}
+                  {filteredDocs.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-4">Không có tài liệu với tag này</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredDocs.map(doc => (
+                        <div key={doc.digitalAssetId} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+                          <FileText size={18} className="text-blue-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{doc.fileName}</p>
+                            <p className="text-xs font-medium text-gray-600">{doc.fileType?.toUpperCase()} · v{doc.currentVersion}</p>
+                            {doc.description && <p className="text-xs text-gray-500 mt-0.5">{doc.description}</p>}
+                            {doc.tags?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {doc.tags.map(t => (
+                                  <span key={t.tagId} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium">
+                                    <Tag size={9} /> {t.tagName}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <a
+                            href={`${import.meta.env.VITE_API_BASE?.replace('/api', '') || 'http://localhost:4000'}/uploads/documents/${doc.filePath?.split('/').pop()}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 flex-shrink-0"
+                          >
+                            <ExternalLink size={15} />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           )}
 
