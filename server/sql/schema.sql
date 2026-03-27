@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS Assets (
     AssetName      VARCHAR(100) NOT NULL,
     AssetTypeID    INT          NOT NULL,
     LocationID     INT          NOT NULL,
-    Status         ENUM('AVAILABLE','MAINTENANCE','UNDER REPAIR','BROKEN','DISUSED')
+    Status         ENUM('AVAILABLE','MONITORING','CAUTION','MAINTENANCE','BROKEN','DECOMMISSIONED')
                                NOT NULL DEFAULT 'AVAILABLE',
     CommissionDate DATE         NOT NULL,
     Manufacturer   VARCHAR(100),
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS WorkOrders (
     ActualHours    DECIMAL(5,2),
     Status         ENUM('PENDING_APPROVAL','WAITING','IN_PROGRESS','PAUSED','COMPLETED','CANCELLED')
                                 NOT NULL DEFAULT 'WAITING',
-    WO_Source      ENUM('SCHEDULE','PREDICTIVE','MANUAL') NOT NULL DEFAULT 'MANUAL',
+    WO_Source      ENUM('SCHEDULE','PREDICTIVE','MANUAL','CORRECTIVE') NOT NULL DEFAULT 'MANUAL',
     Priority       ENUM('EMERGENCY','HIGH','MEDIUM','LOW') NOT NULL DEFAULT 'MEDIUM',
     CreatedBy      INT,
     CreatedAt      DATETIME     DEFAULT CURRENT_TIMESTAMP,

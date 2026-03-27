@@ -2,7 +2,7 @@
  * asset.validator.js — Validate Assets CRUD.
  * Dùng trong: routes/asset.routes.js.
  */
-const VALID_STATUSES = ['AVAILABLE', 'MAINTENANCE', 'UNDER REPAIR', 'BROKEN', 'DISUSED'];
+const VALID_STATUSES = ['AVAILABLE', 'MONITORING', 'CAUTION', 'MAINTENANCE', 'BROKEN', 'DECOMMISSIONED'];
 
 export function createAssetSchema(body) {
   const { assetName, assetTypeId, locationId, commissionDate } = body;

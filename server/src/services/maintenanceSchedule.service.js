@@ -32,7 +32,15 @@ export async function getById(id) {
 export async function create(data, createdBy) {
   const asset = await assetModel.findById(data.assetId);
   if (!asset) throw createError('Không tìm thấy tài sản', 404);
-  const id = await model.create({ ...data, createdBy });
+  // Normalize ENUM về uppercase trước khi INSERT
+  const normalized = {
+    ...data,
+    maintenanceType: data.maintenanceType?.toUpperCase(),
+    frequencyUnit:   data.frequencyUnit?.toUpperCase(),
+    priority:        data.priority?.toUpperCase(),
+    createdBy,
+  };
+  const id = await model.create(normalized);
   return model.findById(id);
 }
 

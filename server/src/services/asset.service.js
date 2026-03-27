@@ -46,7 +46,11 @@ export async function updateStatus(id, status) {
   return model.findById(id);
 }
 
+/**
+ * Soft delete — project.rule: "Xóa: Soft delete (chuyển sang archive/DECOMMISSIONED)".
+ * Không xóa thật, chuyển trạng thái để giữ lịch sử.
+ */
 export async function remove(id) {
   await getById(id);
-  await model.remove(id);
+  await model.updateStatus(id, 'DECOMMISSIONED');
 }

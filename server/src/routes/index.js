@@ -23,6 +23,7 @@ import { auditLogRouter }            from './auditLog.routes.js';
 import { workflowRouter }            from './workflow.routes.js';
 import { permissionRouter }          from './permission.routes.js';
 import { retentionPolicyRouter }     from './retentionPolicy.routes.js';
+import { statsRouter }               from './stats.routes.js';
 
 export const apiRouter = Router();
 
@@ -55,3 +56,6 @@ apiRouter.use('/permissions',          permissionRouter);
 apiRouter.use('/notifications',        notificationRouter);
 apiRouter.use('/audit-logs',           auditLogRouter);
 apiRouter.use('/retention-policies',   retentionPolicyRouter);
+
+// Dashboard & Báo cáo (project.rule Phân hệ 6)
+apiRouter.use('/stats',                statsRouter);

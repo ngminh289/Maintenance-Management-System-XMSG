@@ -1,9 +1,9 @@
 /**
  * checklist.service.js — Luồng kiểm tra hiện trường: submit + auto-logic (NG/WARNING/OK).
  * luongxulykiemtra.rule:
- *   OK      → Asset AVAILABLE, WO COMPLETED
- *   WARNING → Asset MAINTENANCE, tạo WO PREDICTIVE PENDING_APPROVAL
- *   NG      → Asset BROKEN,     tạo WO CORRECTIVE EMERGENCY PENDING_APPROVAL
+ *   OK      → Asset AVAILABLE,  WO COMPLETED
+ *   WARNING → Asset CAUTION,    tạo WO PREDICTIVE PENDING_APPROVAL  (máy vẫn chạy, cần theo dõi)
+ *   NG      → Asset BROKEN,     tạo WO CORRECTIVE EMERGENCY PENDING_APPROVAL (máy ngừng hoạt động)
  * Liên quan: services/workOrder.service.js, services/assetCounter.service.js,
  *            services/notification.service.js, models/checklistResult.model.js.
  */
@@ -65,14 +65,31 @@ export async function getQRInfo(assetId) {
   const asset = await assetModel.findById(assetId);
   if (!asset) throw createError('Không tìm thấy tài sản', 404);
 
-  // Template phù hợp với loại tài sản
+  // Tab 1: Checklist template cho loại tài sản này
   const template = await templateModel.findByAssetTypeId(asset.assetTypeId);
-  const templateDetail = template ? await templateModel.findById(template.templateId) : null;
+  const checklistTemplate = template ? await templateModel.findById(template.templateId) : null;
+
+  // Tab 2: Tài liệu SOP/hướng dẫn APPROVED gắn với tài sản (project.rule: 2 Tab)
+  // SELECT * FROM DigitalAssets WHERE AssetID = ? AND Status = 'APPROVED'
+  const { getPool } = await import('../config/database.js');
+  const [documents] = await getPool().query(
+    `SELECT da.DigitalAssetID AS digitalAssetId, da.FileName AS fileName, da.FileType AS fileType,
+            da.Description AS description, da.CurrentVersion AS currentVersion, da.FilePath AS filePath
+     FROM DigitalAssets da
+     WHERE da.AssetID = ? AND da.Status = 'APPROVED'
+     ORDER BY da.UploadDate DESC`,
+    [assetId],
+  );
 
   // Lịch sử checklist gần nhất
   const recentResults = await resultModel.findByAsset(assetId, 5);
 
-  return { asset, checklistTemplate: templateDetail, recentResults };
+  return {
+    asset,
+    checklistTemplate,   // Tab Checklist
+    documents,           // Tab Tài liệu SOP / hướng dẫn (project.rule)
+    recentResults,
+  };
 }
 
 // ─── Submit Checklist ─────────────────────────────────────────────────────────
@@ -106,26 +123,28 @@ export async function submitResult({ assetId, woId, readingValue, overallStatus,
     if (woId) await workOrderModel.updateStatus(woId, 'COMPLETED', { actualDate: new Date().toISOString().split('T')[0] });
 
   } else if (overallStatus === 'WARNING') {
-    await assetModel.updateStatus(assetId, 'MAINTENANCE');
+    // luongxulykiemtra.rule: Máy vẫn chạy nhưng có dấu hiệu bất thường → CAUTION
+    await assetModel.updateStatus(assetId, 'CAUTION');
     newWorkOrderId = await workOrderSvc.createAutomatic({
       assetId, woSource: 'PREDICTIVE', priority: 'HIGH',
-      description: `Cảnh báo từ checklist #${checklistId}: ${asset.assetName}`,
+      description: `[CẢNH BÁO] Checklist #${checklistId}: ${asset.assetName} có dấu hiệu bất thường`,
       createdBy: checkerId,
     });
     await notifService.notifyManagers(
-      `⚠ Máy [${asset.assetName}] có dấu hiệu bất thường. Checklist #${checklistId}. Đã tạo WO #${newWorkOrderId}.`,
+      `CẢNH BÁO: Máy [${asset.assetName}] có dấu hiệu bất thường. Checklist #${checklistId}. Đã tạo WO #${newWorkOrderId} chờ phê duyệt.`,
       'SYSTEM_ALERT', 2,
     );
 
   } else if (overallStatus === 'NG') {
+    // luongxulykiemtra.rule: Máy hỏng, không chạy được → BROKEN, WO_Source = CORRECTIVE
     await assetModel.updateStatus(assetId, 'BROKEN');
     newWorkOrderId = await workOrderSvc.createAutomatic({
-      assetId, woSource: 'PREDICTIVE', priority: 'EMERGENCY',
-      description: `SỰ CỐ từ checklist #${checklistId}: ${asset.assetName} NGỪNG HOẠT ĐỘNG`,
+      assetId, woSource: 'CORRECTIVE', priority: 'EMERGENCY',
+      description: `[SỰ CỐ] Checklist #${checklistId}: ${asset.assetName} NGỪNG HOẠT ĐỘNG`,
       createdBy: checkerId,
     });
     await notifService.notifyManagers(
-      `🔴 SỰ CỐ KHẨN CẤP: Máy [${asset.assetName}] ngừng hoạt động! Checklist #${checklistId}. WO #${newWorkOrderId} đã được tạo.`,
+      `SỰ CỐ KHẨN CẤP: Máy [${asset.assetName}] ngừng hoạt động! Checklist #${checklistId}. WO #${newWorkOrderId} đã được tạo.`,
       'SYSTEM_ALERT', 2,
     );
   }
