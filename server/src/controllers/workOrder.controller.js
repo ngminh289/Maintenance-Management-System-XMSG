@@ -6,7 +6,14 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ok } from '../utils/response.js';
 import * as service from '../services/workOrder.service.js';
 
-export const getAll = asyncHandler(async (req, res) => ok(res, await service.getAll(req.query)));
+export const getAll = asyncHandler(async (req, res) => {
+  // KTV (level 1) và Operator (level 1) chỉ xem WO được giao cho mình
+  const query = { ...req.query };
+  if (req.user.positionLevel <= 1) {
+    query.assignedTo = req.user.sub;
+  }
+  return ok(res, await service.getAll(query));
+});
 
 export const getById = asyncHandler(async (req, res) => ok(res, await service.getById(req.params.id)));
 

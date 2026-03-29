@@ -1,6 +1,6 @@
 /**
  * position.routes.js — /api/positions (CRUD).
- * Phân quyền: GET tất cả; POST/PUT/DELETE yêu cầu Level >= 3 (Quản lý).
+ * Phân quyền: GET công khai (cần cho form đăng ký); POST/PUT/DELETE yêu cầu Level >= 3.
  * Liên quan: controllers/position.controller.js, validators/position.validator.js.
  */
 import { Router } from 'express';
@@ -12,10 +12,11 @@ import * as ctrl from '../controllers/position.controller.js';
 
 export const positionRouter = Router();
 
-positionRouter.use(requireAuth);
-
+// GET công khai — cần cho form đăng ký và các dropdown
 positionRouter.get('/',    ctrl.getAll);
 positionRouter.get('/:id', ctrl.getById);
-positionRouter.post('/',   requireLevel(3), validate(positionSchema), ctrl.create);
-positionRouter.put('/:id', requireLevel(3), validate(positionSchema), ctrl.update);
-positionRouter.delete('/:id', requireLevel(3), ctrl.remove);
+
+// Mutation yêu cầu đăng nhập + cấp quyền cao
+positionRouter.post('/',      requireAuth, requireLevel(3), validate(positionSchema), ctrl.create);
+positionRouter.put('/:id',    requireAuth, requireLevel(3), validate(positionSchema), ctrl.update);
+positionRouter.delete('/:id', requireAuth, requireLevel(3), ctrl.remove);

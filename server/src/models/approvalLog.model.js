@@ -53,15 +53,42 @@ export async function findByResource(resourceId, resourceType) {
   return rows;
 }
 
-/** Lấy tất cả ApprovalLogs đang PENDING mà positionId này cần xử lý */
+/** Lấy tất cả ApprovalLogs đang PENDING mà positionId này cần xử lý, kèm context tài nguyên */
 export async function findPendingForPosition(positionId) {
   const [rows] = await getPool().query(
     `SELECT ${COLS},
-            ws.PositionID AS requiredPositionId
+            ws.PositionID  AS requiredPositionId,
+            -- Context tài nguyên (JOIN có điều kiện qua ResourceType)
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN wo.Description
+              WHEN 'DIGITAL_ASSET'    THEN da.FileName
+              WHEN 'MAINTENANCE_PLAN' THEN ms.ScheduleName
+            END AS resourceDescription,
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN wa.AssetName
+              WHEN 'DIGITAL_ASSET'    THEN daa.AssetName
+              WHEN 'MAINTENANCE_PLAN' THEN msa.AssetName
+            END AS resourceAssetName,
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN wo.Status
+              WHEN 'DIGITAL_ASSET'    THEN da.Status
+              WHEN 'MAINTENANCE_PLAN' THEN ms.Status
+            END AS resourceStatus,
+            sub.FullName AS submitterName
      FROM ApprovalLogs al
-     JOIN WorkflowTemplates wt ON wt.WorkflowID = al.WorkflowID
-     JOIN WorkflowSteps ws ON ws.WorkflowID = al.WorkflowID AND ws.StepLevel = al.CurrentLevel
-     LEFT JOIN Employees e ON e.EmployeeID = al.ApproverID
+     JOIN WorkflowTemplates wt  ON wt.WorkflowID  = al.WorkflowID
+     JOIN WorkflowSteps     ws  ON ws.WorkflowID  = al.WorkflowID AND ws.StepLevel = al.CurrentLevel
+     LEFT JOIN Employees    e   ON e.EmployeeID   = al.ApproverID
+     LEFT JOIN Employees    sub ON sub.EmployeeID = al.SubmittedBy
+     -- WO context
+     LEFT JOIN WorkOrders   wo  ON wo.WO_ID        = al.ResourceID AND al.ResourceType = 'WORK_ORDER'
+     LEFT JOIN Assets       wa  ON wa.AssetID       = wo.AssetID
+     -- DigitalAsset context
+     LEFT JOIN DigitalAssets da  ON da.DigitalAssetID = al.ResourceID AND al.ResourceType = 'DIGITAL_ASSET'
+     LEFT JOIN Assets        daa ON daa.AssetID        = da.AssetID
+     -- MaintenancePlan context
+     LEFT JOIN MaintenanceSchedules ms  ON ms.ScheduleID = al.ResourceID AND al.ResourceType = 'MAINTENANCE_PLAN'
+     LEFT JOIN Assets               msa ON msa.AssetID    = ms.AssetID
      WHERE al.Status = 'PENDING' AND ws.PositionID = ?
      ORDER BY al.ActionDate`,
     [positionId],

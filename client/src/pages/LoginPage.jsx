@@ -3,7 +3,7 @@
  * Chấp nhận email, username hoặc identifier.
  */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Factory, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { Button } from "../components/ui/Button.jsx";
@@ -99,6 +99,12 @@ export function LoginPage() {
               </div>
             )}
 
+            <div className="flex justify-end">
+              <Link to="/forgot-password" className="text-xs text-blue-600 hover:underline font-medium">
+                Quên mật khẩu?
+              </Link>
+            </div>
+
             <Button
               type="submit"
               loading={loading}
@@ -108,6 +114,13 @@ export function LoginPage() {
             </Button>
           </form>
         </div>
+
+        <p className="text-center text-sm text-gray-500 mt-4">
+          Chưa có tài khoản?{' '}
+          <Link to="/register" className="text-blue-600 font-semibold hover:underline">
+            Đăng ký ngay
+          </Link>
+        </p>
 
         <p className="text-center text-xs text-gray-400 mt-5">
           © 2025 Nhà máy Xi măng Sông Gianh · Phiên bản 1.0

@@ -1,13 +1,13 @@
 /**
  * digitalAsset.routes.js — /api/digital-assets.
- * Upload dùng multipart/form-data (multer). Field name: "file".
- * Flow: upload → DRAFT → submit → PENDING → approve → APPROVED.
- * Liên quan: controllers/digitalAsset.controller.js, config/upload.js.
+ * Phân quyền nghiêm ngặt theo RBAC.
+ * Upload / phiên bản: Level 1 (Kỹ thuật viên). Approve: Level 2+.
+ * Admin chỉ READ.
  */
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.middleware.js';
-import { requireLevel } from '../middleware/requireRole.js';
-import { uploadDocument } from '../config/upload.js';
+import { requireAuth }       from '../middleware/auth.middleware.js';
+import { requirePermission } from '../middleware/requirePermission.js';
+import { uploadDocument }    from '../config/upload.js';
 import * as ctrl from '../controllers/digitalAsset.controller.js';
 
 export const digitalAssetRouter = Router();
@@ -17,32 +17,51 @@ digitalAssetRouter.use(requireAuth);
 digitalAssetRouter.get('/',    ctrl.getAll);
 digitalAssetRouter.get('/:id', ctrl.getById);
 
-// Upload tài liệu mới (field: "file")
+// Upload tài liệu mới — Kỹ thuật viên trở lên
 digitalAssetRouter.post('/',
+  requirePermission('DIGITAL_ASSET', 'CREATE'),
   uploadDocument.single('file'),
   ctrl.upload,
 );
-
-digitalAssetRouter.put('/:id', ctrl.update);
+digitalAssetRouter.put('/:id',
+  requirePermission('DIGITAL_ASSET', 'UPDATE'),
+  ctrl.update,
+);
 
 // Lịch sử phiên bản
 digitalAssetRouter.get('/:id/versions', ctrl.getVersions);
 
-// Upload phiên bản mới (trở về DRAFT để chờ duyệt lại)
+// Upload phiên bản mới — cần UPDATE (Kỹ thuật viên+)
 digitalAssetRouter.post('/:id/versions',
+  requirePermission('DIGITAL_ASSET', 'UPDATE'),
   uploadDocument.single('file'),
   ctrl.newVersion,
 );
 
-// Gửi phê duyệt: DRAFT → PENDING
-digitalAssetRouter.post('/:id/submit',   ctrl.submitForApproval);
+// Gửi phê duyệt: DRAFT → PENDING (Kỹ thuật viên+, người sở hữu tài liệu)
+digitalAssetRouter.post('/:id/submit',
+  requirePermission('DIGITAL_ASSET', 'UPDATE'),
+  ctrl.submitForApproval,
+);
 
-// Lưu trữ: APPROVED → ARCHIVED (Level >= 2)
-digitalAssetRouter.post('/:id/archive',  requireLevel(2), ctrl.archive);
+// Lưu trữ: APPROVED → ARCHIVED — Trưởng ca trở lên
+digitalAssetRouter.post('/:id/archive',
+  requirePermission('DIGITAL_ASSET', 'APPROVE'),
+  ctrl.archive,
+);
 
-// Tags
-digitalAssetRouter.post('/:id/tags',     ctrl.addTag);
-digitalAssetRouter.delete('/:id/tags/:tagId', ctrl.removeTag);
+// Tags — Kỹ thuật viên tạo/xoá tag trên tài liệu của mình
+digitalAssetRouter.post('/:id/tags',
+  requirePermission('TAG', 'CREATE'),
+  ctrl.addTag,
+);
+digitalAssetRouter.delete('/:id/tags/:tagId',
+  requirePermission('TAG', 'UPDATE'),
+  ctrl.removeTag,
+);
 
-// Xóa (chỉ DRAFT/REJECTED)
-digitalAssetRouter.delete('/:id', ctrl.remove);
+// Xóa (chỉ DRAFT/REJECTED) — Kỹ thuật viên xóa bản thảo của mình
+digitalAssetRouter.delete('/:id',
+  requirePermission('DIGITAL_ASSET', 'UPDATE'),
+  ctrl.remove,
+);

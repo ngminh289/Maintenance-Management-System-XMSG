@@ -9,12 +9,15 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ----------------------------------------------------------
--- Chức vụ (Positions) — Level: 1=Nhân viên, 2=Trưởng nhóm, 3=Quản lý
+-- Chức vụ (Positions) — 5 vai trò theo thiết kế BFD/DFD đề tài
+-- PositionID tường minh để tránh tạo trùng khi chạy lại
 -- ----------------------------------------------------------
-INSERT IGNORE INTO Positions (PositionName, Level) VALUES
-    ('Kỹ thuật viên',        1),
-    ('Trưởng ca bảo trì',    2),
-    ('Trưởng phòng cơ điện', 3);
+INSERT IGNORE INTO Positions (PositionID, PositionName, Level) VALUES
+    (1, 'Công nhân',                  1),
+    (2, 'Nhân viên Kỹ thuật',        2),
+    (3, 'Trưởng ca / Trưởng phòng',  3),
+    (4, 'Quản trị viên',              4),
+    (5, 'Ban Giám đốc',               5);
 
 -- ----------------------------------------------------------
 -- Phòng ban (Departments)
@@ -97,91 +100,20 @@ WHERE TemplateID = 2 AND QuestionText LIKE '%rung%';
 
 -- ----------------------------------------------------------
 -- Mẫu Workflow phê duyệt (WorkflowTemplates + WorkflowSteps)
--- Phải insert Positions trước — PositionID: 1=KTV, 2=Trưởng ca, 3=Trưởng phòng
+-- WorkflowID tường minh, Approver: Trưởng ca/phòng (PositionID=3)
 -- ----------------------------------------------------------
-INSERT IGNORE INTO WorkflowTemplates (WorkflowName, DocumentType, TotalLevels, Description) VALUES
-    ('Phê duyệt Work Order thông thường', 'WORK_ORDER',       2, '2 cấp: Trưởng ca → Trưởng phòng'),
-    ('Phê duyệt Tài liệu kỹ thuật',       'DIGITAL_ASSET',    2, '2 cấp dành cho tài liệu thông thường'),
-    ('Phê duyệt Tài liệu nhạy cảm',       'DIGITAL_ASSET',    3, '3 cấp: KTV → Trưởng ca → Trưởng phòng'),
-    ('Phê duyệt Kế hoạch bảo trì',        'MAINTENANCE_PLAN', 2, '2 cấp: Trưởng ca → Trưởng phòng');
+INSERT IGNORE INTO WorkflowTemplates (WorkflowID, WorkflowName, DocumentType, TotalLevels, Description) VALUES
+    (1, 'Phê duyệt Work Order',        'WORK_ORDER',       1, 'Trưởng ca/phòng duyệt phiếu việc'),
+    (2, 'Phê duyệt Tài liệu kỹ thuật', 'DIGITAL_ASSET',    1, 'Trưởng ca/phòng duyệt tài liệu'),
+    (3, 'Phê duyệt Kế hoạch bảo trì',  'MAINTENANCE_PLAN', 1, 'Trưởng ca/phòng duyệt lịch bảo trì');
 
 INSERT IGNORE INTO WorkflowSteps (WorkflowID, StepLevel, PositionID) VALUES
-    -- Work Order (2 cấp)
-    (1, 1, 2),   -- Level 1: Trưởng ca
-    (1, 2, 3),   -- Level 2: Trưởng phòng
-    -- Tài liệu thông thường (2 cấp)
-    (2, 1, 2),
-    (2, 2, 3),
-    -- Tài liệu nhạy cảm (3 cấp)
-    (3, 1, 1),   -- Level 1: Kỹ thuật viên kiểm tra sơ bộ
-    (3, 2, 2),   -- Level 2: Trưởng ca duyệt
-    (3, 3, 3),   -- Level 3: Trưởng phòng duyệt cuối
-    -- Kế hoạch bảo trì (2 cấp)
-    (4, 1, 2),
-    (4, 2, 3);
+    (1, 1, 3),
+    (2, 1, 3),
+    (3, 1, 3);
 
--- ----------------------------------------------------------
--- Phân quyền (Roles_Permissions) — Ma trận đầy đủ
--- PositionID: 1=Kỹ thuật viên, 2=Trưởng ca, 3=Trưởng phòng
--- ----------------------------------------------------------
-INSERT IGNORE INTO Roles_Permissions (PositionID, PermissionName, ResourceType) VALUES
-    -- Kỹ thuật viên: chỉ đọc + cập nhật trạng thái tài sản
-    (1, 'READ',   'ASSET'),
-    (1, 'UPDATE', 'ASSET'),
-    (1, 'READ',   'WORK_ORDER'),
-    (1, 'UPDATE', 'WORK_ORDER'),
-    (1, 'READ',   'DIGITAL_ASSET'),
-    (1, 'CREATE', 'DIGITAL_ASSET'),
-    (1, 'READ',   'MAINTENANCE_PLAN'),
-
-    -- Trưởng ca: tất cả quyền trên + tạo/phê duyệt
-    (2, 'CREATE', 'ASSET'),
-    (2, 'READ',   'ASSET'),
-    (2, 'UPDATE', 'ASSET'),
-    (2, 'CREATE', 'WORK_ORDER'),
-    (2, 'READ',   'WORK_ORDER'),
-    (2, 'UPDATE', 'WORK_ORDER'),
-    (2, 'APPROVE','WORK_ORDER'),
-    (2, 'CREATE', 'DIGITAL_ASSET'),
-    (2, 'READ',   'DIGITAL_ASSET'),
-    (2, 'UPDATE', 'DIGITAL_ASSET'),
-    (2, 'APPROVE','DIGITAL_ASSET'),
-    (2, 'CREATE', 'MAINTENANCE_PLAN'),
-    (2, 'READ',   'MAINTENANCE_PLAN'),
-    (2, 'UPDATE', 'MAINTENANCE_PLAN'),
-    (2, 'APPROVE','MAINTENANCE_PLAN'),
-    (2, 'READ',   'EMPLOYEE'),
-
-    -- Trưởng phòng: toàn quyền
-    (3, 'CREATE', 'ASSET'),
-    (3, 'READ',   'ASSET'),
-    (3, 'UPDATE', 'ASSET'),
-    (3, 'DELETE', 'ASSET'),
-    (3, 'EXPORT', 'ASSET'),
-    (3, 'CREATE', 'WORK_ORDER'),
-    (3, 'READ',   'WORK_ORDER'),
-    (3, 'UPDATE', 'WORK_ORDER'),
-    (3, 'DELETE', 'WORK_ORDER'),
-    (3, 'APPROVE','WORK_ORDER'),
-    (3, 'EXPORT', 'WORK_ORDER'),
-    (3, 'CREATE', 'DIGITAL_ASSET'),
-    (3, 'READ',   'DIGITAL_ASSET'),
-    (3, 'UPDATE', 'DIGITAL_ASSET'),
-    (3, 'DELETE', 'DIGITAL_ASSET'),
-    (3, 'APPROVE','DIGITAL_ASSET'),
-    (3, 'EXPORT', 'DIGITAL_ASSET'),
-    (3, 'CREATE', 'MAINTENANCE_PLAN'),
-    (3, 'READ',   'MAINTENANCE_PLAN'),
-    (3, 'UPDATE', 'MAINTENANCE_PLAN'),
-    (3, 'DELETE', 'MAINTENANCE_PLAN'),
-    (3, 'APPROVE','MAINTENANCE_PLAN'),
-    (3, 'CREATE', 'EMPLOYEE'),
-    (3, 'READ',   'EMPLOYEE'),
-    (3, 'UPDATE', 'EMPLOYEE'),
-    (3, 'DELETE', 'EMPLOYEE'),
-    (3, 'EXPORT', 'EMPLOYEE'),
-    (3, 'READ',   'INVENTORY'),
-    (3, 'EXPORT', 'INVENTORY');
+-- Roles_Permissions được quản lý hoàn toàn bởi migrations (011_extend_resource_types.sql).
+-- Không insert ở đây để tránh conflict với RBAC đã được thiết kế lại đúng nghiệp vụ.
 
 -- ----------------------------------------------------------
 -- Tags — Nhãn tài liệu thường dùng

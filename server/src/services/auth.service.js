@@ -10,6 +10,10 @@ import { sendMail } from '../config/mailer.js';
 import { env } from '../config/env.js';
 import { createError } from '../utils/createError.js';
 import * as employeeModel from '../models/employee.model.js';
+import * as positionModel  from '../models/position.model.js';
+
+// Cấp tối đa cho phép tự đăng ký (Level 1 = Nhân viên / Hiện trường)
+const MAX_SELF_REGISTER_LEVEL = 1;
 
 const BCRYPT_ROUNDS = 12;
 
@@ -38,6 +42,16 @@ function buildTokenPayload(emp) {
 export async function register({ fullName, username, email, phone, password, positionId, departmentId }) {
   const existing = await employeeModel.findByUsernameOrEmail(username, email);
   if (existing) throw createError('Username hoặc email đã tồn tại', 409);
+
+  // Kiểm tra chức vụ tồn tại và không vượt cấp được phép tự đăng ký
+  const position = await positionModel.findById(positionId);
+  if (!position) throw createError('Chức vụ không hợp lệ', 400);
+  if (position.level > MAX_SELF_REGISTER_LEVEL) {
+    throw createError(
+      `Chức vụ "${position.positionName}" (Cấp ${position.level}) không được phép tự đăng ký. Liên hệ quản trị viên để tạo tài khoản.`,
+      403,
+    );
+  }
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const employeeId = await employeeModel.create({

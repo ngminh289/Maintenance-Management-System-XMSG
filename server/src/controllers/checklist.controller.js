@@ -55,6 +55,9 @@ export const submitResult = asyncHandler(async (req, res) => {
   }), 201);
 });
 
+export const getResults = asyncHandler(async (req, res) =>
+  ok(res, await service.getResults(req.query)));
+
 export const getResultById = asyncHandler(async (req, res) =>
   ok(res, await service.getResultById(req.params.id)));
 

@@ -1,40 +1,71 @@
 /**
  * checklist.routes.js — /api/checklists (templates + kết quả hiện trường).
- * Luồng QR: GET /qr/:assetId → POST /results → auto-logic → WO.
- * Liên quan: controllers/checklist.controller.js.
+ * Phân quyền nghiêm ngặt theo RBAC.
+ * Templates: Kỹ thuật viên C/U; Trưởng ca APPROVE; Trưởng phòng DELETE.
+ * Results: Công nhân / Trưởng ca CREATE; mọi người READ.
  */
 import { Router } from 'express';
-import { requireAuth }  from '../middleware/auth.middleware.js';
-import { requireLevel } from '../middleware/requireRole.js';
-import { validate }     from '../middleware/validate.js';
-import { uploadPhoto }  from '../config/upload.js';
-import { templateSchema, submitChecklistSchema } from '../validators/checklist.validator.js';
+import { requireAuth }       from '../middleware/auth.middleware.js';
+import { requirePermission } from '../middleware/requirePermission.js';
+import { validate }          from '../middleware/validate.js';
+import { uploadPhoto }       from '../config/upload.js';
+import {
+  templateSchema, submitChecklistSchema,
+} from '../validators/checklist.validator.js';
 import * as ctrl from '../controllers/checklist.controller.js';
 
 export const checklistRouter = Router();
 
 checklistRouter.use(requireAuth);
 
-// Templates
-checklistRouter.get('/templates',                    ctrl.getTemplates);
-checklistRouter.get('/templates/:id',                ctrl.getTemplateById);
-checklistRouter.post('/templates', requireLevel(2),  validate(templateSchema), ctrl.createTemplate);
-checklistRouter.put('/templates/:id', requireLevel(2), ctrl.updateTemplate);
-checklistRouter.delete('/templates/:id', requireLevel(3), ctrl.removeTemplate);
+// ── Templates ──────────────────────────────────────────────────────────────
+checklistRouter.get('/templates',     ctrl.getTemplates);
+checklistRouter.get('/templates/:id', ctrl.getTemplateById);
+
+checklistRouter.post('/templates',
+  requirePermission('CHECKLIST_TEMPLATE', 'CREATE'),
+  validate(templateSchema),
+  ctrl.createTemplate,
+);
+checklistRouter.put('/templates/:id',
+  requirePermission('CHECKLIST_TEMPLATE', 'UPDATE'),
+  ctrl.updateTemplate,
+);
+checklistRouter.delete('/templates/:id',
+  requirePermission('CHECKLIST_TEMPLATE', 'DELETE'),
+  ctrl.removeTemplate,
+);
 
 // Template items (câu hỏi)
-checklistRouter.post('/templates/:templateId/items', requireLevel(2), ctrl.addItem);
-checklistRouter.put('/items/:itemId',                requireLevel(2), ctrl.updateItem);
-checklistRouter.delete('/items/:itemId',             requireLevel(2), ctrl.removeItem);
+checklistRouter.post('/templates/:templateId/items',
+  requirePermission('CHECKLIST_TEMPLATE', 'UPDATE'),
+  ctrl.addItem,
+);
+checklistRouter.put('/items/:itemId',
+  requirePermission('CHECKLIST_TEMPLATE', 'UPDATE'),
+  ctrl.updateItem,
+);
+checklistRouter.delete('/items/:itemId',
+  requirePermission('CHECKLIST_TEMPLATE', 'UPDATE'),
+  ctrl.removeItem,
+);
 
-// QR Scan — công nhân quét QR lấy thông tin tài sản + template
+// ── QR Scan & Results ──────────────────────────────────────────────────────
+// QR Scan — công nhân/KTV quét để lấy thông tin tài sản + template
 checklistRouter.get('/qr/:assetId', ctrl.getQRInfo);
 
-// Results — hỗ trợ upload ảnh minh chứng (field: "photo", tùy chọn)
+// GET danh sách kết quả checklist (tất cả user được auth đều xem được)
+checklistRouter.get('/results', ctrl.getResults);
+
+// QUAN TRỌNG: /results/asset/:assetId phải đứng TRƯỚC /results/:id
+// để Express không match 'asset' làm :id
+checklistRouter.get('/results/asset/:assetId', ctrl.getResultsByAsset);
+checklistRouter.get('/results/:id',             ctrl.getResultById);
+
+// Submit kết quả hiện trường — cần quyền CREATE CHECKLIST_RESULT
 checklistRouter.post('/results',
+  requirePermission('CHECKLIST_RESULT', 'CREATE'),
   uploadPhoto.single('photo'),
   validate(submitChecklistSchema),
   ctrl.submitResult,
 );
-checklistRouter.get('/results/:id', ctrl.getResultById);
-checklistRouter.get('/results/asset/:assetId', ctrl.getResultsByAsset);

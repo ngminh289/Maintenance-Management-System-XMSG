@@ -50,8 +50,11 @@ export async function create(data, createdBy) {
 
   const woId = await model.create({ ...data, status: 'PENDING_APPROVAL', createdBy });
 
-  // Tự động khởi động luồng phê duyệt
-  await approvalSvc.submit({ resourceType: 'WORK_ORDER', resourceId: woId, submitterId: createdBy });
+  // Smart routing: truyền source/priority để approval chọn đúng workflow
+  await approvalSvc.submit({
+    resourceType: 'WORK_ORDER', resourceId: woId, submitterId: createdBy,
+    woSource: data.woSource, woPriority: data.priority,
+  });
 
   return model.findById(woId);
 }
@@ -64,7 +67,11 @@ export async function createAutomatic({ assetId, woSource, priority, description
     description: description || `Phiếu tự động (${woSource})`,
     createdBy: createdBy || null,
   });
-  await approvalSvc.submit({ resourceType: 'WORK_ORDER', resourceId: woId, submitterId: createdBy });
+  // Smart routing theo source/priority
+  await approvalSvc.submit({
+    resourceType: 'WORK_ORDER', resourceId: woId, submitterId: createdBy,
+    woSource, woPriority: priority,
+  });
   return woId;
 }
 
@@ -96,6 +103,11 @@ export async function changeStatus(id, newStatus, { actorLevel, actualHours } = 
 
   await model.updateStatus(id, newStatus, extra);
 
+  // Khi WO hoàn thành → máy trở về AVAILABLE (Workflow sheet 3.1 bước 3)
+  if (newStatus === 'COMPLETED' && wo.assetId) {
+    await assetModel.updateStatus(wo.assetId, 'AVAILABLE');
+  }
+
   // Thông báo khi phiếu bắt đầu hoặc hoàn thành
   if (newStatus === 'IN_PROGRESS') {
     const assignments = await model.getAssignments(id);
@@ -103,6 +115,11 @@ export async function changeStatus(id, newStatus, { actorLevel, actualHours } = 
       await notifService.send(a.employeeId, `Phiếu WO #${id} đã bắt đầu. Vui lòng theo dõi.`, 'WORK_ORDER_ASSIGNED');
     }
   }
+
+  if (newStatus === 'COMPLETED' && wo.createdBy) {
+    await notifService.send(wo.createdBy, `Phiếu WO #${id} đã hoàn thành. Tài sản đã trở lại AVAILABLE.`, 'WORK_ORDER_COMPLETED');
+  }
+
   return model.findById(id);
 }
 

@@ -26,3 +26,6 @@ export const updateStatus = asyncHandler(async (req, res) =>
 
 export const generateWorkOrder = asyncHandler(async (req, res) =>
   ok(res, await service.generateWorkOrder(req.params.id, req.user.sub), 201));
+
+export const submitForApproval = asyncHandler(async (req, res) =>
+  ok(res, await service.submitForApproval(req.params.id, req.user.sub)));

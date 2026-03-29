@@ -1,10 +1,9 @@
 /**
- * api/index.js — Axios instance + interceptors (401 → redirect login).
+ * api/index.js — Axios instance + interceptors (401 → refresh → redirect login).
  * withCredentials: true để gửi httpOnly cookie.
  */
 import axios from 'axios';
 
-// Dùng proxy Vite ('/api') trong dev, VITE_API_BASE trong production
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api',
   withCredentials: true,
@@ -19,11 +18,18 @@ const processQueue = (error) => {
   failQueue = [];
 };
 
+// Các trang không cần redirect về /login khi gặp 401
+const PUBLIC_PATHS = ['/login', '/register', '/verify-email', '/forgot-password', '/reset-password'];
+const isPublicPage = () => PUBLIC_PATHS.some(p => window.location.pathname.startsWith(p));
+
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const original = err.config;
     if (err.response?.status === 401 && !original._retry) {
+      // Đang ở trang public → không refresh, không redirect
+      if (isPublicPage()) return Promise.reject(err);
+
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failQueue.push({ resolve, reject });

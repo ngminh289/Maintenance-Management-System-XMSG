@@ -5,6 +5,7 @@
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { getPool } from "./config/database.js";
+import { startScheduler } from "./scheduler.js";
 
 const app = createApp();
 
@@ -14,6 +15,7 @@ getPool()
     conn.release();
     app.listen(env.port, () => {
       console.log(`API: http://localhost:${env.port}`);
+      startScheduler();
     });
   })
   .catch((err) => {

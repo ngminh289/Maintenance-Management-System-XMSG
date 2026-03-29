@@ -15,8 +15,21 @@ import { Card }       from '../../components/ui/Card.jsx';
 import { Badge }      from '../../components/ui/Badge.jsx';
 import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { fDate }      from '../../utils/format.js';
-import { BarChart2, FileText, CheckSquare, AlertTriangle, Clock } from 'lucide-react';
+import { BarChart2, FileText, CheckSquare, AlertTriangle, Clock, Download, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+/** Chuyển array objects thành CSV blob và trigger download */
+function downloadCSV(data, filename) {
+  if (!data?.length) { toast.error('Không có dữ liệu để xuất'); return; }
+  const headers = Object.keys(data[0]);
+  const rows    = data.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','));
+  const csv     = [headers.join(','), ...rows].join('\r\n');
+  const blob    = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); // BOM cho Excel
+  const url     = URL.createObjectURL(blob);
+  const a       = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 const TABS = [
   { key: 'assets',   label: 'Tài sản & WO',      icon: BarChart2 },
@@ -85,7 +98,8 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Tabs */}
+      {/* Tabs + nút xuất */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
@@ -97,6 +111,44 @@ export function ReportsPage() {
             <Icon size={15} /> {label}
           </button>
         ))}
+      </div>
+
+      {/* Nút xuất dữ liệu */}
+      <div className="flex gap-2">
+        {tab === 'assets' && (
+          <button
+            onClick={() => downloadCSV(topFaulty.map(a => ({
+              'Tài sản':      a.assetName,
+              'Vị trí':       a.location ?? '',
+              'NG':           a.ngCount,
+              'Cảnh báo':     a.warningCount,
+              'Tổng kiểm tra': a.totalChecks,
+            })), 'bao-cao-tai-san.csv')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+          >
+            <Download size={14} /> Xuất CSV
+          </button>
+        )}
+        {tab === 'checklist' && (
+          <button
+            onClick={() => downloadCSV(clTrendFormatted.map(r => ({
+              'Ngày': r.date,
+              'OK':   r.ok,
+              'Cảnh báo': r.warning,
+              'NG':   r.ng,
+            })), 'bao-cao-checklist.csv')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+          >
+            <Download size={14} /> Xuất CSV
+          </button>
+        )}
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+        >
+          <Printer size={14} /> In
+        </button>
+      </div>
       </div>
 
       {/* ── Tab 6.1: Tài sản & Work Orders ────────────────────────────────── */}

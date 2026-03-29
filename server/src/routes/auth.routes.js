@@ -22,6 +22,7 @@ import {
   refresh,
   logout,
   getMe,
+  changePassword,
 } from '../controllers/auth.controller.js';
 
 export const authRouter = Router();
@@ -33,4 +34,5 @@ authRouter.post('/forgot-password', validate(forgotPasswordSchema),  forgotPassw
 authRouter.post('/reset-password',  validate(resetPasswordSchema),   resetPassword);
 authRouter.post('/refresh',                                          refresh);
 authRouter.post('/logout',                                           logout);
-authRouter.get('/me',               requireAuth,                     getMe);
+authRouter.get('/me',                requireAuth,                     getMe);
+authRouter.patch('/change-password', requireAuth,                     changePassword);

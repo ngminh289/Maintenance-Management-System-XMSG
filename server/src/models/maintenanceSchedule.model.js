@@ -5,23 +5,25 @@
 import { getPool } from '../config/database.js';
 
 const COLS = `
-  ms.ScheduleID      AS scheduleId,
-  ms.AssetID         AS assetId,
-  a.AssetName        AS assetName,
-  at.TypeName        AS assetTypeName,
-  ms.ScheduleName    AS scheduleName,
-  ms.MaintenanceType AS maintenanceType,
-  ms.Description     AS description,
-  ms.FrequencyValue  AS frequencyValue,
-  ms.FrequencyUnit   AS frequencyUnit,
-  ms.StartDate       AS startDate,
-  ms.EndDate         AS endDate,
-  ms.EstimatedTime   AS estimatedTime,
-  ms.Priority        AS priority,
-  ms.Status          AS status,
-  ms.DigitalAssetID  AS digitalAssetId,
-  ms.CreatedBy       AS createdBy,
-  ms.CreatedAt       AS createdAt`;
+  ms.ScheduleID        AS scheduleId,
+  ms.AssetID           AS assetId,
+  a.AssetName          AS assetName,
+  at.TypeName          AS assetTypeName,
+  ms.ScheduleName      AS scheduleName,
+  ms.MaintenanceType   AS maintenanceType,
+  ms.Description       AS description,
+  ms.FrequencyValue    AS frequencyValue,
+  ms.FrequencyUnit     AS frequencyUnit,
+  ms.StartDate         AS startDate,
+  ms.NextDueDate       AS nextDueDate,
+  ms.LastExecutedDate  AS lastExecutedDate,
+  ms.EndDate           AS endDate,
+  ms.EstimatedTime     AS estimatedTime,
+  ms.Priority          AS priority,
+  ms.Status            AS status,
+  ms.DigitalAssetID    AS digitalAssetId,
+  ms.CreatedBy         AS createdBy,
+  ms.CreatedAt         AS createdAt`;
 
 const BASE_JOIN = `
   FROM MaintenanceSchedules ms
@@ -74,18 +76,43 @@ export async function findHourlyByAsset(assetId) {
 }
 
 export async function create(data) {
-  const { assetId, scheduleName, maintenanceType, description, frequencyValue, frequencyUnit, startDate, endDate, estimatedTime, priority, digitalAssetId, createdBy } = data;
+  const { assetId, scheduleName, maintenanceType, description, frequencyValue, frequencyUnit, startDate, nextDueDate, endDate, estimatedTime, priority, digitalAssetId, createdBy, status } = data;
   const [result] = await getPool().query(
     `INSERT INTO MaintenanceSchedules
-     (AssetID, ScheduleName, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, EndDate, EstimatedTime, Priority, DigitalAssetID, CreatedBy)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [assetId, scheduleName || '', maintenanceType, description, frequencyValue || null, frequencyUnit || 'HOURS', startDate, endDate || null, estimatedTime || null, priority || 'MEDIUM', digitalAssetId || null, createdBy || null],
+     (AssetID, ScheduleName, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, NextDueDate, EndDate, EstimatedTime, Priority, DigitalAssetID, CreatedBy, Status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [assetId, scheduleName || '', maintenanceType, description, frequencyValue || null, frequencyUnit || 'HOURS', startDate, nextDueDate ?? null, endDate || null, estimatedTime || null, priority || 'MEDIUM', digitalAssetId || null, createdBy || null, status || 'DRAFT'],
   );
   return result.insertId;
 }
 
+/** Cập nhật sau khi bảo trì: lưu LastExecutedDate và NextDueDate mới */
+export async function setExecuted(id, lastExecutedDate, nextDueDate) {
+  await getPool().query(
+    'UPDATE MaintenanceSchedules SET LastExecutedDate = ?, NextDueDate = ?, Status = ? WHERE ScheduleID = ?',
+    [lastExecutedDate, nextDueDate, 'PENDING', id],
+  );
+}
+
+/** Lấy tất cả lịch theo DAYS/WEEKS/MONTHS còn hoạt động (để check cảnh báo) */
+export async function findActiveCalendarSchedules() {
+  const [rows] = await getPool().query(
+    `SELECT ms.ScheduleID AS scheduleId, ms.AssetID AS assetId, a.AssetName AS assetName,
+            ms.ScheduleName AS scheduleName, ms.FrequencyValue AS frequencyValue,
+            ms.FrequencyUnit AS frequencyUnit, ms.NextDueDate AS nextDueDate,
+            ms.Priority AS priority, ms.Status AS status
+     FROM MaintenanceSchedules ms
+     JOIN Assets a ON a.AssetID = ms.AssetID
+     WHERE ms.FrequencyUnit IN ('DAYS','WEEKS','MONTHS','YEARS')
+       AND (ms.EndDate IS NULL OR ms.EndDate >= CURDATE())
+       AND ms.Status NOT IN ('COMPLETED', 'DRAFT', 'CANCELLED')
+     ORDER BY ms.NextDueDate ASC`,
+  );
+  return rows;
+}
+
 export async function update(id, data) {
-  const map = { scheduleName: 'ScheduleName', description: 'Description', frequencyValue: 'FrequencyValue', frequencyUnit: 'FrequencyUnit', startDate: 'StartDate', endDate: 'EndDate', estimatedTime: 'EstimatedTime', priority: 'Priority', status: 'Status' };
+  const map = { scheduleName: 'ScheduleName', description: 'Description', frequencyValue: 'FrequencyValue', frequencyUnit: 'FrequencyUnit', startDate: 'StartDate', nextDueDate: 'NextDueDate', lastExecutedDate: 'LastExecutedDate', endDate: 'EndDate', estimatedTime: 'EstimatedTime', priority: 'Priority', status: 'Status' };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {

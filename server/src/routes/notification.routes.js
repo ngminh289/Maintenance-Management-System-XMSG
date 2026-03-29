@@ -1,5 +1,7 @@
 /**
  * notification.routes.js — /api/notifications (in-app notification).
+ * QUAN TRỌNG: các route cụ thể (/unread-count, /read-all) phải đứng TRƯỚC /:id
+ * để Express không match nhầm.
  * Liên quan: controllers/notification.controller.js.
  */
 import { Router } from 'express';
@@ -10,6 +12,7 @@ export const notificationRouter = Router();
 
 notificationRouter.use(requireAuth);
 
-notificationRouter.get('/',              ctrl.getMyNotifications);
-notificationRouter.patch('/:id/read',    ctrl.markRead);
-notificationRouter.patch('/read-all',    ctrl.markAllRead);
+notificationRouter.get('/',               ctrl.getMyNotifications);
+notificationRouter.get('/unread-count',   ctrl.getUnreadCount);    // Phải trước /:id
+notificationRouter.patch('/read-all',     ctrl.markAllRead);        // Phải trước /:id/read
+notificationRouter.patch('/:id/read',     ctrl.markRead);

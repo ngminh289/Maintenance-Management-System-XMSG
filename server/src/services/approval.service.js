@@ -1,6 +1,9 @@
 /**
  * approval.service.js — Luồng phê duyệt đa cấp (WorkOrder, DigitalAsset, MaintenancePlan).
  * luongpheduyet.rule: PENDING_APPROVAL → cấp duyệt → APPROVED/REJECTED.
+ * WO Routing (Workflow sheet 2.2):
+ *   - Source SCHEDULE / Priority LOW|MEDIUM → Workflow thông thường (Trưởng ca → Trưởng phòng)
+ *   - Source PREDICTIVE|CORRECTIVE / Priority HIGH|EMERGENCY → Workflow khẩn cấp (Trưởng phòng)
  * Liên quan: models/approvalLog.model.js, services/notification.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -28,9 +31,6 @@ async function updateResourceStatus(resourceType, resourceId, status) {
 async function notifyApproversForStep(workflowId, level, message) {
   const step = await model.getWorkflowStep(workflowId, level);
   if (!step) return;
-  const approvers = await employeeModel.findAllByLevel(1);
-  const filtered = [];
-  // Lấy employees có đúng positionId của step
   const [rows] = await getPool().query(
     'SELECT EmployeeID AS employeeId FROM Employees WHERE PositionID = ? AND IsActive = TRUE',
     [step.positionId],
@@ -40,11 +40,46 @@ async function notifyApproversForStep(workflowId, level, message) {
   }
 }
 
+/**
+ * Chọn WorkflowID phù hợp cho WorkOrder dựa trên source và priority.
+ * - SCHEDULE / LOW|MEDIUM → workflow thông thường (Trưởng ca → Trưởng phòng)
+ * - PREDICTIVE | CORRECTIVE / HIGH|EMERGENCY → workflow khẩn cấp (Trưởng phòng)
+ */
+async function getWorkflowForWO(woSource, priority) {
+  const isUrgent = ['PREDICTIVE', 'CORRECTIVE'].includes(woSource)
+    || ['HIGH', 'EMERGENCY'].includes(priority);
+
+  const workflowName = isUrgent
+    ? 'Phê duyệt WO khẩn cấp'
+    : 'Phê duyệt Work Order thông thường';
+
+  const [rows] = await getPool().query(
+    'SELECT WorkflowID AS workflowId, TotalLevels AS totalLevels FROM WorkflowTemplates WHERE WorkflowName = ? AND DocumentType = ? LIMIT 1',
+    [workflowName, 'WORK_ORDER'],
+  );
+
+  // Fallback: lấy workflow WORK_ORDER đầu tiên
+  if (!rows[0]) {
+    return model.getDefaultWorkflow('WORK_ORDER');
+  }
+  return rows[0];
+}
+
 /** Gửi tài nguyên vào luồng phê duyệt — tạo ApprovalLog cấp 1 */
-export async function submit({ resourceType, resourceId, submitterId, workflowId: wfId }) {
-  const wf = wfId
-    ? await getPool().query('SELECT WorkflowID AS workflowId, TotalLevels AS totalLevels FROM WorkflowTemplates WHERE WorkflowID = ?', [wfId]).then(([r]) => r[0])
-    : await model.getDefaultWorkflow(resourceType);
+export async function submit({ resourceType, resourceId, submitterId, workflowId: wfId, woSource, woPriority }) {
+  let wf;
+  if (wfId) {
+    const [rows] = await getPool().query(
+      'SELECT WorkflowID AS workflowId, TotalLevels AS totalLevels FROM WorkflowTemplates WHERE WorkflowID = ?',
+      [wfId],
+    );
+    wf = rows[0];
+  } else if (resourceType === 'WORK_ORDER' && (woSource || woPriority)) {
+    // Smart routing theo source/priority của WO
+    wf = await getWorkflowForWO(woSource, woPriority);
+  } else {
+    wf = await model.getDefaultWorkflow(resourceType);
+  }
 
   if (!wf) throw createError(`Không tìm thấy workflow cho ${resourceType}`, 404);
 
@@ -56,7 +91,6 @@ export async function submit({ resourceType, resourceId, submitterId, workflowId
     status: 'PENDING',
   });
 
-  // Notify approvers ở cấp 1
   await notifyApproversForStep(wf.workflowId, 1, `Có yêu cầu phê duyệt mới (${resourceType} #${resourceId})`);
   return logId;
 }
@@ -94,6 +128,22 @@ export async function approve({ logId, approverId, comment }) {
 
   // Cấp cuối cùng → cập nhật resource
   await updateResourceStatus(log.resourceType, log.resourceId, STATUS_MAP[log.resourceType]?.approved);
+
+  // Khi WO CORRECTIVE được duyệt hoàn tất → máy chuyển sang MAINTENANCE (đang sửa chữa)
+  // Khi WO hoàn thành (changeStatus COMPLETED) → asset sẽ chuyển về AVAILABLE
+  if (log.resourceType === 'WORK_ORDER') {
+    const [woRows] = await getPool().query(
+      'SELECT AssetID AS assetId, WO_Source AS woSource FROM WorkOrders WHERE WO_ID = ?',
+      [log.resourceId],
+    );
+    const wo = woRows[0];
+    if (wo?.assetId && wo.woSource === 'CORRECTIVE') {
+      await getPool().query(
+        "UPDATE Assets SET Status = 'MAINTENANCE' WHERE AssetID = ?",
+        [wo.assetId],
+      );
+    }
+  }
 
   // Thông báo người gửi
   if (log.submittedBy) {

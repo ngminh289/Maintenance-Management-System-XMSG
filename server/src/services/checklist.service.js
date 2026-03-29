@@ -1,9 +1,11 @@
 /**
  * checklist.service.js — Luồng kiểm tra hiện trường: submit + auto-logic (NG/WARNING/OK).
- * luongxulykiemtra.rule:
- *   OK      → Asset AVAILABLE,  WO COMPLETED
- *   WARNING → Asset CAUTION,    tạo WO PREDICTIVE PENDING_APPROVAL  (máy vẫn chạy, cần theo dõi)
- *   NG      → Asset BROKEN,     tạo WO CORRECTIVE EMERGENCY PENDING_APPROVAL (máy ngừng hoạt động)
+ * Workflow sheet bước 3 (Quy trình kiểm tra Checklist):
+ *   OK      → Asset AVAILABLE,  WO COMPLETED (nếu có)
+ *   WARNING → Asset MONITORING, tạo WO PREDICTIVE HIGH (theo dõi thêm, sắp xếp bảo trì)
+ *   NG      → Asset BROKEN,     tạo WO CORRECTIVE EMERGENCY (sửa chữa khẩn cấp)
+ *             → sau khi WO được duyệt: Asset MAINTENANCE
+ *             → sau khi WO COMPLETED: Asset AVAILABLE
  * Liên quan: services/workOrder.service.js, services/assetCounter.service.js,
  *            services/notification.service.js, models/checklistResult.model.js.
  */
@@ -144,8 +146,8 @@ export async function submitResult({ assetId, woId, readingValue, overallStatus,
     if (woId) await workOrderModel.updateStatus(woId, 'COMPLETED', { actualDate: new Date().toISOString().split('T')[0] });
 
   } else if (overallStatus === 'WARNING') {
-    // luongxulykiemtra.rule: Máy vẫn chạy nhưng có dấu hiệu bất thường → CAUTION
-    await assetModel.updateStatus(assetId, 'CAUTION');
+    // Workflow sheet 3 bước 2.2: CẢNH BÁO — máy vẫn chạy nhưng bất thường → MONITORING
+    await assetModel.updateStatus(assetId, 'MONITORING');
     newWorkOrderId = await workOrderSvc.createAutomatic({
       assetId, woSource: 'PREDICTIVE', priority: 'HIGH',
       description: `[CẢNH BÁO] Checklist #${checklistId}: ${asset.assetName} có dấu hiệu bất thường`,
@@ -177,6 +179,34 @@ export async function getResultById(id) {
   const r = await resultModel.findById(id);
   if (!r) throw createError('Không tìm thấy kết quả checklist', 404);
   return r;
+}
+
+export async function getResults({ page = 1, limit = 20, checkerId, assetId } = {}) {
+  const offset = (page - 1) * limit;
+  const { getPool } = await import('../config/database.js');
+  const conditions = [];
+  const params = [];
+  if (checkerId) { conditions.push('cr.CheckerID = ?'); params.push(checkerId); }
+  if (assetId)   { conditions.push('cr.AssetID = ?');   params.push(assetId); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const [[{ total }]] = await getPool().query(
+    `SELECT COUNT(*) AS total FROM ChecklistResults cr ${where}`, params
+  );
+  const [rows] = await getPool().query(
+    `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId,
+            a.AssetName AS assetName, cr.OverallStatus AS overallStatus,
+            cr.CheckTime AS checkTime, cr.Notes AS notes,
+            e.FullName AS checkerName
+     FROM ChecklistResults cr
+     LEFT JOIN Assets a    ON a.AssetID   = cr.AssetID
+     LEFT JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     ${where}
+     ORDER BY cr.CheckTime DESC
+     LIMIT ? OFFSET ?`,
+    [...params, Number(limit), Number(offset)]
+  );
+  return { items: rows, total, page: Number(page), limit: Number(limit) };
 }
 
 export async function getResultsByAsset(assetId, limit = 20) {

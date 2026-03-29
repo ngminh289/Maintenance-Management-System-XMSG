@@ -226,6 +226,8 @@ CREATE TABLE IF NOT EXISTS MaintenanceSchedules (
     FrequencyValue  INT,
     FrequencyUnit   ENUM('HOURS','DAYS','WEEKS','MONTHS','YEARS') NOT NULL DEFAULT 'HOURS',
     StartDate       DATE         NOT NULL,
+    NextDueDate     DATE,
+    LastExecutedDate DATE,
     EndDate         DATE,
     EstimatedTime   INT,
     Priority        ENUM('LOW','MEDIUM','HIGH','URGENT') NOT NULL DEFAULT 'MEDIUM',
@@ -405,7 +407,11 @@ CREATE TABLE IF NOT EXISTS Roles_Permissions (
     PermissionID   INT AUTO_INCREMENT PRIMARY KEY,
     PositionID     INT NOT NULL,
     PermissionName ENUM('CREATE','READ','UPDATE','DELETE','APPROVE','EXPORT') NOT NULL,
-    ResourceType   ENUM('ASSET','DIGITAL_ASSET','WORK_ORDER','MAINTENANCE_PLAN','EMPLOYEE','INVENTORY') NOT NULL,
+    ResourceType   ENUM(
+        'ASSET','DIGITAL_ASSET','WORK_ORDER','MAINTENANCE_PLAN',
+        'CHECKLIST_TEMPLATE','CHECKLIST_RESULT','RUNTIME_LOG',
+        'EMPLOYEE','TAG','WORKFLOW','REPORT','INVENTORY'
+    ) NOT NULL,
     UNIQUE KEY uq_perm (PositionID, PermissionName, ResourceType),
     FOREIGN KEY (PositionID) REFERENCES Positions(PositionID) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

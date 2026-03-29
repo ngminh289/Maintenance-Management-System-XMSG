@@ -14,7 +14,7 @@ import { Input, Select } from '../../components/ui/Input.jsx';
 import { Pagination }  from '../../components/ui/Pagination.jsx';
 import { EmptyState }  from '../../components/ui/EmptyState.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
-import { FileText, Upload, Send, ExternalLink, History, RefreshCw } from 'lucide-react';
+import { FileText, Upload, Send, ExternalLink, History, RefreshCw, Tag } from 'lucide-react';
 import { fDateTime, fDate } from '../../utils/format.js';
 import toast from 'react-hot-toast';
 
@@ -27,6 +27,7 @@ const fileUrl = (filePath) => `${FILE_BASE}/uploads/documents/${filePath?.split(
 export function DocumentsPage() {
   const [docs,       setDocs]       = useState([]);
   const [assets,     setAssets]     = useState([]);
+  const [tags,       setTags]       = useState([]);
   const [total,      setTotal]      = useState(0);
   const [loading,    setLoading]    = useState(true);
   const [page,       setPage]       = useState(1);
@@ -34,7 +35,7 @@ export function DocumentsPage() {
   // Upload new doc
   const [uploadOpen, setUploadOpen] = useState(false);
   const [file,       setFile]       = useState(null);
-  const [meta,       setMeta]       = useState({ description: '', assetId: '' });
+  const [meta,       setMeta]       = useState({ description: '', assetId: '', tagIds: [] });
   const [uploading,  setUploading]  = useState(false);
 
   // Version history
@@ -61,6 +62,7 @@ export function DocumentsPage() {
   useEffect(() => {
     load();
     assetApi.getAll({ limit: 200 }).then(r => setAssets(r.data.data?.items ?? [])).catch(() => {});
+    api.get('/tags').then(r => setTags(r.data.data?.items ?? r.data.data ?? [])).catch(() => {});
   }, [load]);
 
   const handleUpload = async (e) => {
@@ -69,14 +71,15 @@ export function DocumentsPage() {
     setUploading(true);
     const fd = new FormData();
     fd.append('file', file);
-    if (meta.description) fd.append('description', meta.description);
-    if (meta.assetId)     fd.append('assetId', meta.assetId);
+    if (meta.description)       fd.append('description', meta.description);
+    if (meta.assetId)           fd.append('assetId', meta.assetId);
+    if (meta.tagIds?.length)    fd.append('tagIds', JSON.stringify(meta.tagIds));
     try {
       await api.post('/digital-assets', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Đã upload tài liệu');
       setUploadOpen(false);
       setFile(null);
-      setMeta({ description: '', assetId: '' });
+      setMeta({ description: '', assetId: '', tagIds: [] });
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'Lỗi upload');
@@ -224,6 +227,39 @@ export function DocumentsPage() {
             {assets.map(a => <option key={a.assetId} value={a.assetId}>{a.assetName}</option>)}
           </Select>
           <Input label="Mô tả" value={meta.description} onChange={e => setMeta(p => ({ ...p, description: e.target.value }))} placeholder="VD: Bản vẽ kỹ thuật lò nung #1" />
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div>
+              <label className="text-sm font-semibold text-gray-700 block mb-2 flex items-center gap-1.5">
+                <Tag size={13} /> Gắn thẻ (tags)
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {tags.map(t => {
+                  const sel = meta.tagIds.includes(t.tagId);
+                  return (
+                    <button
+                      key={t.tagId}
+                      type="button"
+                      onClick={() => setMeta(p => ({
+                        ...p,
+                        tagIds: sel ? p.tagIds.filter(x => x !== t.tagId) : [...p.tagIds, t.tagId],
+                      }))}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                        sel
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                      }`}
+                    >
+                      #{t.tagName}
+                    </button>
+                  );
+                })}
+              </div>
+              {meta.tagIds.length > 0 && (
+                <p className="text-xs text-blue-600 mt-1.5">{meta.tagIds.length} thẻ đã chọn</p>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={() => setUploadOpen(false)}>Hủy</Button>
             <Button type="submit" loading={uploading}><Upload size={14} /> Upload</Button>

@@ -8,7 +8,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ok, fail } from '../utils/response.js';
 import { setTokenCookies, clearTokenCookies, REFRESH_COOKIE } from '../utils/cookie.js';
 import { logAction } from '../utils/audit.js';
-import * as authService from '../services/auth.service.js';
+import * as authService     from '../services/auth.service.js';
+import * as employeeService from '../services/employee.service.js';
 
 export const register = asyncHandler(async (req, res) => {
   const data = await authService.register(req.body);
@@ -64,6 +65,13 @@ export const logout = asyncHandler(async (req, res) => {
 export const getMe = asyncHandler(async (req, res) => {
   const data = await authService.getMe(req.user.sub);
   return ok(res, data);
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) throw Object.assign(new Error('Thiếu thông tin mật khẩu'), { status: 400 });
+  await employeeService.changePassword(req.user.sub, { currentPassword, newPassword });
+  return ok(res, { message: 'Đổi mật khẩu thành công.' });
 });
 
 // Giữ để không break routes cũ (đã thay thế hết)

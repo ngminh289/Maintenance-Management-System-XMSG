@@ -98,9 +98,9 @@ async function run() {
     if (existing.length > 0) {
       warn(`Tài khoản '${ADMIN_USERNAME}' đã tồn tại — bỏ qua.`);
     } else {
-      // Lấy PositionID cấp 3 và DepartmentID đầu tiên
+      // Lấy PositionID Quản trị viên (Level 4) và DepartmentID đầu tiên
       const [[posRow]] = await conn.query(
-        `SELECT PositionID FROM ${DB_NAME}.Positions WHERE Level = 3 LIMIT 1`,
+        `SELECT PositionID FROM ${DB_NAME}.Positions WHERE Level = 4 LIMIT 1`,
       );
       const [[deptRow]] = await conn.query(
         `SELECT DepartmentID FROM ${DB_NAME}.Departments LIMIT 1`,

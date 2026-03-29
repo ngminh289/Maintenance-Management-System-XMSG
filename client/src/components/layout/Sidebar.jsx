@@ -1,48 +1,59 @@
 /**
- * Sidebar.jsx — Dark sidebar dễ đọc, phân nhóm menu rõ ràng.
+ * Sidebar.jsx — Dark sidebar, lọc menu theo role người dùng.
+ * Dùng canAccess() từ utils/rbac.js để chỉ hiện item có quyền.
  */
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
-  CheckSquare, Users, Settings, ShieldCheck, ChevronRight,
+  CheckSquare, Users, ShieldCheck, ChevronRight,
   Factory, BarChart2,
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext.jsx';
+import { useAuth }     from '../../contexts/AuthContext.jsx';
+import { canAccess, getRoleKey } from '../../utils/rbac.js';
 
-const MENU = [
+// roleKey → badge label hiển thị cạnh tên (5 roles mới)
+const ROLE_BADGE = {
+  admin:    { label: 'Admin',    color: 'bg-red-500' },
+  bGD:      { label: 'Ban GĐ',  color: 'bg-purple-500' },
+  truongCa: { label: 'Trưởng ca', color: 'bg-blue-500' },
+  kyThuat:  { label: 'KT',      color: 'bg-teal-500' },
+  congNhan: { label: 'CN',      color: 'bg-gray-500' },
+};
+
+// Định nghĩa menu — routeKey phải khớp với key trong ROUTE_ACCESS (rbac.js)
+const MENU_GROUPS = [
   {
     label: 'Tổng quan',
     items: [
-      { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/', routeKey: null, icon: LayoutDashboard, label: 'Dashboard' },
     ],
   },
   {
     label: 'Vận hành',
     items: [
-      { to: '/assets',      icon: Cpu,           label: 'Tài sản thiết bị' },
-      { to: '/schedules',   icon: ClipboardList, label: 'Lịch bảo trì' },
-      { to: '/work-orders', icon: Wrench,        label: 'Phiếu việc' },
-      { to: '/checklists',  icon: CheckSquare,   label: 'Checklist / QR' },
+      { to: '/assets',      routeKey: 'assets',      icon: Cpu,           label: 'Tài sản thiết bị' },
+      { to: '/schedules',   routeKey: 'schedules',   icon: ClipboardList, label: 'Lịch bảo trì' },
+      { to: '/work-orders', routeKey: 'work-orders', icon: Wrench,        label: 'Phiếu việc' },
+      { to: '/checklists',  routeKey: 'checklists',  icon: CheckSquare,   label: 'Checklist / QR' },
     ],
   },
   {
     label: 'Tài liệu & Phê duyệt',
     items: [
-      { to: '/documents',   icon: FileText,     label: 'Kho tài liệu số' },
-      { to: '/approvals',   icon: ShieldCheck,  label: 'Phê duyệt' },
+      { to: '/documents',   routeKey: 'documents',   icon: FileText,    label: 'Kho tài liệu số' },
+      { to: '/approvals',   routeKey: 'approvals',   icon: ShieldCheck, label: 'Phê duyệt' },
     ],
   },
   {
     label: 'Báo cáo',
     items: [
-      { to: '/reports',     icon: BarChart2,    label: 'Thống kê & Báo cáo' },
+      { to: '/reports',     routeKey: 'reports',     icon: BarChart2,   label: 'Thống kê & Báo cáo' },
     ],
   },
   {
     label: 'Quản trị',
     items: [
-      { to: '/employees',   icon: Users,        label: 'Nhân sự' },
-      { to: '/settings',    icon: Settings,     label: 'Cài đặt hệ thống' },
+      { to: '/employees',   routeKey: 'employees',   icon: Users,       label: 'Nhân sự' },
     ],
   },
 ];
@@ -66,6 +77,17 @@ function NavItem({ to, icon: Icon, label }) {
 
 export function Sidebar({ open, onClose }) {
   const { user } = useAuth();
+  const roleKey  = getRoleKey(user);
+  const badge    = roleKey ? ROLE_BADGE[roleKey] : null;
+
+  // Lọc menu: chỉ giữ group có ít nhất 1 item user được xem
+  const visibleGroups = MENU_GROUPS.map(group => ({
+    ...group,
+    items: group.items.filter(item =>
+      item.routeKey === null || canAccess(user, item.routeKey)
+    ),
+  })).filter(g => g.items.length > 0);
+
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={onClose} />}
@@ -88,8 +110,8 @@ export function Sidebar({ open, onClose }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-          {MENU.map((group) => (
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+          {visibleGroups.map((group) => (
             <div key={group.label}>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">
                 {group.label}
@@ -103,7 +125,7 @@ export function Sidebar({ open, onClose }) {
           ))}
         </nav>
 
-        {/* User */}
+        {/* User info */}
         {user && (
           <div className="px-3 py-4 border-t border-slate-700/60">
             <NavLink
@@ -115,7 +137,14 @@ export function Sidebar({ open, onClose }) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-white truncate">{user.fullName}</p>
-                <p className="text-xs text-slate-400 truncate">{user.positionName}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {badge && (
+                    <span className={`text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md ${badge.color}`}>
+                      {badge.label}
+                    </span>
+                  )}
+                  <p className="text-xs text-slate-400 truncate">{user.positionName}</p>
+                </div>
               </div>
               <ChevronRight size={14} className="text-slate-500 flex-shrink-0" />
             </NavLink>
