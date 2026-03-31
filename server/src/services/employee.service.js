@@ -40,9 +40,10 @@ export async function create({ fullName, username, email, phone, password, posit
   const id = await model.create({
     fullName, username, passwordHash, email,
     phone: phone || null, positionId, departmentId,
+    emailVerified: true,
+    isActive: true,
+    wasEverActivated: true,
   });
-  // Admin tạo: tự động xác thực email
-  await model.setEmailVerified(id);
   return model.findById(id);
 }
 

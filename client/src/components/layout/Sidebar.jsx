@@ -6,18 +6,19 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, Users, ShieldCheck, ChevronRight,
-  Factory, BarChart2,
+  Factory, BarChart2, GitBranch,
 } from 'lucide-react';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
 import { canAccess, getRoleKey } from '../../utils/rbac.js';
 
-// roleKey → badge label hiển thị cạnh tên (5 roles mới)
+// roleKey → badge label hiển thị cạnh tên (TC / Trưởng phòng tách PositionID — rbac.js)
 const ROLE_BADGE = {
-  admin:    { label: 'Admin',    color: 'bg-red-500' },
-  bGD:      { label: 'Ban GĐ',  color: 'bg-purple-500' },
-  truongCa: { label: 'Trưởng ca', color: 'bg-blue-500' },
-  kyThuat:  { label: 'KT',      color: 'bg-teal-500' },
-  congNhan: { label: 'CN',      color: 'bg-gray-500' },
+  admin:       { label: 'Admin',         color: 'bg-red-500' },
+  bGD:         { label: 'Ban GĐ',        color: 'bg-purple-500' },
+  truongCa:    { label: 'Trưởng ca',     color: 'bg-blue-500' },
+  truongPhong: { label: 'Trưởng phòng', color: 'bg-indigo-500' },
+  kyThuat:     { label: 'KT',            color: 'bg-teal-500' },
+  congNhan:    { label: 'CN',            color: 'bg-gray-500' },
 };
 
 // Định nghĩa menu — routeKey phải khớp với key trong ROUTE_ACCESS (rbac.js)
@@ -54,6 +55,7 @@ const MENU_GROUPS = [
     label: 'Quản trị',
     items: [
       { to: '/employees',   routeKey: 'employees',   icon: Users,       label: 'Nhân sự' },
+      { to: '/workflows',   routeKey: 'workflows',   icon: GitBranch,   label: 'Luồng phê duyệt' },
     ],
   },
 ];

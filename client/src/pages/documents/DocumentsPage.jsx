@@ -1,11 +1,11 @@
 /**
  * DocumentsPage.jsx — Kho tài liệu số: danh sách, upload, gửi phê duyệt, lịch sử phiên bản.
  * project.rule Phân hệ 3: Upload, phân loại (tag), liên kết tài sản, kiểm soát phiên bản.
- * Liên quan: api/index.js, api/approval.api.js, api/asset.api.js.
+ * RBAC: DOCUMENT:CREATE (upload); DOCUMENT:SUBMIT (gửi duyệt — 4.1); DOCUMENT:UPDATE (phiên bản).
+ * Liên quan: api/index.js, api/asset.api.js, utils/rbac.js.
  */
 import { useEffect, useState, useCallback } from 'react';
 import { api }         from '../../api/index.js';
-import { approvalApi } from '../../api/approval.api.js';
 import { assetApi }    from '../../api/asset.api.js';
 import { Badge }       from '../../components/ui/Badge.jsx';
 import { Button }      from '../../components/ui/Button.jsx';
@@ -16,6 +16,8 @@ import { EmptyState }  from '../../components/ui/EmptyState.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
 import { FileText, Upload, Send, ExternalLink, History, RefreshCw, Tag } from 'lucide-react';
 import { fDateTime, fDate } from '../../utils/format.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 const DA_STATUS_COLOR = { DRAFT: 'gray', PENDING: 'yellow', APPROVED: 'green', REJECTED: 'red', ARCHIVED: 'gray' };
@@ -25,6 +27,10 @@ const FILE_BASE = import.meta.env.VITE_API_BASE?.replace('/api', '') || 'http://
 const fileUrl = (filePath) => `${FILE_BASE}/uploads/documents/${filePath?.split('/').pop() ?? ''}`;
 
 export function DocumentsPage() {
+  const { user } = useAuth();
+  const canUpload = canDo(user, 'DOCUMENT:CREATE');
+  const canSubmitDoc = canDo(user, 'DOCUMENT:SUBMIT');
+  const canNewVersion = canDo(user, 'DOCUMENT:UPDATE');
   const [docs,       setDocs]       = useState([]);
   const [assets,     setAssets]     = useState([]);
   const [tags,       setTags]       = useState([]);
@@ -88,7 +94,7 @@ export function DocumentsPage() {
 
   const handleSubmitApproval = async (docId) => {
     try {
-      await approvalApi.submit({ resourceId: docId, resourceType: 'DIGITAL_ASSET' });
+      await api.post(`/digital-assets/${docId}/submit`, {});
       toast.success('Đã gửi yêu cầu phê duyệt');
       load();
     } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi gửi phê duyệt'); }
@@ -130,11 +136,13 @@ export function DocumentsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end">
-        <Button onClick={() => setUploadOpen(true)}>
-          <Upload size={15} /> Upload tài liệu
-        </Button>
-      </div>
+      {canUpload && (
+        <div className="flex justify-end">
+          <Button onClick={() => setUploadOpen(true)}>
+            <Upload size={15} /> Upload tài liệu
+          </Button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {loading ? <PageLoader />
@@ -179,9 +187,10 @@ export function DocumentsPage() {
                             >
                               <History size={14} />
                             </button>
-                            {/* Gửi phê duyệt */}
-                            {doc.status === 'DRAFT' && (
+                            {/* Gửi phê duyệt — DOCUMENT:SUBMIT (BFD 4.1) */}
+                            {canSubmitDoc && doc.status === 'DRAFT' && (
                               <button
+                                type="button"
                                 onClick={() => handleSubmitApproval(doc.digitalAssetId)}
                                 className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition-colors" title="Gửi phê duyệt"
                               >
@@ -315,37 +324,38 @@ export function DocumentsPage() {
             )}
           </div>
 
-          {/* Upload phiên bản mới */}
-          <div className="border-t border-gray-200 pt-4">
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <RefreshCw size={14} /> Upload phiên bản mới
-            </h4>
-            <form onSubmit={handleUploadVersion} className="space-y-3">
-              <div>
-                <label className="text-sm font-semibold text-gray-700 block mb-1">File mới *</label>
-                <input
-                  type="file"
-                  onChange={e => setNewVerFile(e.target.files[0] ?? null)}
-                  className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-600 file:font-medium hover:file:bg-blue-100"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.dwg,.zip"
+          {canNewVersion && (
+            <div className="border-t border-gray-200 pt-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <RefreshCw size={14} /> Upload phiên bản mới
+              </h4>
+              <form onSubmit={handleUploadVersion} className="space-y-3">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 block mb-1">File mới *</label>
+                  <input
+                    type="file"
+                    onChange={e => setNewVerFile(e.target.files[0] ?? null)}
+                    className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-600 file:font-medium hover:file:bg-blue-100"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.dwg,.zip"
+                  />
+                </div>
+                <Input
+                  label="Ghi chú thay đổi"
+                  value={changeNote}
+                  onChange={e => setChangeNote(e.target.value)}
+                  placeholder="VD: Cập nhật theo tiêu chuẩn mới ISO 2024"
                 />
-              </div>
-              <Input
-                label="Ghi chú thay đổi"
-                value={changeNote}
-                onChange={e => setChangeNote(e.target.value)}
-                placeholder="VD: Cập nhật theo tiêu chuẩn mới ISO 2024"
-              />
-              <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5">
-                Sau khi upload, tài liệu sẽ về trạng thái <strong>DRAFT</strong> và cần gửi phê duyệt lại.
-              </p>
-              <div className="flex justify-end">
-                <Button type="submit" loading={verUploading} size="sm">
-                  <Upload size={13} /> Upload v{(verDoc?.currentVersion ?? 0) + 1}
-                </Button>
-              </div>
-            </form>
-          </div>
+                <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5">
+                  Sau khi upload, tài liệu sẽ về trạng thái <strong>DRAFT</strong> và cần gửi phê duyệt lại.
+                </p>
+                <div className="flex justify-end">
+                  <Button type="submit" loading={verUploading} size="sm">
+                    <Upload size={13} /> Upload v{(verDoc?.currentVersion ?? 0) + 1}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

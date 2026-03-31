@@ -8,24 +8,23 @@ import { authApi }   from '../api/auth.api.js';
 import { Button }    from '../components/ui/Button.jsx';
 import { Input }     from '../components/ui/Input.jsx';
 import { Badge }     from '../components/ui/Badge.jsx';
-import { getRoleKey } from '../utils/rbac.js';
+import { getRoleKey, ROLE_LABELS, ROLE_COLORS } from '../utils/rbac.js';
 import toast from 'react-hot-toast';
 import { User, Lock, Mail, Phone, Building2, Briefcase, ShieldCheck } from 'lucide-react';
 
-const ROLE_BADGE_MAP = {
-  admin:      { label: 'Admin',        color: 'red'    },
-  director:   { label: 'Ban GĐ',       color: 'purple' },
-  manager:    { label: 'Trưởng phòng', color: 'blue'   },
-  supervisor: { label: 'Trưởng ca',    color: 'blue'   },
-  cvkts:      { label: 'CVKTS',        color: 'green'  },
-  ktv:        { label: 'KTV',          color: 'green'  },
-  operator:   { label: 'Vận hành',     color: 'gray'   },
+/** Màu Badge.jsx — khớp ROLE_COLORS (rbac). */
+const BADGE_COLOR = {
+  gray: 'gray', green: 'green', blue: 'blue', indigo: 'indigo', red: 'red', purple: 'purple',
 };
 
 export function ProfilePage() {
   const { user }  = useAuth();
   const roleKey = getRoleKey(user);
-  const badge   = ROLE_BADGE_MAP[roleKey] ?? { label: roleKey, color: 'gray' };
+  const rc      = ROLE_COLORS[roleKey] ?? 'gray';
+  const badge   = {
+    label: ROLE_LABELS[roleKey] ?? roleKey,
+    color: BADGE_COLOR[rc] ?? 'gray',
+  };
 
   const [pwForm,  setPwForm]  = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [saving,  setSaving]  = useState(false);

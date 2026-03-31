@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS Employees (
     Email        VARCHAR(100) NOT NULL UNIQUE,
     EmailVerified BOOLEAN     NOT NULL DEFAULT FALSE,
     IsActive      BOOLEAN     NOT NULL DEFAULT TRUE,
+    WasEverActivated BOOLEAN  NOT NULL DEFAULT FALSE,
     Phone        VARCHAR(20),
     PositionID   INT          NOT NULL,
     DepartmentID INT          NOT NULL,
@@ -232,7 +233,7 @@ CREATE TABLE IF NOT EXISTS MaintenanceSchedules (
     EstimatedTime   INT,
     Priority        ENUM('LOW','MEDIUM','HIGH','URGENT') NOT NULL DEFAULT 'MEDIUM',
     DigitalAssetID  INT,
-    Status          ENUM('PENDING','IN_PROGRESS','COMPLETED','OVERDUE') NOT NULL DEFAULT 'PENDING',
+    Status          ENUM('DRAFT','PENDING_APPROVAL','PENDING','IN_PROGRESS','COMPLETED','OVERDUE','CANCELLED','REJECTED') NOT NULL DEFAULT 'PENDING',
     CreatedBy       INT,
     CreatedAt       DATETIME     DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_asset    (AssetID),
@@ -406,7 +407,7 @@ CREATE TABLE IF NOT EXISTS AssetRuntimeLogs (
 CREATE TABLE IF NOT EXISTS Roles_Permissions (
     PermissionID   INT AUTO_INCREMENT PRIMARY KEY,
     PositionID     INT NOT NULL,
-    PermissionName ENUM('CREATE','READ','UPDATE','DELETE','APPROVE','EXPORT') NOT NULL,
+    PermissionName ENUM('CREATE','READ','UPDATE','DELETE','APPROVE','EXPORT','SUBMIT') NOT NULL,
     ResourceType   ENUM(
         'ASSET','DIGITAL_ASSET','WORK_ORDER','MAINTENANCE_PLAN',
         'CHECKLIST_TEMPLATE','CHECKLIST_RESULT','RUNTIME_LOG',

@@ -1,7 +1,40 @@
+/**
+ * approval.api.js — Client gọi /api/approvals.
+ * Backend map hành động: POST /:logId/approve | /reject | /request-changes
+ * (không có /:logId/action — tránh 404 / lỗi giả).
+ */
 import { api } from './index.js';
+
 export const approvalApi = {
-  getPending:  (params)  => api.get('/approvals/pending', { params }),
-  getHistory:  (id, type) => api.get(`/approvals/history/${type}/${id}`),
-  submit:      (data)    => api.post('/approvals/submit', data),
-  action:      (logId, data) => api.post(`/approvals/${logId}/action`, data),
+  getPending: (params) => api.get('/approvals/pending', { params }),
+
+  /** Thứ tự (resourceId, resourceType) giữ tương thích WorkOrderDetailPage. */
+  getHistory: (resourceId, resourceType) =>
+    api.get(`/approvals/history/${resourceType}/${resourceId}`),
+
+  submit: (data) => api.post('/approvals/submit', data),
+
+  /**
+   * Duyệt / từ chối / yêu cầu chỉnh sửa theo logId (ApprovalLogs.LogID, không phải ScheduleID/WO_ID).
+   * @param {number} logId
+   * @param {{ action: 'APPROVED'|'REJECTED'|'REQUEST_CHANGES', comment?: string }} data
+   */
+  action: (logId, { action, comment, assignEmployeeId }) => {
+    const body = {
+      comment: comment || undefined,
+      ...(assignEmployeeId != null && assignEmployeeId !== ''
+        ? { assignEmployeeId: Number(assignEmployeeId) }
+        : {}),
+    };
+    if (action === 'APPROVED') {
+      return api.post(`/approvals/${logId}/approve`, body);
+    }
+    if (action === 'REJECTED') {
+      return api.post(`/approvals/${logId}/reject`, body);
+    }
+    if (action === 'REQUEST_CHANGES') {
+      return api.post(`/approvals/${logId}/request-changes`, body);
+    }
+    return Promise.reject(new Error(`Hành động phê duyệt không hợp lệ: ${action}`));
+  },
 };

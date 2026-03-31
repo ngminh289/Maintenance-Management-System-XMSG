@@ -2,6 +2,7 @@
  * EmployeesPage.jsx — Quản lý nhân viên + nhóm bảo trì.
  * project.rule 1.2: "Đăng ký nhân viên + Chia nhóm bảo trì (M:N)".
  * Tab 1: Danh sách nhân viên — Tab 2: Nhóm bảo trì.
+ * RBAC: canAccess('employees'); EMPLOYEE:CREATE / EMPLOYEE:DELETE; nhóm — MAINTENANCE_GROUP:WRITE / :DELETE.
  */
 import { useEffect, useState, useCallback } from 'react';
 import { api }         from '../../api/index.js';
@@ -14,6 +15,7 @@ import { Pagination }  from '../../components/ui/Pagination.jsx';
 import { EmptyState }  from '../../components/ui/EmptyState.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
+import { canAccess, canDo } from '../../utils/rbac.js';
 import {
   Plus, UserCheck, UserX, Search, Users, User2,
   Pencil, Trash2, UserPlus,
@@ -53,12 +55,21 @@ function EmployeesTab({ me }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const statusLabel = (emp) => {
+    if (emp.isActive) return { text: 'Đang hoạt động', color: 'green' };
+    if (!emp.emailVerified) return { text: 'Chưa xác thực email', color: 'yellow' };
+    if (!emp.wasEverActivated) return { text: 'Chờ duyệt', color: 'orange' };
+    return { text: 'Vô hiệu', color: 'gray' };
+  };
+
   const handleToggle = async (emp) => {
     if (emp.employeeId === me?.employeeId) { toast.error('Không thể vô hiệu hóa chính mình'); return; }
     try {
       if (emp.isActive) await employeeApi.deactivate(emp.employeeId);
       else              await employeeApi.activate(emp.employeeId);
-      toast.success(emp.isActive ? 'Đã vô hiệu hóa' : 'Đã kích hoạt lại');
+      if (emp.isActive) toast.success('Đã vô hiệu hóa tài khoản');
+      else if (!emp.wasEverActivated) toast.success('Đã phê duyệt và kích hoạt tài khoản');
+      else toast.success('Đã kích hoạt lại tài khoản');
       load();
     } catch { toast.error('Lỗi cập nhật'); }
   };
@@ -98,7 +109,7 @@ function EmployeesTab({ me }) {
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
           />
         </div>
-        {(me?.positionLevel ?? 0) >= 2 && (
+        {canDo(me, 'EMPLOYEE:CREATE') && (
           <Button onClick={() => { setForm({}); setErrors({}); setCreateOpen(true); }}>
             <Plus size={15} /> Thêm nhân viên
           </Button>
@@ -119,7 +130,9 @@ function EmployeesTab({ me }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {employees.map(emp => (
+                  {employees.map(emp => {
+                    const st = statusLabel(emp);
+                    return (
                     <tr key={emp.employeeId} className={`hover:bg-gray-50 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -136,13 +149,15 @@ function EmployeesTab({ me }) {
                       <td className="px-4 py-3 font-medium text-gray-700">{emp.departmentName}</td>
                       <td className="px-4 py-3 text-gray-700">{emp.email}</td>
                       <td className="px-4 py-3">
-                        <Badge color={emp.isActive ? 'green' : 'gray'}>
-                          {emp.isActive ? 'Đang hoạt động' : 'Vô hiệu'}
+                        <Badge color={st.color}>
+                          {st.text}
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        {(me?.positionLevel ?? 0) >= 3 && emp.employeeId !== me?.employeeId && (
+                        {canDo(me, 'EMPLOYEE:DELETE') && emp.employeeId !== me?.employeeId && (
                           <button
+                            type="button"
+                            title={emp.isActive ? 'Vô hiệu hóa' : 'Kích hoạt / phê duyệt'}
                             onClick={() => handleToggle(emp)}
                             className={`p-1.5 rounded-lg transition-colors ${emp.isActive ? 'hover:bg-red-50 text-red-400' : 'hover:bg-green-50 text-green-500'}`}
                           >
@@ -151,7 +166,8 @@ function EmployeesTab({ me }) {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -190,6 +206,8 @@ function EmployeesTab({ me }) {
 
 // ─── Tab nhóm bảo trì ───────────────────────────────────────────────────────
 function GroupsTab({ me }) {
+  const canWriteGroup = canDo(me, 'MAINTENANCE_GROUP:WRITE');
+  const canDeleteGroup = canDo(me, 'MAINTENANCE_GROUP:DELETE');
   const [groups,     setGroups]     = useState([]);
   const [allEmps,    setAllEmps]    = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -199,8 +217,6 @@ function GroupsTab({ me }) {
   const [form,       setForm]       = useState({ groupName: '', description: '' });
   const [saving,     setSaving]     = useState(false);
   const [addEmpId,   setAddEmpId]   = useState('');
-
-  const canManage = (me?.positionLevel ?? 0) >= 2;
 
   const loadGroups = useCallback(async () => {
     setLoading(true);
@@ -267,7 +283,7 @@ function GroupsTab({ me }) {
 
   return (
     <div className="space-y-4">
-      {canManage && (
+      {canWriteGroup && (
         <div className="flex justify-end">
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={15} /> Tạo nhóm mới
@@ -291,8 +307,9 @@ function GroupsTab({ me }) {
                       <p className="text-xs text-gray-500">{g.memberCount ?? 0} thành viên</p>
                     </div>
                   </div>
-                  {canManage && (
+                  {canDeleteGroup && (
                     <button
+                      type="button"
                       onClick={() => handleDeleteGroup(g)}
                       className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
                     >
@@ -344,8 +361,9 @@ function GroupsTab({ me }) {
                             <p className="text-xs text-gray-500">{m.positionName}</p>
                           </div>
                         </div>
-                        {canManage && (
+                        {canWriteGroup && (
                           <button
+                            type="button"
                             onClick={() => handleRemoveMember(m.employeeId)}
                             className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
                           >
@@ -360,7 +378,7 @@ function GroupsTab({ me }) {
             </div>
 
             {/* Thêm thành viên */}
-            {canManage && availableEmps.length > 0 && (
+            {canWriteGroup && availableEmps.length > 0 && (
               <div className="border-t border-gray-200 pt-4">
                 <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                   <UserPlus size={14} /> Thêm thành viên
@@ -391,17 +409,19 @@ function GroupsTab({ me }) {
 export function EmployeesPage() {
   const { user: me } = useAuth();
   const [tab, setTab] = useState('employees');
+  const empTabs = [
+    { key: 'employees', label: 'Nhân viên', icon: User2, show: canAccess(me, 'employees') },
+    { key: 'groups', label: 'Nhóm bảo trì', icon: Users, show: canAccess(me, 'employees') },
+  ].filter((t) => t.show);
 
   return (
     <div className="space-y-5">
-      {/* Tabs */}
+      {/* Tabs — menu nhân sự theo canAccess('employees') (khớp RoleGuard route) */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {[
-          { key: 'employees', label: 'Nhân viên',    icon: User2  },
-          { key: 'groups',    label: 'Nhóm bảo trì', icon: Users  },
-        ].map(({ key, label, icon: Icon }) => (
+        {empTabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
+            type="button"
             onClick={() => setTab(key)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors
               ${tab === key ? 'bg-white shadow text-blue-700' : 'text-gray-600 hover:text-gray-800'}`}

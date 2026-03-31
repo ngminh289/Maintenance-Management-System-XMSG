@@ -1,14 +1,19 @@
 /**
  * workOrder.service.js — Nghiệp vụ Phiếu công việc: tạo, phân công, chuyển trạng thái.
  * luongpheduyet.rule: PENDING_APPROVAL → WAITING → IN_PROGRESS → COMPLETED/CANCELLED.
- * Liên quan: models/workOrder.model.js, services/approval.service.js, services/notification.service.js.
+ * WO từ lịch đã phê duyệt: createFromApprovedSchedule → WAITING (không lặp bước phê duyệt phiếu).
+ * WO hoàn thành → workOrderMaintenanceSync: lịch sử bảo trì + reset chu kỳ giờ (trừ CORRECTIVE) + đồng bộ lịch ngày.
+ * Liên quan: models/workOrder.model.js, workOrderMaintenanceSync.service.js, approval.service.js, notification.service.js.
  */
 import { createError }  from '../utils/createError.js';
 import { getPagination, paginatedResult } from '../utils/paginate.js';
 import * as model       from '../models/workOrder.model.js';
+import * as workOrderMaintSync from './workOrderMaintenanceSync.service.js';
 import * as approvalSvc from './approval.service.js';
 import * as notifService from './notification.service.js';
-import * as assetModel  from '../models/asset.model.js';
+import * as assetModel   from '../models/asset.model.js';
+import * as employeeModel from '../models/employee.model.js';
+import { assignFieldTechnicianToWorkOrder } from './workOrderFieldAssign.service.js';
 
 // Trạng thái cho phép chuyển tiếp (guard)
 const TRANSITIONS = {
@@ -40,7 +45,10 @@ export async function getById(id) {
   const wo = await model.findById(id);
   if (!wo) throw createError('Không tìm thấy phiếu công việc', 404);
   const assignments = await model.getAssignments(id);
-  return { ...wo, assignments };
+  const suggestedActualHours = ['IN_PROGRESS', 'PAUSED'].includes(wo.status)
+    ? (model.computeSuggestedActualHours(wo) ?? null)
+    : null;
+  return { ...wo, assignments, suggestedActualHours };
 }
 
 /** Tạo WorkOrder thủ công (Level >= 2) + tự động submit approval */
@@ -59,7 +67,7 @@ export async function create(data, createdBy) {
   return model.findById(woId);
 }
 
-/** Tạo WorkOrder tự động (từ checklist NG/WARNING hoặc hệ thống dự báo) */
+/** Tạo WorkOrder tự động (từ checklist NG/WARNING, dự báo, khẩn — vẫn qua phê duyệt + routing TC/TP) */
 export async function createAutomatic({ assetId, woSource, priority, description, createdBy }) {
   const woId = await model.create({
     assetId, woSource, priority, status: 'PENDING_APPROVAL',
@@ -67,11 +75,37 @@ export async function createAutomatic({ assetId, woSource, priority, description
     description: description || `Phiếu tự động (${woSource})`,
     createdBy: createdBy || null,
   });
-  // Smart routing theo source/priority
   await approvalSvc.submit({
     resourceType: 'WORK_ORDER', resourceId: woId, submitterId: createdBy,
     woSource, woPriority: priority,
   });
+  return woId;
+}
+
+/**
+ * Phiếu từ lịch bảo trì đã được duyệt (kế hoạch OK) — không gửi phê duyệt phiếu lần nữa.
+ * Vào WAITING: Trưởng ca/Trưởng phòng phân công → công nhân/NVKT nhận việc trên phiếu.
+ */
+export async function createFromApprovedSchedule({
+  scheduleId, assetId, priority, description, plannedDate, createdBy,
+}) {
+  const woId = await model.create({
+    scheduleId,
+    assetId,
+    woSource: 'SCHEDULE',
+    priority: priority || 'MEDIUM',
+    status: 'WAITING',
+    plannedDate: plannedDate || new Date().toISOString().split('T')[0],
+    description: description || `Phiếu từ lịch #${scheduleId}`,
+    createdBy: createdBy || null,
+  });
+  if (createdBy) {
+    await notifService.send(
+      createdBy,
+      `Đã tạo WO #${woId} từ lịch bảo trì — trạng thái Chờ thực hiện. Vui lòng phân công nhân viên hiện trường.`,
+      'APPROVAL_REQUEST',
+    );
+  }
   return woId;
 }
 
@@ -97,15 +131,25 @@ export async function changeStatus(id, newStatus, { actorLevel, actualHours } = 
     throw createError('Không đủ quyền hủy phiếu', 403);
   }
 
-  const extra = newStatus === 'COMPLETED'
-    ? { actualDate: new Date().toISOString().split('T')[0], actualHours }
-    : {};
+  await model.applyTimingTransition(id, wo.status, newStatus);
+
+  let extra = {};
+  if (newStatus === 'COMPLETED') {
+    const actualDate = new Date().toISOString().split('T')[0];
+    let resolvedHours = actualHours;
+    if (actualHours === undefined) {
+      resolvedHours = model.computeSuggestedActualHours(wo);
+    }
+    extra = { actualDate, actualHours: resolvedHours };
+  }
 
   await model.updateStatus(id, newStatus, extra);
 
   // Khi WO hoàn thành → máy trở về AVAILABLE (Workflow sheet 3.1 bước 3)
   if (newStatus === 'COMPLETED' && wo.assetId) {
     await assetModel.updateStatus(wo.assetId, 'AVAILABLE');
+    const completedRow = await model.findById(id);
+    await workOrderMaintSync.afterWorkOrderCompleted(completedRow);
   }
 
   // Thông báo khi phiếu bắt đầu hoặc hoàn thành
@@ -123,14 +167,14 @@ export async function changeStatus(id, newStatus, { actorLevel, actualHours } = 
   return model.findById(id);
 }
 
-export async function assign(woId, employeeId) {
-  await model.findById(woId).then((w) => { if (!w) throw createError('Không tìm thấy phiếu', 404); });
-  await model.assign(woId, employeeId);
-  await notifService.send(employeeId, `Bạn được phân công vào phiếu WO #${woId}`, 'WORK_ORDER_ASSIGNED');
-  return model.getAssignments(woId);
+export async function assign(woId, employeeId, { actorLevel } = {}) {
+  return assignFieldTechnicianToWorkOrder(woId, employeeId, actorLevel);
 }
 
-export async function unassign(woId, employeeId) {
+export async function unassign(woId, employeeId, { actorLevel } = {}) {
+  if ((actorLevel ?? 0) < 3) {
+    throw createError('Chỉ Trưởng ca / Trưởng phòng được gỡ phân công.', 403);
+  }
   await model.unassign(woId, employeeId);
   return model.getAssignments(woId);
 }

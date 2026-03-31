@@ -1,8 +1,7 @@
 /**
  * digitalAsset.routes.js — /api/digital-assets.
  * Phân quyền nghiêm ngặt theo RBAC.
- * Upload / phiên bản: Level 1 (Kỹ thuật viên). Approve: Level 2+.
- * Admin chỉ READ.
+ * Gửi duyệt: SUBMIT (NV KT + Admin — BFD 4.1). Upload/phiên bản: CREATE/UPDATE.
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
@@ -38,9 +37,9 @@ digitalAssetRouter.post('/:id/versions',
   ctrl.newVersion,
 );
 
-// Gửi phê duyệt: DRAFT → PENDING (Kỹ thuật viên+, người sở hữu tài liệu)
+// Gửi phê duyệt: DRAFT → PENDING (quyền SUBMIT — khởi tạo luồng 4.1)
 digitalAssetRouter.post('/:id/submit',
-  requirePermission('DIGITAL_ASSET', 'UPDATE'),
+  requirePermission('DIGITAL_ASSET', 'SUBMIT'),
   ctrl.submitForApproval,
 );
 

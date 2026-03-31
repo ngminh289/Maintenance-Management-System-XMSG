@@ -13,6 +13,7 @@ const PUBLIC_COLS = `
   e.Phone        AS phone,
   e.EmailVerified AS emailVerified,
   e.IsActive     AS isActive,
+  e.WasEverActivated AS wasEverActivated,
   e.CreatedAt    AS createdAt,
   e.PositionID   AS positionId,
   p.PositionName AS positionName,
@@ -76,6 +77,7 @@ export async function findByUsernameOrEmail(username, email) {
     `SELECT e.EmployeeID AS employeeId, e.FullName AS fullName, e.Username AS username,
             e.PasswordHash AS passwordHash, e.Email AS email, e.Phone AS phone,
             e.EmailVerified AS emailVerified, e.IsActive AS isActive,
+            e.WasEverActivated AS wasEverActivated,
             e.PositionID AS positionId, e.DepartmentID AS departmentId,
             p.Level AS positionLevel
      FROM Employees e
@@ -95,11 +97,17 @@ export async function findByEmail(email) {
   return rows[0] || null;
 }
 
-export async function create({ fullName, username, passwordHash, email, phone, positionId, departmentId }) {
+export async function create({
+  fullName, username, passwordHash, email, phone, positionId, departmentId,
+  emailVerified = false,
+  isActive = true,
+  wasEverActivated,
+}) {
+  const ever = wasEverActivated !== undefined ? wasEverActivated : isActive;
   const [result] = await getPool().query(
-    `INSERT INTO Employees (FullName, Username, PasswordHash, Email, Phone, PositionID, DepartmentID)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [fullName, username, passwordHash, email, phone || null, positionId, departmentId],
+    `INSERT INTO Employees (FullName, Username, PasswordHash, Email, Phone, PositionID, DepartmentID, EmailVerified, IsActive, WasEverActivated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [fullName, username, passwordHash, email, phone || null, positionId, departmentId, emailVerified, isActive, ever],
   );
   return result.insertId;
 }
@@ -145,9 +153,16 @@ export async function findAllByLevel(minLevel) {
 }
 
 export async function setActive(id, isActive) {
+  if (isActive) {
+    const [result] = await getPool().query(
+      'UPDATE Employees SET IsActive = TRUE, WasEverActivated = TRUE WHERE EmployeeID = ?',
+      [id],
+    );
+    return result.affectedRows;
+  }
   const [result] = await getPool().query(
-    'UPDATE Employees SET IsActive = ? WHERE EmployeeID = ?',
-    [isActive, id],
+    'UPDATE Employees SET IsActive = FALSE WHERE EmployeeID = ?',
+    [id],
   );
   return result.affectedRows;
 }

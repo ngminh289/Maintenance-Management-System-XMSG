@@ -1,7 +1,7 @@
 /**
  * maintenanceSchedule.routes.js — /api/maintenance-schedules.
  * Phân quyền nghiêm ngặt theo RBAC.
- * Admin chỉ READ; Trưởng ca trở lên mới được CREATE/UPDATE/APPROVE.
+ * Gửi lịch vào duyệt: SUBMIT (NV KT + Admin — BFD 4.1; Trưởng ca không SUBMIT).
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
@@ -44,8 +44,8 @@ maintenanceScheduleRouter.post('/:id/generate-work-order',
   ctrl.generateWorkOrder,
 );
 
-// Gửi lịch vào luồng phê duyệt (DRAFT → ApprovalLog → Trưởng ca duyệt → PENDING)
+// Gửi duyệt: DRAFT|REJECTED → log + Status PENDING_APPROVAL → TC duyệt → PENDING
 maintenanceScheduleRouter.post('/:id/submit',
-  requirePermission('MAINTENANCE_PLAN', 'CREATE'),
+  requirePermission('MAINTENANCE_PLAN', 'SUBMIT'),
   ctrl.submitForApproval,
 );

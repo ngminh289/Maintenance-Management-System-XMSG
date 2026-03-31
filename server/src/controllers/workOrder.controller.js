@@ -32,10 +32,14 @@ export const changeStatus = asyncHandler(async (req, res) => {
 });
 
 export const assign = asyncHandler(async (req, res) =>
-  ok(res, await service.assign(Number(req.params.id), Number(req.body.employeeId))));
+  ok(res, await service.assign(Number(req.params.id), Number(req.body.employeeId), {
+    actorLevel: req.user.positionLevel,
+  })));
 
 export const unassign = asyncHandler(async (req, res) =>
-  ok(res, await service.unassign(Number(req.params.id), Number(req.params.employeeId))));
+  ok(res, await service.unassign(Number(req.params.id), Number(req.params.employeeId), {
+    actorLevel: req.user.positionLevel,
+  })));
 
 export const remove = asyncHandler(async (req, res) => {
   await service.remove(req.params.id);

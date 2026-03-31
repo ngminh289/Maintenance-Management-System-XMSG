@@ -55,13 +55,13 @@ export function VerifyEmailPage() {
               </div>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Xác thực thành công!</h1>
+              <h1 className="text-xl font-bold text-gray-900">Xác thực email thành công!</h1>
               <p className="text-sm text-gray-600 mt-2">
-                Tài khoản của bạn đã được kích hoạt. Bạn có thể đăng nhập ngay bây giờ.
+                Bước tiếp theo: quản trị viên sẽ phê duyệt và bật tài khoản trên hệ thống. Khi được kích hoạt, bạn mới đăng nhập được. Vui lòng liên hệ phòng nhân sự nếu cần gấp.
               </p>
             </div>
             <Button className="w-full justify-center" onClick={() => navigate('/login')}>
-              Đăng nhập ngay
+              Về trang đăng nhập
             </Button>
           </>
         )}

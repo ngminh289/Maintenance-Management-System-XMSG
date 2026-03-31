@@ -54,9 +54,13 @@ export async function register({ fullName, username, email, phone, password, pos
   }
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  // Tự đăng ký: chưa kích hoạt — sau khi xác thực email, quản trị viên bật IsActive.
   const employeeId = await employeeModel.create({
     fullName, username, passwordHash, email,
     phone: phone || null, positionId, departmentId,
+    emailVerified: false,
+    isActive: false,
+    wasEverActivated: false,
   });
 
   const token = signVerifyToken(employeeId);
@@ -88,8 +92,18 @@ export async function login({ identifier, password }) {
   // Lỗi chung để tránh enumeration attack
   const genericErr = createError('Thông tin đăng nhập không chính xác', 401);
   if (!emp) throw genericErr;
-  if (!emp.isActive) throw createError('Tài khoản đã bị vô hiệu hóa', 403);
-  if (!emp.emailVerified) throw createError('Vui lòng xác thực email trước khi đăng nhập', 403);
+  if (!emp.emailVerified) {
+    throw createError('Vui lòng xác thực email trước khi đăng nhập', 403);
+  }
+  if (!emp.isActive) {
+    if (!emp.wasEverActivated) {
+      throw createError(
+        'Tài khoản đang chờ quản trị viên phê duyệt. Vui lòng liên hệ phòng nhân sự sau khi đã xác thực email.',
+        403,
+      );
+    }
+    throw createError('Tài khoản đã bị vô hiệu hóa', 403);
+  }
 
   const match = await bcrypt.compare(password, emp.passwordHash);
   if (!match) throw genericErr;

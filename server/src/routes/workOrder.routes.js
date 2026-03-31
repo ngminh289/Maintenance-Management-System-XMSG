@@ -1,7 +1,7 @@
 /**
  * workOrder.routes.js — /api/work-orders.
  * Phân quyền nghiêm ngặt theo RBAC.
- * Admin chỉ có READ + APPROVE + DELETE; không được CREATE/UPDATE.
+ * Admin: READ + CREATE (khởi tạo phiếu chờ duyệt — BFD 4.1); không UPDATE/assign trừ khi bổ sung quyền.
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';

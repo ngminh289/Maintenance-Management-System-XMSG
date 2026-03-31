@@ -77,7 +77,6 @@ INSERT INTO Roles_Permissions (PositionID, PermissionName, ResourceType) VALUES
 (2,'CREATE', 'WORK_ORDER'),
 (2,'READ',   'WORK_ORDER'),
 (2,'UPDATE', 'WORK_ORDER'),
-(2,'APPROVE','WORK_ORDER'),
 (2,'READ',   'RUNTIME_LOG'),
 (2,'CREATE', 'DIGITAL_ASSET'),
 (2,'READ',   'DIGITAL_ASSET'),

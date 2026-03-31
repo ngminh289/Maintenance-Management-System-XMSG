@@ -14,15 +14,15 @@ export const create = asyncHandler(async (req, res) =>
   ok(res, await service.create(req.body, req.user.sub), 201));
 
 export const update = asyncHandler(async (req, res) =>
-  ok(res, await service.update(req.params.id, req.body)));
+  ok(res, await service.update(req.params.id, req.body, { actorLevel: req.user.positionLevel })));
 
 export const remove = asyncHandler(async (req, res) => {
-  await service.remove(req.params.id);
+  await service.remove(req.params.id, { actorLevel: req.user.positionLevel });
   return ok(res, { message: 'Đã xóa lịch bảo trì.' });
 });
 
 export const updateStatus = asyncHandler(async (req, res) =>
-  ok(res, await service.updateStatus(req.params.id, req.body.status)));
+  ok(res, await service.updateStatus(req.params.id, req.body.status, { actorLevel: req.user.positionLevel })));
 
 export const generateWorkOrder = asyncHandler(async (req, res) =>
   ok(res, await service.generateWorkOrder(req.params.id, req.user.sub), 201));

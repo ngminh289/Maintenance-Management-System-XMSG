@@ -1,5 +1,6 @@
 /**
  * WorkOrderListPage.jsx — Danh sách phiếu việc.
+ * RBAC: nút tạo phiếu chỉ khi canDo(WORK_ORDER:CREATE).
  */
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -15,6 +16,8 @@ import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { Modal }    from '../../components/ui/Modal.jsx';
 import { WO_STATUS_LABEL, WO_STATUS_COLOR, WO_PRIORITY_LABEL, WO_PRIORITY_COLOR, fDate } from '../../utils/format.js';
 import { WorkOrderForm } from './WorkOrderForm.jsx';
+import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 const STATUS_TABS = [
@@ -27,6 +30,7 @@ const STATUS_TABS = [
 ];
 
 export function WorkOrderListPage() {
+  const { user } = useAuth();
   const [orders,  setOrders]  = useState([]);
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(true);
@@ -53,6 +57,11 @@ export function WorkOrderListPage() {
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-gray-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-relaxed">
+        <strong>Chờ thực hiện:</strong> gồm phiếu từ <strong>lịch đã duyệt</strong> (vào thẳng bước này, cần phân công) và phiếu đã qua phê duyệt khác.
+        {' '}<strong>Chờ duyệt:</strong> phiếu khẩn / từ checklist / tạo tay — theo luồng Trưởng ca hoặc đa cấp Trưởng phòng.
+      </p>
+
       {/* Status tabs */}
       <div className="flex gap-1 overflow-x-auto pb-1 bg-white rounded-xl border border-gray-200 p-1.5 shadow-sm">
         {STATUS_TABS.map(tab => (
@@ -74,9 +83,11 @@ export function WorkOrderListPage() {
           {Object.entries(WO_PRIORITY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
         <div className="flex-1" />
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus size={15} /> Tạo phiếu việc
-        </Button>
+        {canDo(user, 'WORK_ORDER:CREATE') && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus size={15} /> Tạo phiếu việc
+          </Button>
+        )}
       </div>
 
       {/* Table */}

@@ -1,7 +1,7 @@
 /**
  * checklist.service.js — Luồng kiểm tra hiện trường: submit + auto-logic (NG/WARNING/OK).
  * Workflow sheet bước 3 (Quy trình kiểm tra Checklist):
- *   OK      → Asset AVAILABLE,  WO COMPLETED (nếu có)
+ *   OK      → Asset AVAILABLE,  WO COMPLETED (nếu có) + ActualHours tự tính nếu có WorkStartedAt
  *   WARNING → Asset MONITORING, tạo WO PREDICTIVE HIGH (theo dõi thêm, sắp xếp bảo trì)
  *   NG      → Asset BROKEN,     tạo WO CORRECTIVE EMERGENCY (sửa chữa khẩn cấp)
  *             → sau khi WO được duyệt: Asset MAINTENANCE
@@ -14,6 +14,7 @@ import * as templateModel from '../models/checklistTemplate.model.js';
 import * as resultModel   from '../models/checklistResult.model.js';
 import * as assetModel    from '../models/asset.model.js';
 import * as workOrderModel from '../models/workOrder.model.js';
+import * as workOrderMaintSync from './workOrderMaintenanceSync.service.js';
 import * as workOrderSvc  from './workOrder.service.js';
 import * as counterSvc    from './assetCounter.service.js';
 import * as notifService  from './notification.service.js';
@@ -143,7 +144,16 @@ export async function submitResult({ assetId, woId, readingValue, overallStatus,
   // 4. Auto-logic theo OverallStatus (luongxulykiemtra.rule)
   if (overallStatus === 'OK') {
     await assetModel.updateStatus(assetId, 'AVAILABLE');
-    if (woId) await workOrderModel.updateStatus(woId, 'COMPLETED', { actualDate: new Date().toISOString().split('T')[0] });
+    if (woId) {
+      const row = await workOrderModel.findById(woId);
+      const autoHours = row ? workOrderModel.computeSuggestedActualHours(row) : undefined;
+      await workOrderModel.updateStatus(woId, 'COMPLETED', {
+        actualDate: new Date().toISOString().split('T')[0],
+        ...(autoHours !== undefined ? { actualHours: autoHours } : {}),
+      });
+      const completedWo = await workOrderModel.findById(woId);
+      await workOrderMaintSync.afterWorkOrderCompleted(completedWo);
+    }
 
   } else if (overallStatus === 'WARNING') {
     // Workflow sheet 3 bước 2.2: CẢNH BÁO — máy vẫn chạy nhưng bất thường → MONITORING

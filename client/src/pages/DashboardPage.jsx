@@ -1,7 +1,7 @@
 /**
  * DashboardPage.jsx — Dashboard thay đổi nội dung theo role người dùng.
  *   - operational (Trưởng ca / Trưởng phòng): tổng quan vận hành đầy đủ
- *   - director  (Ban Giám đốc)              : KPI cấp cao + báo cáo
+ *   - director  (Ban Giám đốc)              : KPI cấp cao + báo cáo (không menu Phê duyệt — chỉ R)
  *   - admin     (Quản trị hệ thống)         : quản lý hệ thống + nhân sự
  *   - field     (KTV / Công nhân / CVKTS)   : công việc được giao + checklist
  * Dùng getDashboardType() từ utils/rbac.js.
@@ -12,7 +12,7 @@ import {
   Cpu, Wrench, ShieldCheck, AlertTriangle,
   CheckCircle, XCircle, Clock, QrCode,
   Users, FileText, BarChart2, CalendarClock,
-  ArrowRight, Calendar,
+  ArrowRight, Calendar, ClipboardList, GitBranch,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -26,7 +26,7 @@ import { StatCard }     from '../components/ui/Card.jsx';
 import { Badge }        from '../components/ui/Badge.jsx';
 import { PageLoader }   from '../components/ui/Spinner.jsx';
 import { useAuth }      from '../contexts/AuthContext.jsx';
-import { getDashboardType } from '../utils/rbac.js';
+import { getDashboardType, TRUONG_CA_SUMMARY } from '../utils/rbac.js';
 import { fDate, WO_STATUS_LABEL, WO_STATUS_COLOR, WO_PRIORITY_COLOR, WO_PRIORITY_LABEL } from '../utils/format.js';
 
 // ─── OPERATIONAL DASHBOARD (Trưởng ca / Trưởng phòng) ─────────────────────────
@@ -57,6 +57,37 @@ function OperationalDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Trưởng ca: nhiệm vụ + lối tắt luồng phê duyệt / điều phối (rule/truongca.rule) */}
+      <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50/60 p-4 sm:p-5 shadow-sm">
+        <p className="text-sm font-bold text-blue-950">{TRUONG_CA_SUMMARY.title}</p>
+        <p className="text-xs text-blue-900/85 mt-1.5 leading-relaxed max-w-3xl">
+          {TRUONG_CA_SUMMARY.tagline}
+        </p>
+        <ul className="mt-3 text-xs text-blue-900/80 space-y-1 list-disc list-inside border-t border-blue-100/80 pt-3">
+          {TRUONG_CA_SUMMARY.flows.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap gap-2 mt-4">
+          {[
+            { to: '/approvals', label: 'Phê duyệt', icon: ShieldCheck, className: 'bg-amber-100 text-amber-900 border-amber-200 hover:bg-amber-200/80' },
+            { to: '/work-orders', label: 'Phiếu việc', icon: Wrench, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+            { to: '/schedules', label: 'Lịch bảo trì', icon: ClipboardList, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+            { to: '/checklists', label: 'Checklist', icon: CheckCircle, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+            { to: '/reports', label: 'Báo cáo', icon: BarChart2, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+          ].map(({ to, label, icon: Icon, className }) => (
+            <Link
+              key={to}
+              to={to}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${className}`}
+            >
+              <Icon size={14} />
+              {label}
+            </Link>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Tổng tài sản"   value={a.total}  icon={Cpu}           color="blue"   sub={`${a.available ?? 0} sẵn sàng`} />
         <StatCard label="Cảnh báo/Hỏng"  value={(a.caution ?? 0) + (a.broken ?? 0)} icon={AlertTriangle} color="red" sub={`${a.monitoring ?? 0} đang theo dõi`} />
@@ -195,6 +226,9 @@ function DirectorDashboard() {
         <p className="text-sm font-semibold text-purple-800">
           Bảng tổng hợp KPI — Hệ thống bảo trì thiết bị Xi măng Sông Gianh
         </p>
+        <p className="text-xs text-purple-700/90 mt-2 leading-relaxed">
+          Chế độ xem tổng hợp: chi tiết phê duyệt phiếu việc / tài liệu do <strong>Trưởng ca</strong> xử lý. Ban Giám đốc dùng báo cáo và chỉ số bên dưới để giám sát.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -319,19 +353,28 @@ function AdminDashboard() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
           <h3 className="font-bold text-gray-900 text-sm mb-4">Hành động quản trị nhanh</h3>
           {[
-            { to: '/employees', icon: Users,       label: 'Quản lý nhân sự & phân quyền', color: 'blue' },
-            { to: '/assets',    icon: Cpu,          label: 'Xem danh sách tài sản (chỉ đọc)', color: 'gray' },
-          ].map(({ to, icon: Icon, label, color }) => (
-            <Link key={to} to={to}
-              className={`flex items-center gap-3 p-3 rounded-xl border border-${color}-200 bg-${color}-50 hover:bg-${color}-100 transition-colors`}>
-              <Icon size={17} className={`text-${color}-600`} />
-              <span className={`text-sm font-semibold text-${color}-800`}>{label}</span>
-              <ArrowRight size={14} className={`text-${color}-500 ml-auto`} />
+            { to: '/employees', icon: Users, label: 'Quản lý nhân sự & phân quyền' },
+            { to: '/workflows', icon: GitBranch, label: 'Mẫu luồng phê duyệt (BFD 4.1)' },
+            { to: '/assets', icon: Cpu, label: 'Xem danh sách tài sản (chỉ đọc)' },
+            { to: '/work-orders', icon: Wrench, label: 'Phiếu việc — tạo phiếu chờ duyệt' },
+            { to: '/documents', icon: FileText, label: 'Kho tài liệu — gửi duyệt bản nháp' },
+            { to: '/schedules', icon: ClipboardList, label: 'Lịch bảo trì — gửi duyệt (NV KT + Admin)' },
+          ].map(({ to, icon: Icon, label }) => (
+            <Link
+              key={to}
+              to={to}
+              className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors"
+            >
+              <Icon size={17} className="text-gray-600" />
+              <span className="text-sm font-semibold text-gray-800">{label}</span>
+              <ArrowRight size={14} className="text-gray-500 ml-auto" />
             </Link>
           ))}
           <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-            <p className="font-semibold">Lưu ý phân quyền:</p>
-            <p className="mt-1">Quản trị viên không có quyền tạo/chỉnh sửa phiếu việc, lịch bảo trì hoặc kết quả checklist. Chỉ quản lý tài khoản người dùng.</p>
+            <p className="font-semibold">BFD 4.1 — Khởi tạo luồng phê duyệt:</p>
+            <p className="mt-1">
+              Admin có thể cấu hình mẫu luồng, tạo phiếu chờ duyệt, gửi lịch/tài liệu vào duyệt; không thay Trưởng ca thực hiện bước duyệt trên hàng chờ.
+            </p>
           </div>
         </div>
       </div>
@@ -443,8 +486,8 @@ function FieldDashboard() {
               { to: '/checklists',  icon: CheckCircle,  label: 'Checklist hiện trường',     desc: 'Ghi nhận kết quả kiểm tra' },
               { to: '/documents',   icon: FileText,     label: 'Kho tài liệu',              desc: 'SOP, bản vẽ, hướng dẫn' },
               ...(isKyThuat ? [
-                { to: '/schedules', icon: Calendar,     label: 'Lịch bảo trì',             desc: 'Tạo và theo dõi lịch PM' },
-                { to: '/approvals', icon: ShieldCheck,  label: 'Theo dõi phê duyệt',       desc: 'Trạng thái tài liệu gửi duyệt' },
+                { to: '/schedules', icon: Calendar,     label: 'Lịch bảo trì',             desc: 'Soạn lịch, gửi Trưởng ca duyệt' },
+                { to: '/work-orders', icon: Wrench,     label: 'Phiếu việc',               desc: 'Tạo / theo dõi (duyệt do Trưởng ca)' },
               ] : []),
             ].map(({ to, icon: Icon, label, desc }) => (
               <Link key={to} to={to}

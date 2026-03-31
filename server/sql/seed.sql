@@ -9,15 +9,16 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ----------------------------------------------------------
--- Chức vụ (Positions) — 5 vai trò theo thiết kế BFD/DFD đề tài
--- PositionID tường minh để tránh tạo trùng khi chạy lại
+-- Chức vụ (Positions) — 6 dòng: TC (3) và Trưởng phòng (6) tách bạch cho duyệt 2 cấp WO khẩn
+-- Quyền chi tiết: migrations (sau 019, Position 6 có bản sao quyền từ 3). PositionID tường minh.
 -- ----------------------------------------------------------
 INSERT IGNORE INTO Positions (PositionID, PositionName, Level) VALUES
     (1, 'Công nhân',                  1),
     (2, 'Nhân viên Kỹ thuật',        2),
-    (3, 'Trưởng ca / Trưởng phòng',  3),
+    (3, 'Trưởng ca',                  3),
     (4, 'Quản trị viên',              4),
-    (5, 'Ban Giám đốc',               5);
+    (5, 'Ban Giám đốc',               5),
+    (6, 'Trưởng phòng',               3);
 
 -- ----------------------------------------------------------
 -- Phòng ban (Departments)
@@ -100,17 +101,20 @@ WHERE TemplateID = 2 AND QuestionText LIKE '%rung%';
 
 -- ----------------------------------------------------------
 -- Mẫu Workflow phê duyệt (WorkflowTemplates + WorkflowSteps)
--- WorkflowID tường minh, Approver: Trưởng ca/phòng (PositionID=3)
+-- WO khẩn cấp: bước 1 → Position 3 (Trưởng ca), bước 2 → Position 6 (Trưởng phòng)
 -- ----------------------------------------------------------
 INSERT IGNORE INTO WorkflowTemplates (WorkflowID, WorkflowName, DocumentType, TotalLevels, Description) VALUES
-    (1, 'Phê duyệt Work Order',        'WORK_ORDER',       1, 'Trưởng ca/phòng duyệt phiếu việc'),
-    (2, 'Phê duyệt Tài liệu kỹ thuật', 'DIGITAL_ASSET',    1, 'Trưởng ca/phòng duyệt tài liệu'),
-    (3, 'Phê duyệt Kế hoạch bảo trì',  'MAINTENANCE_PLAN', 1, 'Trưởng ca/phòng duyệt lịch bảo trì');
+    (1, 'Phê duyệt Work Order thông thường', 'WORK_ORDER',       1, 'Trưởng ca duyệt phiếu việc (WO lịch / LOW|MEDIUM)'),
+    (2, 'Phê duyệt Tài liệu kỹ thuật',       'DIGITAL_ASSET',    1, 'Trưởng ca duyệt tài liệu'),
+    (3, 'Phê duyệt Kế hoạch bảo trì',        'MAINTENANCE_PLAN', 1, 'Trưởng ca duyệt lịch bảo trì'),
+    (4, 'Phê duyệt WO khẩn cấp',             'WORK_ORDER',       2, 'WO PREDICTIVE/CORRECTIVE hoặc HIGH|EMERGENCY — 2 cấp duyệt');
 
 INSERT IGNORE INTO WorkflowSteps (WorkflowID, StepLevel, PositionID) VALUES
     (1, 1, 3),
     (2, 1, 3),
-    (3, 1, 3);
+    (3, 1, 3),
+    (4, 1, 3),
+    (4, 2, 6);
 
 -- Roles_Permissions được quản lý hoàn toàn bởi migrations (011_extend_resource_types.sql).
 -- Không insert ở đây để tránh conflict với RBAC đã được thiết kế lại đúng nghiệp vụ.

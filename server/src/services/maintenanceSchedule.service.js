@@ -3,8 +3,8 @@
  * Hỗ trợ 2 loại tần suất:
  *   - HOURS   : tích hợp với AssetCounters (assetCounter.service.js)
  *   - DAYS/WEEKS/MONTHS/YEARS : lịch theo ngày — tự tính NextDueDate, cảnh báo trước N ngày
- * Luồng phê duyệt lịch (Workflow sheet):
- *   CV KTS tạo lịch (DRAFT) → POST /:id/submit → Trưởng ca duyệt → PENDING → scheduler kích hoạt
+ * Luồng phê duyệt lịch (quy trình đề tài):
+ *   DRAFT | REJECTED → gửi SUBMIT → PENDING_APPROVAL → Trưởng ca duyệt → PENDING (chờ TH) | REJECTED | DRAFT (yêu cầu sửa)
  * Liên quan: models/maintenanceSchedule.model.js, services/notification.service.js.
  */
 import { createError } from '../utils/createError.js';
@@ -14,6 +14,7 @@ import * as assetModel from '../models/asset.model.js';
 import * as workOrderSvc from './workOrder.service.js';
 import * as notifService from './notification.service.js';
 import * as approvalSvc from './approval.service.js';
+import * as approvalLogModel from '../models/approvalLog.model.js';
 
 /** Số ngày cảnh báo trước khi đến hạn */
 const WARN_DAYS = 7;
@@ -87,47 +88,70 @@ export async function create(data, createdBy) {
   return model.findById(id);
 }
 
+const EDITABLE_STATUSES = ['DRAFT', 'REJECTED'];
+const DELETABLE_STATUSES = ['DRAFT', 'REJECTED'];
+
 /**
- * Gửi lịch bảo trì vào luồng phê duyệt (Workflow sheet bước 3).
- * Chỉ cho phép khi Status = DRAFT.
+ * Gửi lịch vào luồng phê duyệt: trạng thái lịch → PENDING_APPROVAL (chờ Trưởng ca).
  */
 export async function submitForApproval(scheduleId, submitterId) {
   const schedule = await getById(scheduleId);
-  if (schedule.status !== 'DRAFT') {
-    throw createError('Chỉ lịch ở trạng thái DRAFT mới có thể gửi phê duyệt', 400);
+  if (!['DRAFT', 'REJECTED'].includes(schedule.status)) {
+    throw createError('Chỉ gửi phê duyệt khi lịch ở Bản nháp hoặc Từ chối', 400);
+  }
+  if (await approvalLogModel.hasPendingForResource(Number(scheduleId), 'MAINTENANCE_PLAN')) {
+    throw createError('Lịch này đang có yêu cầu phê duyệt chờ xử lý', 400);
   }
   await approvalSvc.submit({ resourceType: 'MAINTENANCE_PLAN', resourceId: Number(scheduleId), submitterId });
+  await model.updateStatus(scheduleId, 'PENDING_APPROVAL');
   return model.findById(scheduleId);
 }
 
-export async function update(id, data) {
-  await getById(id);
-  await model.update(id, data);
+export async function update(id, data, opts = {}) {
+  const schedule = await getById(id);
+  const bypass = (opts.actorLevel ?? 0) >= 4;
+  if (!bypass && !EDITABLE_STATUSES.includes(schedule.status)) {
+    throw createError('Chỉ sửa được lịch ở trạng thái Bản nháp hoặc Từ chối', 400);
+  }
+  const payload = { ...data };
+  delete payload.status;
+  await model.update(id, payload);
   return model.findById(id);
 }
 
-export async function remove(id) {
-  await getById(id);
+export async function remove(id, opts = {}) {
+  const schedule = await getById(id);
+  const bypass = (opts.actorLevel ?? 0) >= 4;
+  if (!bypass && !DELETABLE_STATUSES.includes(schedule.status)) {
+    throw createError('Chỉ xóa được lịch Bản nháp hoặc Từ chối', 400);
+  }
   await model.remove(id);
 }
 
-export async function updateStatus(id, status) {
+export async function updateStatus(id, status, opts = {}) {
+  if ((opts.actorLevel ?? 0) < 4) {
+    throw createError('Chỉ quản trị viên được đổi trạng thái lịch thủ công', 403);
+  }
   await getById(id);
   await model.updateStatus(id, status);
   return model.findById(id);
 }
 
 /**
- * Tạo Work Order từ lịch bảo trì (kích hoạt thủ công hoặc auto).
- * Sau khi tạo WO thành công: cập nhật LastExecutedDate và NextDueDate cho lịch theo ngày.
+ * Tạo WO từ lịch đã duyệt: workOrder.createFromApprovedSchedule → WAITING (không phê duyệt phiếu lặp).
+ * Sau đó: cập nhật LastExecutedDate / NextDueDate cho lịch theo ngày.
  */
 export async function generateWorkOrder(scheduleId, createdBy) {
   const schedule = await getById(scheduleId);
-  const woId = await workOrderSvc.createAutomatic({
+  if (!['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(schedule.status)) {
+    throw createError('Chỉ tạo WO từ lịch đã phê duyệt (đang chờ thực hiện / đang TH / quá hạn)', 400);
+  }
+  const woId = await workOrderSvc.createFromApprovedSchedule({
+    scheduleId,
     assetId:     schedule.assetId,
-    woSource:    'SCHEDULE',
     priority:    schedule.priority === 'URGENT' ? 'HIGH' : (schedule.priority || 'MEDIUM'),
     description: `Phiếu từ lịch "${schedule.scheduleName || `#${scheduleId}`}": ${schedule.description}`,
+    plannedDate: new Date().toISOString().split('T')[0],
     createdBy,
   });
 

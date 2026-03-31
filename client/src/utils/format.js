@@ -4,7 +4,19 @@
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
-export const fDate = (d) => d ? format(parseISO(String(d).split('T')[0]), 'dd/MM/yyyy') : '—';
+/** Ngày thuần YYYY-MM-DD: parse theo lịch local — tránh lùi 1 ngày khi chuỗi ISO được hiểu là UTC nửa đêm. */
+export const fDate = (d) => {
+  if (d == null || d === '') return '—';
+  const head = String(d).split('T')[0];
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(head);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const day = Number(m[3]);
+    return format(new Date(y, mo, day), 'dd/MM/yyyy');
+  }
+  return format(parseISO(head), 'dd/MM/yyyy');
+};
 export const fDateTime = (d) => d ? format(new Date(d), 'dd/MM/yyyy HH:mm') : '—';
 export const fFromNow = (d) => d ? formatDistanceToNow(new Date(d), { addSuffix: true, locale: vi }) : '—';
 export const fNumber = (n) => n == null ? '—' : Number(n).toLocaleString('vi-VN');
@@ -57,6 +69,14 @@ export const WO_PRIORITY_COLOR = {
   MEDIUM:    'blue',
   HIGH:      'orange',
   EMERGENCY: 'red',
+};
+
+/** Nguồn phiếu việc — nhãn ngắn cho lịch sử bảo trì tài sản. */
+export const WO_SOURCE_LABEL = {
+  SCHEDULE:   'Theo lịch',
+  PREDICTIVE: 'Dự báo giờ',
+  MANUAL:     'Thủ công',
+  CORRECTIVE: 'Sự cố / khắc phục',
 };
 
 export const CHECKLIST_STATUS_COLOR = {

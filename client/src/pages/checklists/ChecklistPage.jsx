@@ -1,9 +1,12 @@
 /**
  * ChecklistPage.jsx — QR Scan simulation + Submit checklist.
  * luongxulykiemtra.rule: Quét QR → hiển thị 2 Tab (Checklist + Tài liệu SOP) → Submit → Auto-logic.
- * project.rule 5.2: "Quét QR truy xuất tài liệu, nhập checklist, upload ảnh".
+ * QR: mã gắn với tài sản — quét (hoặc nhập mã) để mở đúng thiết bị, xem tài liệu SOP + checklist.
+ * Không phải “mở khóa” vật lý trừ khi nhà máy tích hợp cổng/PLC; trong app = mở ngữ cảnh làm việc an toàn.
+ * RBAC: gửi kết quả chỉ khi CHECKLIST_RESULT:CREATE (Công nhân, Trưởng ca); NV KT xem mẫu, không nộp.
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { QrCode, FileText, CheckSquare, AlertTriangle, XCircle, CheckCircle, ExternalLink, Tag } from 'lucide-react';
 import { checklistApi } from '../../api/checklist.api.js';
 import { Button }  from '../../components/ui/Button.jsx';
@@ -13,6 +16,7 @@ import { Card }    from '../../components/ui/Card.jsx';
 import { Spinner } from '../../components/ui/Spinner.jsx';
 import { CHECKLIST_STATUS_COLOR, fDateTime } from '../../utils/format.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 const INPUT_TYPE_LABEL = {
@@ -26,6 +30,8 @@ const INPUT_TYPE_LABEL = {
 
 export function ChecklistPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const canSubmitChecklist = canDo(user, 'CHECKLIST_RESULT:CREATE');
   const [assetInput,  setAssetInput]  = useState('');
   const [qrData,      setQrData]      = useState(null);
   const [scanning,    setScanning]    = useState(false);
@@ -38,6 +44,11 @@ export function ChecklistPage() {
   const [submitted,   setSubmitted]   = useState(null);
   const [evidencePhoto, setEvidencePhoto] = useState(null);
   const [activeTagFilter, setActiveTagFilter] = useState('ALL');
+
+  useEffect(() => {
+    const aid = searchParams.get('assetId')?.trim();
+    if (aid) setAssetInput(aid);
+  }, [searchParams]);
 
   // Tập hợp tất cả tags từ documents để hiển thị bộ lọc
   const allDocTags = useMemo(() => {
@@ -121,6 +132,15 @@ export function ChecklistPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
+        <p className="font-bold text-indigo-900 mb-1">Quét QR trong quy trình bảo trì là gì?</p>
+        <p className="leading-relaxed text-indigo-900/90">
+          Mã QR (hoặc <strong>mã tài sản</strong>) gắn với <strong>đúng một thiết bị</strong> trong hệ thống. Quét hoặc nhập mã để mở{' '}
+          <strong>checklist kiểm tra</strong> và <strong>tài liệu SOP</strong> đúng máy — tránh làm nhầm tài liệu giữa nhiều tài sản.
+          Đây là bước <em>an toàn nghiệp vụ</em>; <strong>không</strong> thay cho khóa cửa / PLC trừ khi nhà máy tích hợp thêm thiết bị vật lý.
+        </p>
+      </div>
+
       {/* QR Input */}
       <Card title="Quét mã QR tài sản">
         <div className="flex gap-3">
@@ -267,55 +287,62 @@ export function ChecklistPage() {
                   <p className="text-sm text-gray-400">Không có câu hỏi checklist cho loại tài sản này.</p>
                 )}
 
-                {/* Kết quả tổng hợp */}
-                <div>
-                  <p className="text-sm font-semibold text-gray-800 mb-3">Đánh giá tổng thể *</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {OVERALL_OPTIONS.map(({ value, label, icon: Icon, color }) => (
-                      <button
-                        key={value}
-                        onClick={() => setOverallStatus(value)}
-                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-sm font-medium transition-colors
-                          ${overallStatus === value
-                            ? (color === 'green' ? 'border-green-500 bg-green-50 text-green-700'
-                              : color === 'yellow' ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
-                              : 'border-red-500 bg-red-50 text-red-700')
-                            : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                      >
-                        <Icon size={20} />
-                        <span className="text-xs text-center leading-tight">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {canSubmitChecklist ? (
+                  <>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800 mb-3">Đánh giá tổng thể *</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {OVERALL_OPTIONS.map(({ value, label, icon: Icon, color }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setOverallStatus(value)}
+                            className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 text-sm font-medium transition-colors
+                              ${overallStatus === value
+                                ? (color === 'green' ? 'border-green-500 bg-green-50 text-green-700'
+                                  : color === 'yellow' ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
+                                  : 'border-red-500 bg-red-50 text-red-700')
+                                : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                          >
+                            <Icon size={20} />
+                            <span className="text-xs text-center leading-tight">{label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                <Textarea
-                  label="Ghi chú hiện trường"
-                  placeholder="Mô tả tình trạng máy, tiếng kêu, rò rỉ..."
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                />
+                    <Textarea
+                      label="Ghi chú hiện trường"
+                      placeholder="Mô tả tình trạng máy, tiếng kêu, rò rỉ..."
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                    />
 
-                {/* Upload ảnh minh chứng — BFD 5.2 */}
-                <div>
-                  <label className="text-sm font-semibold text-gray-700 block mb-1">
-                    Ảnh minh chứng (tuỳ chọn)
-                  </label>
-                  <input
-                    type="file"
-                    accept=".jpg,.jpeg,.png,.webp"
-                    onChange={e => setEvidencePhoto(e.target.files[0] ?? null)}
-                    className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100"
-                  />
-                  {evidencePhoto && (
-                    <p className="text-xs text-green-600 mt-1 font-medium">✓ Đã chọn: {evidencePhoto.name}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">JPG/PNG/WEBP, tối đa 10MB</p>
-                </div>
+                    <div>
+                      <label className="text-sm font-semibold text-gray-700 block mb-1">
+                        Ảnh minh chứng (tuỳ chọn)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.webp"
+                        onChange={e => setEvidencePhoto(e.target.files[0] ?? null)}
+                        className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100"
+                      />
+                      {evidencePhoto && (
+                        <p className="text-xs text-green-600 mt-1 font-medium">✓ Đã chọn: {evidencePhoto.name}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">JPG/PNG/WEBP, tối đa 10MB</p>
+                    </div>
 
-                <Button className="w-full justify-center" loading={submitting} onClick={handleSubmit}>
-                  Gửi kết quả kiểm tra
-                </Button>
+                    <Button className="w-full justify-center" loading={submitting} onClick={handleSubmit}>
+                      Gửi kết quả kiểm tra
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                    Tài khoản của bạn chỉ xem mẫu checklist / tài liệu. Nộp kết quả kiểm tra do <strong>Công nhân</strong> hoặc <strong>Trưởng ca</strong> thực hiện trên hiện trường.
+                  </p>
+                )}
               </div>
             </Card>
           )}

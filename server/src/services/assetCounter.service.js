@@ -1,14 +1,18 @@
 /**
  * assetCounter.service.js — Bộ đếm giờ chạy máy + dự báo ngày bảo trì tiếp theo.
- * luong1.rule: nhập giờ → DeltaHours → TotalHours → AvgHoursPerDay → EstimatedNextPMDate.
- * Liên quan: models/assetCounter.model.js, models/maintenanceSchedule.model.js, services/notification.service.js.
+ * luong1.rule / 1.1–2.1: Reading → RuntimeLogs → TB 30 ngày → so ngưỡng HOURS → cảnh báo / WO PREDICTIVE.
+ * Nhật ký thuật toán: AssetPredictiveEventLog; reset LastMaintenanceTotal khi WO PREDICTIVE hoàn thành (workOrder.service).
+ * Liên quan: models/assetCounter.model.js, assetPredictiveEvent.model.js, workOrder.model.js, maintenanceSchedule.model.js.
  */
 import { createError }  from '../utils/createError.js';
 import * as model       from '../models/assetCounter.model.js';
+import * as predEvtModel from '../models/assetPredictiveEvent.model.js';
+import * as workOrderModel from '../models/workOrder.model.js';
 import * as schedModel  from '../models/maintenanceSchedule.model.js';
 import * as assetModel  from '../models/asset.model.js';
 import * as notifService from './notification.service.js';
 import * as workOrderSvc from './workOrder.service.js';
+import * as forecastSvc from './assetCounterForecast.service.js';
 
 const WARN_DAYS_THRESHOLD = 7; // Cảnh báo khi còn <= 7 ngày đến ngưỡng
 
@@ -71,19 +75,43 @@ export async function recordReading({ assetId, readingValue, checklistId = null,
     const hoursRemain = threshold - hoursUsed;
 
     if (hoursRemain <= 0) {
-      // luong1.rule: Tự động tạo WorkOrder PREDICTIVE khi vượt ngưỡng giờ
       estimatedNextPMDate = new Date().toISOString().split('T')[0];
-      const woId = await workOrderSvc.createAutomatic({
+      await predEvtModel.create({
         assetId,
-        woSource:    'PREDICTIVE',
-        priority:    'HIGH',
-        description: `Đã vượt ngưỡng ${threshold}h chạy — cần bảo trì dự báo`,
-        createdBy:   null,
+        eventType: 'THRESHOLD_EXCEEDED',
+        detail:    `Vượt ngưỡng ${threshold}h (tích lũy sau PM: ${hoursUsed.toFixed(2)}h)`,
       });
-      await notifService.notifyManagers(
-        `Máy #${assetId} đã vượt ngưỡng ${threshold}h. Đã tạo phiếu WO #${woId} chờ phê duyệt.`,
-        'MAINTENANCE_DUE', 2,
-      );
+      const openPredWoId = await workOrderModel.findOpenPredictiveIdByAsset(assetId);
+      if (openPredWoId) {
+        await predEvtModel.create({
+          assetId,
+          eventType:   'AUTO_WO_SKIPPED_DUPLICATE',
+          detail:      `Đã có phiếu PREDICTIVE #${openPredWoId} chưa đóng — không tạo trùng`,
+          relatedWOId: openPredWoId,
+        });
+        await notifService.notifyManagers(
+          `Máy #${assetId} vẫn vượt ngưỡng ${threshold}h; phiếu WO PREDICTIVE #${openPredWoId} đang mở — không tạo thêm.`,
+          'MAINTENANCE_DUE', 2,
+        );
+      } else {
+        const woId = await workOrderSvc.createAutomatic({
+          assetId,
+          woSource:    'PREDICTIVE',
+          priority:    'HIGH',
+          description: `Đã vượt ngưỡng ${threshold}h chạy — cần bảo trì dự báo`,
+          createdBy:   null,
+        });
+        await predEvtModel.create({
+          assetId,
+          eventType:   'AUTO_WO_CREATED',
+          detail:      `Tự động tạo WO chờ phê duyệt (ngưỡng ${threshold}h)`,
+          relatedWOId: woId,
+        });
+        await notifService.notifyManagers(
+          `Máy #${assetId} đã vượt ngưỡng ${threshold}h. Đã tạo phiếu WO #${woId} chờ phê duyệt.`,
+          'MAINTENANCE_DUE', 2,
+        );
+      }
     } else {
       const daysLeft = Math.floor(hoursRemain / avgHoursPerDay);
       const pmDate = new Date();
@@ -91,6 +119,11 @@ export async function recordReading({ assetId, readingValue, checklistId = null,
       estimatedNextPMDate = pmDate.toISOString().split('T')[0];
 
       if (daysLeft <= WARN_DAYS_THRESHOLD) {
+        await predEvtModel.create({
+          assetId,
+          eventType: 'WARN_DUE_SOON',
+          detail:    `Còn ~${daysLeft} ngày đến ngưỡng PM (${estimatedNextPMDate}), HoursRemain≈${hoursRemain.toFixed(1)}h`,
+        });
         await notifService.notifyManagers(
           `Máy #${assetId} dự kiến đến ngưỡng bảo trì sau ${daysLeft} ngày (${estimatedNextPMDate})`,
           'MAINTENANCE_DUE', 2,
@@ -108,18 +141,31 @@ export async function recordReading({ assetId, readingValue, checklistId = null,
     lastMaintenanceTotal: null, // giữ nguyên giá trị cũ
   });
 
-  return { deltaHours, totalHours, avgHoursPerDay, estimatedNextPMDate };
+  return {
+    deltaHours, totalHours, avgHoursPerDay, estimatedNextPMDate,
+    hoursRemain: schedules.length > 0 && avgHoursPerDay > 0
+      ? Number((schedules[0].frequencyValue - (totalHours - (counter?.lastMaintenanceTotal ?? 0))).toFixed(2))
+      : null,
+    thresholdHours: schedules[0]?.frequencyValue ?? null,
+  };
 }
 
-/** Gọi sau khi hoàn thành bảo trì — cập nhật LastMaintenanceTotal */
+/** Gọi sau khi hoàn thành bảo trì — cập nhật LastMaintenanceTotal + tính lại ngày PM dự báo */
 export async function resetAfterMaintenance(assetId) {
   const counter = await model.findByAsset(assetId);
   if (!counter) return;
   await model.setLastMaintenanceTotal(assetId, counter.totalAccumulatedHours);
+  await forecastSvc.recalculateEstimatedNextPMDate(assetId);
 }
 
 export async function getHistory(assetId, limit = 30) {
   const asset = await assetModel.findById(assetId);
   if (!asset) throw createError('Không tìm thấy tài sản', 404);
   return model.getHistory(assetId, limit);
+}
+
+export async function getPredictiveEvents(assetId, limit = 50) {
+  const asset = await assetModel.findById(assetId);
+  if (!asset) throw createError('Không tìm thấy tài sản', 404);
+  return predEvtModel.findByAsset(assetId, limit);
 }

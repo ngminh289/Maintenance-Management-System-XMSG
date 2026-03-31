@@ -1,6 +1,7 @@
 /**
  * maintenanceSchedule.model.js — SQL thuần cho bảng MaintenanceSchedules.
- * Dùng trong: services/maintenanceSchedule.service.js.
+ * patchLastExecutedDate / findCalendarOperationalByAsset: đồng bộ với WO hoàn thành (workOrderMaintenanceSync).
+ * Dùng trong: maintenanceSchedule.service.js, workOrderMaintenanceSync.service.js.
  */
 import { getPool } from '../config/database.js';
 
@@ -94,6 +95,29 @@ export async function setExecuted(id, lastExecutedDate, nextDueDate) {
   );
 }
 
+/** Chỉ cập nhật ngày hoàn thành thực tế (WO từ lịch đóng — NextDueDate đã lùi lúc tạo phiếu). */
+export async function patchLastExecutedDate(scheduleId, lastExecutedDate) {
+  await getPool().query(
+    'UPDATE MaintenanceSchedules SET LastExecutedDate = ? WHERE ScheduleID = ?',
+    [lastExecutedDate, scheduleId],
+  );
+}
+
+/** Lịch theo lịch âm còn hiệu lực — để lùi mốc khi PM theo giờ xong trùng kỳ. */
+export async function findCalendarOperationalByAsset(assetId) {
+  const [rows] = await getPool().query(
+    `SELECT ScheduleID AS scheduleId, FrequencyValue AS frequencyValue,
+            FrequencyUnit AS frequencyUnit, NextDueDate AS nextDueDate
+     FROM MaintenanceSchedules
+     WHERE AssetID = ?
+       AND FrequencyUnit IN ('DAYS','WEEKS','MONTHS','YEARS')
+       AND Status IN ('PENDING','IN_PROGRESS','OVERDUE')
+       AND (EndDate IS NULL OR EndDate >= CURDATE())`,
+    [assetId],
+  );
+  return rows;
+}
+
 /** Lấy tất cả lịch theo DAYS/WEEKS/MONTHS còn hoạt động (để check cảnh báo) */
 export async function findActiveCalendarSchedules() {
   const [rows] = await getPool().query(
@@ -105,7 +129,7 @@ export async function findActiveCalendarSchedules() {
      JOIN Assets a ON a.AssetID = ms.AssetID
      WHERE ms.FrequencyUnit IN ('DAYS','WEEKS','MONTHS','YEARS')
        AND (ms.EndDate IS NULL OR ms.EndDate >= CURDATE())
-       AND ms.Status NOT IN ('COMPLETED', 'DRAFT', 'CANCELLED')
+       AND ms.Status NOT IN ('COMPLETED', 'DRAFT', 'CANCELLED', 'PENDING_APPROVAL', 'REJECTED')
      ORDER BY ms.NextDueDate ASC`,
   );
   return rows;

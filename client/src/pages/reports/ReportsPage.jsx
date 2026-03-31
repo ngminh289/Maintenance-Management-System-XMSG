@@ -3,7 +3,8 @@
  * BFD 6.1 Báo cáo hiệu suất & tình trạng tài sản.
  * BFD 6.2 Thống kê Checklist và Phê duyệt.
  * BFD 6.3 Báo cáo sử dụng tài nguyên số.
- * Liên quan: api/stats.api.js, components/ui/*.
+ * RBAC: xuất CSV theo REPORT:EXPORT (Ban GĐ); nút In giữ cho mọi role được xem trang.
+ * Liên quan: api/stats.api.js, components/ui/*, utils/rbac.js.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -16,6 +17,8 @@ import { Badge }      from '../../components/ui/Badge.jsx';
 import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { fDate }      from '../../utils/format.js';
 import { BarChart2, FileText, CheckSquare, AlertTriangle, Clock, Download, Printer } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 /** Chuyển array objects thành CSV blob và trigger download */
@@ -44,6 +47,8 @@ const ASSET_STATUS_COLOR = {
 const PIE_COLORS = ['#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#9ca3af'];
 
 export function ReportsPage() {
+  const { user } = useAuth();
+  const canExport = canDo(user, 'REPORT:EXPORT');
   const [tab,       setTab]       = useState('assets');
   const [summary,   setSummary]   = useState(null);
   const [clTrend,   setClTrend]   = useState([]);
@@ -115,8 +120,9 @@ export function ReportsPage() {
 
       {/* Nút xuất dữ liệu */}
       <div className="flex gap-2">
-        {tab === 'assets' && (
+        {canExport && tab === 'assets' && (
           <button
+            type="button"
             onClick={() => downloadCSV(topFaulty.map(a => ({
               'Tài sản':      a.assetName,
               'Vị trí':       a.location ?? '',
@@ -129,8 +135,9 @@ export function ReportsPage() {
             <Download size={14} /> Xuất CSV
           </button>
         )}
-        {tab === 'checklist' && (
+        {canExport && tab === 'checklist' && (
           <button
+            type="button"
             onClick={() => downloadCSV(clTrendFormatted.map(r => ({
               'Ngày': r.date,
               'OK':   r.ok,
@@ -143,6 +150,7 @@ export function ReportsPage() {
           </button>
         )}
         <button
+          type="button"
           onClick={() => window.print()}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
         >

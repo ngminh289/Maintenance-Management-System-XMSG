@@ -1,5 +1,6 @@
 /**
  * AssetListPage.jsx — Danh sách tài sản với filter, tạo mới, xem QR.
+ * RBAC: ASSET:CREATE (thêm), ASSET:DELETE (loại biên).
  */
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -14,9 +15,12 @@ import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { Modal }    from '../../components/ui/Modal.jsx';
 import { ASSET_STATUS_LABEL, ASSET_STATUS_COLOR, fDate } from '../../utils/format.js';
 import { AssetForm } from './AssetForm.jsx';
+import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 export function AssetListPage() {
+  const { user } = useAuth();
   const [assets,  setAssets]  = useState([]);
   const [types,   setTypes]   = useState([]);
   const [locs,    setLocs]    = useState([]);
@@ -84,9 +88,11 @@ export function AssetListPage() {
           <option value="">Tất cả loại</option>
           {types.map(t => <option key={t.assetTypeId} value={t.assetTypeId}>{t.typeName}</option>)}
         </Select>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus size={15} /> Thêm tài sản
-        </Button>
+        {canDo(user, 'ASSET:CREATE') && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus size={15} /> Thêm tài sản
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -125,11 +131,11 @@ export function AssetListPage() {
                         <td className="px-4 py-3 text-gray-700">{fDate(a.commissionDate)}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <button onClick={() => setQrAsset(a)} className="p-1.5 rounded-lg hover:bg-blue-100 text-blue-600 transition-colors" title="Xem QR">
+                            <button type="button" onClick={() => setQrAsset(a)} className="p-1.5 rounded-lg hover:bg-blue-100 text-blue-600 transition-colors" title="Xem QR">
                               <QrCode size={16} />
                             </button>
-                            {a.status !== 'DECOMMISSIONED' && (
-                              <button onClick={() => handleDecommission(a.assetId, a.assetName)} className="p-1.5 rounded-lg hover:bg-red-100 text-red-500 transition-colors" title="Loại biên">
+                            {canDo(user, 'ASSET:DELETE') && a.status !== 'DECOMMISSIONED' && (
+                              <button type="button" onClick={() => handleDecommission(a.assetId, a.assetName)} className="p-1.5 rounded-lg hover:bg-red-100 text-red-500 transition-colors" title="Loại biên">
                                 <AlertTriangle size={16} />
                               </button>
                             )}

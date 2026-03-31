@@ -2,21 +2,23 @@
  * approval.service.js — Luồng phê duyệt đa cấp (WorkOrder, DigitalAsset, MaintenancePlan).
  * luongpheduyet.rule: PENDING_APPROVAL → cấp duyệt → APPROVED/REJECTED.
  * WO Routing (Workflow sheet 2.2):
- *   - Source SCHEDULE / Priority LOW|MEDIUM → Workflow thông thường (Trưởng ca → Trưởng phòng)
- *   - Source PREDICTIVE|CORRECTIVE / Priority HIGH|EMERGENCY → Workflow khẩn cấp (Trưởng phòng)
- * Liên quan: models/approvalLog.model.js, services/notification.service.js.
+ *   - Source SCHEDULE / Priority LOW|MEDIUM → Workflow thông thường (tên mẫu: Phê duyệt Work Order thông thường)
+ *   - PREDICTIVE|CORRECTIVE / HIGH|EMERGENCY → WO khẩn: 2 bước — Position 3 (Trưởng ca) rồi Position 6 (Trưởng phòng)
+ * Duyệt WO bước cuối: có thể kèm assignEmployeeId → phân công hiện trường ngay (tuỳ chọn).
+ * Liên quan: models/approvalLog.model.js, workOrderFieldAssign.service.js.
  */
 import { getPool } from '../config/database.js';
 import { createError } from '../utils/createError.js';
 import * as model from '../models/approvalLog.model.js';
 import * as notifService from './notification.service.js';
 import * as employeeModel from '../models/employee.model.js';
+import { assignFieldTechnicianToWorkOrder } from './workOrderFieldAssign.service.js';
 
 // Mapping ResourceType → trạng thái khi approved/rejected/revise
 const STATUS_MAP = {
   WORK_ORDER:       { table: 'WorkOrders',          idCol: 'WO_ID',          approved: 'WAITING',   rejected: 'CANCELLED', revise: null },
   DIGITAL_ASSET:    { table: 'DigitalAssets',        idCol: 'DigitalAssetID', approved: 'APPROVED',  rejected: 'REJECTED',  revise: 'DRAFT' },
-  MAINTENANCE_PLAN: { table: 'MaintenanceSchedules', idCol: 'ScheduleID',     approved: 'PENDING',   rejected: null,        revise: null },
+  MAINTENANCE_PLAN: { table: 'MaintenanceSchedules', idCol: 'ScheduleID',     approved: 'PENDING',   rejected: 'REJECTED',  revise: 'DRAFT' },
 };
 
 async function updateResourceStatus(resourceType, resourceId, status) {
@@ -43,7 +45,7 @@ async function notifyApproversForStep(workflowId, level, message) {
 /**
  * Chọn WorkflowID phù hợp cho WorkOrder dựa trên source và priority.
  * - SCHEDULE / LOW|MEDIUM → workflow thông thường (Trưởng ca → Trưởng phòng)
- * - PREDICTIVE | CORRECTIVE / HIGH|EMERGENCY → workflow khẩn cấp (Trưởng phòng)
+ * - PREDICTIVE | CORRECTIVE / HIGH|EMERGENCY → workflow khẩn (bước 1 = Position 3, bước 2 = Position 6)
  */
 async function getWorkflowForWO(woSource, priority) {
   const isUrgent = ['PREDICTIVE', 'CORRECTIVE'].includes(woSource)
@@ -83,6 +85,10 @@ export async function submit({ resourceType, resourceId, submitterId, workflowId
 
   if (!wf) throw createError(`Không tìm thấy workflow cho ${resourceType}`, 404);
 
+  if (await model.hasPendingForResource(resourceId, resourceType)) {
+    throw createError('Đã có yêu cầu phê duyệt đang chờ xử lý cho tài nguyên này', 400);
+  }
+
   const logId = await model.create({
     resourceId, resourceType,
     workflowId: wf.workflowId,
@@ -105,8 +111,8 @@ async function verifyApprover(log, approverId) {
   return { emp, step };
 }
 
-/** Duyệt — nếu là cấp cuối thì cập nhật resource thành APPROVED/WAITING */
-export async function approve({ logId, approverId, comment }) {
+/** Duyệt — cấp cuối: cập nhật resource; với WORK_ORDER có thể kèm assignEmployeeId (phân công L1/L2 ngay). */
+export async function approve({ logId, approverId, comment, assignEmployeeId }) {
   const log = await model.findById(logId);
   if (!log) throw createError('Không tìm thấy approval log', 404);
   if (log.status !== 'PENDING') throw createError('Log này đã được xử lý', 400);
@@ -149,6 +155,14 @@ export async function approve({ logId, approverId, comment }) {
   if (log.submittedBy) {
     await notifService.send(log.submittedBy, `Yêu cầu của bạn (${log.resourceType} #${log.resourceId}) đã được phê duyệt`, 'APPROVAL_REQUEST');
   }
+
+  if (log.resourceType === 'WORK_ORDER' && assignEmployeeId != null && assignEmployeeId !== '') {
+    const aid = Number(assignEmployeeId);
+    if (!Number.isFinite(aid) || aid < 1) throw createError('assignEmployeeId không hợp lệ', 400);
+    const approverEmp = await employeeModel.findById(approverId);
+    await assignFieldTechnicianToWorkOrder(log.resourceId, aid, approverEmp?.positionLevel ?? 0);
+  }
+
   return { approved: true };
 }
 

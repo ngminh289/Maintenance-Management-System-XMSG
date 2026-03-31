@@ -1,9 +1,6 @@
 /**
- * SchedulesPage.jsx — Lịch bảo trì: danh sách + tạo + sửa + xóa + tạo WO từ lịch.
- * project.rule 2.1: "Lập lịch bảo trì (định kỳ, dự đoán, khắc phục)".
- * Hỗ trợ:
- *   - HOURS   : dự báo dựa trên giờ chạy (AssetCounters)
- *   - DAYS/WEEKS/MONTHS/YEARS: theo ngày — NextDueDate tự động tính, WO tự tạo khi đến hạn
+ * SchedulesPage.jsx — Lịch bảo trì: DRAFT/REJECTED → nút Gửi → PENDING_APPROVAL → (Trưởng ca duyệt tại Phê duyệt) → PENDING.
+ * HOURS / ngày; WO chỉ từ lịch đã duyệt (PENDING…). Sửa/xóa: nháp & từ chối; Admin (level≥4) được vượt quy tắc.
  */
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -20,13 +17,21 @@ import { Pagination }  from '../../components/ui/Pagination.jsx';
 import { EmptyState }  from '../../components/ui/EmptyState.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
 import { fDate }       from '../../utils/format.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 const TYPE_COLOR   = { PREVENTIVE: 'blue', PREDICTIVE: 'yellow', CORRECTIVE: 'red' };
 const TYPE_LABEL   = { PREVENTIVE: 'Định kỳ', PREDICTIVE: 'Dự đoán', CORRECTIVE: 'Khắc phục' };
 const UNIT_LABEL   = { HOURS: 'giờ', DAYS: 'ngày', WEEKS: 'tuần', MONTHS: 'tháng', YEARS: 'năm' };
-const STATUS_COLOR = { DRAFT: 'gray', PENDING: 'yellow', IN_PROGRESS: 'blue', COMPLETED: 'green', OVERDUE: 'red', CANCELLED: 'gray' };
-const STATUS_LABEL = { DRAFT: 'Bản nháp', PENDING: 'Chờ TH', IN_PROGRESS: 'Đang TH', COMPLETED: 'Hoàn thành', OVERDUE: 'Quá hạn', CANCELLED: 'Hủy' };
+const STATUS_COLOR = {
+  DRAFT: 'gray', PENDING_APPROVAL: 'yellow', PENDING: 'blue', IN_PROGRESS: 'blue',
+  COMPLETED: 'green', OVERDUE: 'red', CANCELLED: 'gray', REJECTED: 'orange',
+};
+const STATUS_LABEL = {
+  DRAFT: 'Bản nháp', PENDING_APPROVAL: 'Chờ duyệt', PENDING: 'Chờ TH', IN_PROGRESS: 'Đang TH',
+  COMPLETED: 'Hoàn thành', OVERDUE: 'Quá hạn', CANCELLED: 'Hủy', REJECTED: 'Từ chối',
+};
 
 const EMPTY_FORM = { maintenanceType: 'PREVENTIVE', frequencyValue: 30, frequencyUnit: 'DAYS' };
 
@@ -36,6 +41,9 @@ function daysUntil(dateStr) {
 }
 
 function DueDateChip({ nextDueDate, frequencyUnit, status }) {
+  if (['DRAFT', 'PENDING_APPROVAL', 'REJECTED'].includes(status)) {
+    return <span className="text-xs text-gray-400 italic">Chưa hiệu lực</span>;
+  }
   if (frequencyUnit === 'HOURS') {
     return <span className="text-xs text-gray-400 italic">Theo giờ chạy</span>;
   }
@@ -131,6 +139,7 @@ function ScheduleForm({ form, setF, assets }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 export function SchedulesPage() {
+  const { user } = useAuth();
   const [schedules,  setSchedules]  = useState([]);
   const [assets,     setAssets]     = useState([]);
   const [total,      setTotal]      = useState(0);
@@ -246,14 +255,44 @@ export function SchedulesPage() {
     finally { setSaving(false); }
   };
 
-  const overdueCount = schedules.filter(s => s.frequencyUnit !== 'HOURS' && daysUntil(s.nextDueDate) < 0).length;
+  const canCreateSch = canDo(user, 'SCHEDULE:CREATE');
+  const canUpdateSch = canDo(user, 'SCHEDULE:UPDATE');
+  const canSubmitSch = canDo(user, 'SCHEDULE:SUBMIT');
+  const canApproveSch = canDo(user, 'SCHEDULE:APPROVE');
+  const canDeleteSch = canDo(user, 'SCHEDULE:DELETE');
+  const adminBypass = (user?.positionLevel ?? 0) >= 4;
+
+  const isOperational = (s) => ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(s.status);
+  const canEditRow = (s) => adminBypass || ['DRAFT', 'REJECTED'].includes(s.status);
+  const canDeleteRow = (s) => adminBypass || ['DRAFT', 'REJECTED'].includes(s.status);
+
+  const overdueCount = schedules.filter(s => isOperational(s) && s.frequencyUnit !== 'HOURS' && daysUntil(s.nextDueDate) < 0).length;
   const warningCount = schedules.filter(s => {
+    if (!isOperational(s) || s.frequencyUnit === 'HOURS') return false;
     const d = daysUntil(s.nextDueDate);
-    return s.frequencyUnit !== 'HOURS' && d !== null && d >= 0 && d <= 7;
+    return d !== null && d >= 0 && d <= 7;
   }).length;
+
+  const TH_TOOLTIPS = {
+    'Tần suất': 'Chu kỳ lặp lại giữa các lần bảo trì (vd. mỗi 30 ngày).',
+    'Ngày bắt đầu': 'Ngày bắt đầu áp dụng kế hoạch lịch.',
+    'Ngày đến hạn': 'Mốc lần bảo trì tiếp theo cần hoàn thành (sau khi tạo WO từ lịch, mốc này được lùi thêm 1 chu kỳ).',
+    'Ngày TH cuối': 'Ngày hệ thống ghi nhận đã phát sinh WO / cập nhật chu kỳ gần nhất (không phải ngày thợ hoàn thành phiếu).',
+  };
 
   return (
     <div className="space-y-5">
+      <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-blue-950">
+        <p className="font-bold text-blue-900 mb-1">Luồng lịch → phiếu việc → hiện trường</p>
+        <ul className="list-disc pl-5 space-y-1 text-blue-900/90 leading-relaxed">
+          <li>Sau khi <strong>Thêm lịch</strong>, trạng thái là <strong>Bản nháp</strong> — bấm <strong>Gửi</strong> trên dòng đó để vào <strong>Chờ duyệt</strong>, rồi xử lý tại menu <strong>Phê duyệt</strong>.</li>
+          <li><strong>Lịch</strong> phải được duyệt trước (trạng thái <strong>Chờ TH</strong> trên lịch = kế hoạch đã OK, chờ đến hạn thực hiện).</li>
+          <li>Nút <strong>WO</strong> hoặc scheduler tạo <strong>phiếu việc</strong> vào <strong>Chờ thực hiện</strong> — <em>không</em> lặp bước phê duyệt phiếu (vì kế hoạch đã duyệt).</li>
+          <li>Trưởng ca / Trưởng phòng <strong>phân công</strong> công nhân hoặc NV Kỹ thuật trên chi tiết phiếu; người được giao xem phiếu tại <strong>Phiếu việc</strong> + thông báo.</li>
+          <li>Tại máy: mở <strong>Checklist / QR</strong> (mã tài sản) để xem SOP/tài liệu — QR ở đây là <strong>nhận diện thiết bị</strong>, không phải khoá vật lý trừ khi nhà máy tích hợp thêm.</li>
+        </ul>
+      </div>
+
       {/* Banner cảnh báo */}
       {(overdueCount > 0 || warningCount > 0) && (
         <div className="flex gap-3 flex-wrap">
@@ -272,11 +311,13 @@ export function SchedulesPage() {
         </div>
       )}
 
-      <div className="flex justify-end">
-        <Button onClick={() => { setForm(EMPTY_FORM); setCreateOpen(true); }}>
-          <Plus size={15} /> Thêm lịch bảo trì
-        </Button>
-      </div>
+      {canCreateSch && (
+        <div className="flex justify-end">
+          <Button onClick={() => { setForm(EMPTY_FORM); setCreateOpen(true); }}>
+            <Plus size={15} /> Thêm lịch bảo trì
+          </Button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {loading ? <PageLoader />
@@ -286,14 +327,21 @@ export function SchedulesPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    {['Tên lịch', 'Tài sản', 'Loại', 'Trạng thái', 'Tần suất', 'Ngày bắt đầu', 'Ngày đến hạn', 'Ngày TH cuối', ''].map(h => (
-                      <th key={h} className="text-left text-xs font-bold text-gray-700 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
+                    {['Tên lịch', 'Tài sản', 'Loại', 'Trạng thái', 'Tần suất', 'Ngày bắt đầu', 'Ngày đến hạn', 'Ngày TH cuối', ''].map((h) => (
+                      <th
+                        key={h || 'actions'}
+                        title={h ? TH_TOOLTIPS[h] : undefined}
+                        className="text-left text-xs font-bold text-gray-700 uppercase tracking-wide px-4 py-3 whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {schedules.map(s => {
-                    const days = s.frequencyUnit !== 'HOURS' ? daysUntil(s.nextDueDate) : null;
+                    const op = isOperational(s);
+                    const days = op && s.frequencyUnit !== 'HOURS' ? daysUntil(s.nextDueDate) : null;
                     const isOverdue = days !== null && days < 0;
                     const isWarning = days !== null && days >= 0 && days <= 7;
                     return (
@@ -318,26 +366,28 @@ export function SchedulesPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
-                            {/* Gửi phê duyệt — chỉ hiện khi DRAFT */}
-                            {s.status === 'DRAFT' && (
-                              <Button size="xs" variant="secondary" onClick={() => handleSubmit(s.scheduleId)} title="Gửi phê duyệt">
+                            {canSubmitSch && ['DRAFT', 'REJECTED'].includes(s.status) && (
+                              <Button size="xs" variant="secondary" onClick={() => handleSubmit(s.scheduleId)} title="Gửi Trưởng ca duyệt">
                                 <Send size={11} /> Gửi
                               </Button>
                             )}
-                            {/* Tạo WO thủ công — chỉ khi PENDING */}
-                            {s.status === 'PENDING' && (
+                            {canApproveSch && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(s.status) && (
                               <Button size="xs" variant="secondary" onClick={() => handleGenerateWO(s.scheduleId)} title="Tạo WO thủ công">
                                 <Play size={11} /> WO
                               </Button>
                             )}
-                            <button onClick={() => openEdit(s)} title="Sửa lịch"
-                              className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors">
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => setDeleteItem(s)} title="Xóa lịch"
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors">
-                              <Trash2 size={13} />
-                            </button>
+                            {canUpdateSch && canEditRow(s) && (
+                              <button type="button" onClick={() => openEdit(s)} title="Sửa lịch"
+                                className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors">
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                            {canDeleteSch && canDeleteRow(s) && (
+                              <button type="button" onClick={() => setDeleteItem(s)} title="Xóa lịch"
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors">
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

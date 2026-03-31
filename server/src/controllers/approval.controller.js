@@ -24,7 +24,12 @@ export const submit = asyncHandler(async (req, res) => {
 });
 
 export const approve = asyncHandler(async (req, res) =>
-  ok(res, await service.approve({ logId: Number(req.params.logId), approverId: req.user.sub, comment: req.body.comment })));
+  ok(res, await service.approve({
+    logId: Number(req.params.logId),
+    approverId: req.user.sub,
+    comment: req.body.comment,
+    assignEmployeeId: req.body.assignEmployeeId,
+  })));
 
 export const reject = asyncHandler(async (req, res) => {
   await service.reject({ logId: Number(req.params.logId), approverId: req.user.sub, comment: req.body.comment });

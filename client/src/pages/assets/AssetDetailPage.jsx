@@ -1,9 +1,11 @@
 /**
- * AssetDetailPage.jsx — Chi tiết tài sản: thông tin, bộ đếm giờ, QR, checklist gần đây.
+ * AssetDetailPage.jsx — Chi tiết tài sản: thông tin, bộ đếm giờ, QR, lịch sử Reading + sự kiện dự báo PM.
+ * Luồng 1.1/2.1: RuntimeLogs, predictive-events, maintenance-history (WO hoàn thành + đồng bộ PM).
+ * RBAC: chỉnh sửa (ASSET:UPDATE), nhập giờ chạy (RUNTIME_LOG:CREATE) — ẩn nút khi không có quyền.
  */
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Pencil, QrCode, ArrowLeft, Gauge, History, Clock } from 'lucide-react';
+import { Pencil, QrCode, ArrowLeft, Gauge, Bell, Wrench } from 'lucide-react';
 import { assetApi }    from '../../api/asset.api.js';
 import { Badge }       from '../../components/ui/Badge.jsx';
 import { Card }        from '../../components/ui/Card.jsx';
@@ -12,15 +14,29 @@ import { Modal }       from '../../components/ui/Modal.jsx';
 import { Input }       from '../../components/ui/Input.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
 import { AssetForm }   from './AssetForm.jsx';
-import { ASSET_STATUS_LABEL, ASSET_STATUS_COLOR, fDate, fDateTime, fNumber } from '../../utils/format.js';
+import {
+  ASSET_STATUS_LABEL, ASSET_STATUS_COLOR, fDate, fDateTime, fNumber, WO_SOURCE_LABEL,
+} from '../../utils/format.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
+import { canDo } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
+const PREDICTIVE_EVENT_LABEL = {
+  WARN_DUE_SOON: 'Cảnh báo sắp tới ngưỡng PM',
+  THRESHOLD_EXCEEDED: 'Vượt ngưỡng giờ chạy',
+  AUTO_WO_CREATED: 'Tạo WO dự báo tự động',
+  AUTO_WO_SKIPPED_DUPLICATE: 'Không tạo WO (đã có phiếu mở)',
+};
+
 export function AssetDetailPage() {
+  const { user } = useAuth();
   const { id } = useParams();
   const [asset,          setAsset]          = useState(null);
   const [counter,        setCounter]        = useState(null);
   const [hourlySchedules, setHourlySchedules] = useState([]);
   const [history,        setHistory]        = useState([]);
+  const [predEvents,     setPredEvents]     = useState([]);
+  const [maintHistory,   setMaintHistory]   = useState([]);
   const [types,          setTypes]          = useState([]);
   const [locs,           setLocs]           = useState([]);
   const [loading,        setLoading]        = useState(true);
@@ -32,15 +48,19 @@ export function AssetDetailPage() {
 
   const load = async () => {
     try {
-      const [ar, cr, hr] = await Promise.all([
+      const [ar, cr, hr, pe, mh] = await Promise.all([
         assetApi.getById(id),
         assetApi.getCounter(id),
         assetApi.getHistory(id),
+        assetApi.getPredictiveEvents(id, { limit: 40 }).catch(() => ({ data: { data: [] } })),
+        assetApi.getMaintenanceHistory(id, { limit: 50 }).catch(() => ({ data: { data: [] } })),
       ]);
       setAsset(ar.data.data);
       setCounter(cr.data.data?.counter ?? null);
       setHourlySchedules(cr.data.data?.hourlySchedules ?? []);
       setHistory(hr.data.data ?? []);
+      setPredEvents(pe.data.data ?? []);
+      setMaintHistory(mh.data.data ?? []);
     } catch { toast.error('Không tải được dữ liệu'); }
     finally { setLoading(false); }
   };
@@ -78,6 +98,9 @@ export function AssetDetailPage() {
       ? 'Chưa đủ dữ liệu giờ chạy'
       : 'Chưa có lịch theo giờ (HOURS)';
 
+  const canEditAsset = canDo(user, 'ASSET:UPDATE');
+  const canLogHours = canDo(user, 'RUNTIME_LOG:CREATE');
+
   return (
     <div className="space-y-5">
       {/* Breadcrumb + actions */}
@@ -93,9 +116,11 @@ export function AssetDetailPage() {
           <Button variant="secondary" size="sm" onClick={() => setQrOpen(true)}>
             <QrCode size={14} /> QR Code
           </Button>
-          <Button size="sm" onClick={() => setEditOpen(true)}>
-            <Pencil size={14} /> Chỉnh sửa
-          </Button>
+          {canEditAsset && (
+            <Button size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil size={14} /> Chỉnh sửa
+            </Button>
+          )}
         </div>
       </div>
 
@@ -130,9 +155,11 @@ export function AssetDetailPage() {
         <Card
           title="Bộ đếm giờ chạy"
           action={
-            <Button size="xs" variant="secondary" onClick={() => setReadingOpen(true)}>
-              <Gauge size={12} /> Nhập giờ
-            </Button>
+            canLogHours ? (
+              <Button size="xs" variant="secondary" onClick={() => setReadingOpen(true)}>
+                <Gauge size={12} /> Nhập giờ
+              </Button>
+            ) : undefined
           }
         >
           {c ? (
@@ -168,9 +195,98 @@ export function AssetDetailPage() {
         </Card>
       </div>
 
+      <Card title={<span className="flex items-center gap-2"><Wrench size={16} /> Lịch sử bảo trì (WO đã hoàn thành)</span>}>
+        <p className="text-xs text-gray-600 leading-relaxed mb-4">
+          Cùng một tài sản có thể có <strong>lịch theo giờ chạy (HOURS)</strong> và <strong>lịch theo ngày/tuần/tháng</strong> — hai trục độc lập, không xung đột.
+          Khi đóng phiếu <strong>theo lịch / dự báo / thủ công</strong>, hệ thống <strong>đồng bộ</strong>: reset mốc chu kỳ <strong>giờ</strong> (PM dự báo) và cập nhật <strong>lịch ngày</strong> (ngày TH cuối; lùi <strong>NextDueDate</strong> nếu kỳ đó đã đến hoặc quá hạn).
+          Phiếu <strong>sự cố (CORRECTIVE)</strong> chỉ ghi nhận lịch sử, <em>không</em> reset chu kỳ định kỳ.
+        </p>
+        {maintHistory.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">Chưa có bản ghi — sẽ xuất hiện sau mỗi lần hoàn thành WO (trừ khi migration chưa chạy).</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-100">
+                <tr>
+                  {['Ngày hoàn thành', 'Nguồn', 'Giờ thực tế', 'Tổng giờ máy (lúc đó)', 'Phiếu', 'Ghi chú'].map(h => (
+                    <th key={h} className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {maintHistory.map((row) => (
+                  <tr key={row.historyId} className="hover:bg-gray-50">
+                    <td className="py-2.5 pr-3 whitespace-nowrap font-medium text-gray-800">{fDate(row.completedDate)}</td>
+                    <td className="py-2.5 pr-3">
+                      <Badge color={row.woSource === 'CORRECTIVE' ? 'red' : row.woSource === 'PREDICTIVE' ? 'yellow' : 'blue'}>
+                        {WO_SOURCE_LABEL[row.woSource] ?? row.woSource}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 pr-3">{row.actualHours != null ? `${fNumber(row.actualHours)} h` : '—'}</td>
+                    <td className="py-2.5 pr-3">{row.totalRuntimeHours != null ? `${fNumber(row.totalRuntimeHours)} h` : '—'}</td>
+                    <td className="py-2.5 pr-3">
+                      {row.workOrderId
+                        ? (
+                          <Link to={`/work-orders/${row.workOrderId}`} className="font-semibold text-blue-700 hover:underline">
+                            #{row.workOrderId}
+                          </Link>
+                          )
+                        : '—'}
+                    </td>
+                    <td className="py-2.5 text-gray-600 text-xs max-w-xs truncate" title={row.description}>{row.description ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Nhật ký dự báo (thuật toán / cảnh báo) */}
+      {predEvents.length > 0 && (
+        <Card title={<span className="flex items-center gap-2"><Bell size={16} /> Nhật ký dự báo bảo trì</span>}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-100">
+                <tr>
+                  {['Thời điểm', 'Loại', 'Chi tiết', 'WO liên quan'].map(h => (
+                    <th key={h} className="text-left text-xs font-medium text-gray-500 pb-2 pr-4">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {predEvents.map((ev) => (
+                  <tr key={ev.logId} className="hover:bg-gray-50">
+                    <td className="py-2.5 pr-4 font-medium text-gray-800 whitespace-nowrap">{fDateTime(ev.createdAt)}</td>
+                    <td className="py-2.5 pr-4">
+                      <Badge color={
+                        ev.eventType === 'THRESHOLD_EXCEEDED' ? 'red'
+                          : ev.eventType === 'WARN_DUE_SOON' ? 'orange' : 'blue'
+                      }>
+                        {PREDICTIVE_EVENT_LABEL[ev.eventType] ?? ev.eventType}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 pr-4 text-gray-700 max-w-md">{ev.detail ?? '—'}</td>
+                    <td className="py-2.5">
+                      {ev.relatedWOId
+                        ? (
+                          <Link to={`/work-orders/${ev.relatedWOId}`} className="font-semibold text-blue-700 hover:underline">
+                            WO #{ev.relatedWOId}
+                          </Link>
+                          )
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       {/* Runtime history */}
       {history.length > 0 && (
-        <Card title="Lịch sử ghi nhận giờ chạy">
+        <Card title="Lịch sử ghi nhận giờ chạy (RuntimeLogs)">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-gray-100">

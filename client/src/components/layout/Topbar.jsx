@@ -1,5 +1,6 @@
 /**
  * Topbar.jsx — Thanh tiêu đề top với chuông thông báo + user menu.
+ * RBAC: không có link admin riêng (điều hướng theo Sidebar + canAccess); không cần ẩn thêm.
  */
 import { useState, useEffect, useRef } from 'react';
 import { Menu, Bell, LogOut, User } from 'lucide-react';

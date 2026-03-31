@@ -24,6 +24,7 @@ import { EmployeesPage }        from './pages/employees/EmployeesPage.jsx';
 import { SchedulesPage }        from './pages/schedules/SchedulesPage.jsx';
 import { DocumentsPage }        from './pages/documents/DocumentsPage.jsx';
 import { ReportsPage }          from './pages/reports/ReportsPage.jsx';
+import { WorkflowsPage }        from './pages/workflows/WorkflowsPage.jsx';
 import { ProfilePage }          from './pages/ProfilePage.jsx';
 
 export default function App() {
@@ -57,12 +58,12 @@ export default function App() {
               <Route path="/assets/:id" element={<AssetDetailPage />} />
             </Route>
 
-            {/* Lịch bảo trì — CVKTS, Trưởng ca, Trưởng phòng */}
+            {/* Lịch bảo trì — NV Kỹ thuật (soạn) + Trưởng ca (duyệt) — rule/truongca.rule */}
             <Route element={<RoleGuard routeKey="schedules" />}>
               <Route path="/schedules" element={<SchedulesPage />} />
             </Route>
 
-            {/* Phiếu việc — KTV, Trưởng ca, Trưởng phòng */}
+            {/* Phiếu việc — Công nhân (được giao) + NV KT + Trưởng ca (toàn bộ + duyệt) */}
             <Route element={<RoleGuard routeKey="work-orders" />}>
               <Route path="/work-orders"     element={<WorkOrderListPage />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
@@ -79,7 +80,7 @@ export default function App() {
               <Route path="/documents" element={<DocumentsPage />} />
             </Route>
 
-            {/* Phê duyệt — CVKTS, Trưởng ca, Trưởng phòng */}
+            {/* Phê duyệt — Trưởng ca (NV KT / Ban GĐ không vào đây; BGD xem KPI qua Dashboard + Báo cáo) */}
             <Route element={<RoleGuard routeKey="approvals" />}>
               <Route path="/approvals" element={<ApprovalsPage />} />
             </Route>
@@ -92,6 +93,11 @@ export default function App() {
             {/* Nhân sự — Admin only */}
             <Route element={<RoleGuard routeKey="employees" />}>
               <Route path="/employees" element={<EmployeesPage />} />
+            </Route>
+
+            {/* Mẫu luồng phê duyệt — Admin (BFD 4.1 C/U) */}
+            <Route element={<RoleGuard routeKey="workflows" />}>
+              <Route path="/workflows" element={<WorkflowsPage />} />
             </Route>
 
             {/* Hồ sơ cá nhân — mọi user đều truy cập được */}

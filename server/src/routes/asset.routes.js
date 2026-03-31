@@ -1,5 +1,5 @@
 /**
- * asset.routes.js — /api/assets (CRUD + PATCH status + bộ đếm giờ + QR).
+ * asset.routes.js — /api/assets (CRUD + PATCH status + bộ đếm giờ + predictive-events + QR).
  * Phân quyền nghiêm ngặt theo RBAC (Roles_Permissions).
  * DELETE là soft-delete (DECOMMISSIONED) theo project.rule.
  */
@@ -46,8 +46,10 @@ assetRouter.delete('/:id',
 assetRouter.get('/:id/qr', ctrl.generateQR);
 
 // Bộ đếm giờ chạy
-assetRouter.get('/:assetId/counter',         counterCtrl.getCounter);
-assetRouter.get('/:assetId/counter/history', counterCtrl.getHistory);
+assetRouter.get('/:assetId/counter',              counterCtrl.getCounter);
+assetRouter.get('/:assetId/counter/history',      counterCtrl.getHistory);
+assetRouter.get('/:assetId/predictive-events',    counterCtrl.getPredictiveEvents);
+assetRouter.get('/:assetId/maintenance-history',   counterCtrl.getMaintenanceHistory);
 assetRouter.post('/:assetId/readings',
   requirePermission('RUNTIME_LOG', 'CREATE'),
   validate(readingSchema),

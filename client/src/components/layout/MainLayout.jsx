@@ -15,7 +15,9 @@ const PAGE_TITLES = {
   '/checklists':  'Checklist & QR Scan',
   '/documents':   'Kho tài liệu số',
   '/approvals':   'Phê duyệt',
+  '/workflows':   'Luồng phê duyệt',
   '/employees':   'Quản lý nhân sự',
+  '/reports':     'Thống kê & Báo cáo',
   '/settings':    'Cài đặt hệ thống',
   '/profile':     'Hồ sơ cá nhân',
 };

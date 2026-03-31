@@ -1,8 +1,8 @@
 /**
  * RegisterPage.jsx — Trang tự đăng ký tài khoản nhân viên.
  * Gửi đến POST /api/auth/register → backend gửi email xác thực.
- * Sau khi đăng ký: nhân viên phải xác thực email trước khi đăng nhập.
- * Admin cũng có thể tạo tài khoản qua EmployeesPage (không cần xác thực email).
+ * Luồng: đăng ký (chỉ chức vụ Level 1 — Công nhân) → xác thực email → quản trị viên kích hoạt tài khoản.
+ * Các vai trò cao hơn chỉ do admin tạo trên trang Nhân sự.
  */
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -27,9 +27,9 @@ export function RegisterPage() {
     Promise.all([employeeApi.getDepartments(), employeeApi.getPositions()])
       .then(([d, p]) => {
         setDepartments(d.data.data ?? []);
-        // Chỉ cho phép tự đăng ký chức vụ Level 1 (nhân viên / hiện trường)
+        // BFD: chỉ Công nhân (Level 1) được tự đăng ký; KT/Trưởng ca/Admin/Ban GĐ do quản trị tạo.
         const all = p.data.data ?? [];
-        setPositions(all.filter(pos => pos.level <= 1));
+        setPositions(all.filter(pos => Number(pos.level) <= 1));
       })
       .catch(() => {});
   }, []);
@@ -202,9 +202,10 @@ export function RegisterPage() {
               Tạo tài khoản
             </Button>
 
-            <p className="text-xs text-gray-400 text-center pt-1">
-              Chỉ các chức vụ cấp nhân viên được phép tự đăng ký.
-              Tài khoản cấp quản lý / admin do quản trị viên cấp.
+            <p className="text-xs text-gray-400 text-center pt-1 leading-relaxed">
+              Chỉ <strong>Công nhân (hiện trường)</strong> được tự đăng ký và chọn phòng ban.
+              Sau khi xác thực email, quản trị viên sẽ duyệt trước khi bạn đăng nhập.
+              Nhân viên kỹ thuật, trưởng ca, admin và Ban GĐ do quản trị viên tạo tài khoản.
             </p>
           </form>
         </div>

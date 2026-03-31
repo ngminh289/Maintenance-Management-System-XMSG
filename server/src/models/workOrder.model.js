@@ -1,6 +1,7 @@
 /**
  * workOrder.model.js — SQL thuần cho bảng WorkOrders + WO_Assignments.
- * Dùng trong: services/workOrder.service.js.
+ * Đo thời gian làm: WorkStartedAt + PausedAccumulatedSec + PauseStartedAt → tính ActualHours khi COMPLETED (migration 021).
+ * Dùng trong: services/workOrder.service.js, checklist.service.js.
  */
 import { getPool } from '../config/database.js';
 
@@ -16,6 +17,9 @@ const COLS = `
   wo.ActualDate     AS actualDate,
   wo.EstimatedHours AS estimatedHours,
   wo.ActualHours    AS actualHours,
+  wo.WorkStartedAt        AS workStartedAt,
+  wo.PausedAccumulatedSec AS pausedAccumulatedSec,
+  wo.PauseStartedAt       AS pauseStartedAt,
   wo.Status         AS status,
   wo.WO_Source      AS woSource,
   wo.Priority       AS priority,
@@ -71,6 +75,64 @@ export async function findById(id) {
     `SELECT ${COLS} ${BASE_JOIN} WHERE wo.WO_ID = ?`, [id],
   );
   return rows[0] || null;
+}
+
+/** Phiếu PREDICTIVE còn mở trên cùng tài sản — tránh tạo trùng khi vượt ngưỡng nhiều lần. */
+export async function findOpenPredictiveIdByAsset(assetId) {
+  const [rows] = await getPool().query(
+    `SELECT WO_ID AS woId FROM WorkOrders
+     WHERE AssetID = ? AND WO_Source = 'PREDICTIVE'
+       AND Status NOT IN ('COMPLETED','CANCELLED')
+     ORDER BY WO_ID DESC LIMIT 1`,
+    [assetId],
+  );
+  return rows[0]?.woId ?? null;
+}
+
+/** Giờ làm việc thuần (đã trừ pause) — chỉ khi phiếu đang chạy hoặc tạm dừng. */
+export function computeSuggestedActualHours(wo) {
+  if (!wo?.workStartedAt) return undefined;
+  if (!['IN_PROGRESS', 'PAUSED'].includes(wo.status)) return undefined;
+  const end = Date.now();
+  const start = new Date(wo.workStartedAt).getTime();
+  if (!Number.isFinite(start)) return undefined;
+  let pauseMs = (Number(wo.pausedAccumulatedSec) || 0) * 1000;
+  if (wo.pauseStartedAt) {
+    pauseMs += end - new Date(wo.pauseStartedAt).getTime();
+  }
+  const ms = Math.max(0, end - start - pauseMs);
+  return Math.round((ms / 3600000) * 100) / 100;
+}
+
+/**
+ * Ghi nhận mốc thời gian trước khi đổi Status.
+ * Dùng Date từ Node (bind mysql2) — cùng hệ quy chiếu với khi đọc DATETIME và với Date.now() trong computeSuggestedActualHours.
+ * Tránh UTC_TIMESTAMP() trong SQL: giá trị đó là “giờ UTC” ghi vào DATETIME không timezone, driver lại đọc như giờ local → lệch ~7h (VN).
+ */
+export async function applyTimingTransition(woId, fromStatus, toStatus) {
+  const pool = getPool();
+  const now = new Date();
+  if (toStatus === 'IN_PROGRESS' && fromStatus === 'WAITING') {
+    await pool.query(
+      `UPDATE WorkOrders SET WorkStartedAt = COALESCE(WorkStartedAt, ?) WHERE WO_ID = ?`,
+      [now, woId],
+    );
+  }
+  if (toStatus === 'PAUSED' && fromStatus === 'IN_PROGRESS') {
+    await pool.query(
+      `UPDATE WorkOrders SET PauseStartedAt = ? WHERE WO_ID = ?`,
+      [now, woId],
+    );
+  }
+  if (toStatus === 'IN_PROGRESS' && fromStatus === 'PAUSED') {
+    await pool.query(
+      `UPDATE WorkOrders SET
+        PausedAccumulatedSec = PausedAccumulatedSec + IFNULL(TIMESTAMPDIFF(SECOND, PauseStartedAt, ?), 0),
+        PauseStartedAt = NULL
+       WHERE WO_ID = ?`,
+      [now, woId],
+    );
+  }
 }
 
 export async function getAssignments(woId) {
