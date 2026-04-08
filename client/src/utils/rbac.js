@@ -61,7 +61,7 @@ export const TRUONG_CA_SUMMARY = {
     'Lịch: duyệt bản nháp → chính thức, tạo WO khi cần.',
     'Phiếu việc: duyệt, phân công, theo dõi trạng thái.',
     'Tài liệu: duyệt file NV Kỹ thuật gửi lên.',
-    'Checklist: quản lý mẫu, xác nhận kết quả hiện trường.',
+    'Mẫu checklist: NV KT + TC/TP soạn; quét QR: mọi role xem thiết bị; nộp checklist: CN + Trưởng phòng; tiếp nhận: TC/TP.',
   ],
 };
 
@@ -72,7 +72,10 @@ const ROUTE_ACCESS = {
   'assets':     [true,   true,  true,  true,  true ],  // tất cả xem tài sản
   'schedules':  [false,  true,  true,  true,  false],  // KT + TC + Admin: lập lịch; TC gửi duyệt + duyệt (Approvals)
   'work-orders':[true,   true,  true,  true,  false],  // Admin tạo WO chờ duyệt (4.1)
-  'checklists': [true,   true,  true,  false, false],  // hiện trường + giám sát
+  /** QR / xem tài sản: mọi vai (kể cả Admin, Ban GĐ) — nộp checklist tách quyền CHECKLIST_RESULT:CREATE */
+  'checklists':      [true,   true,  true,  true,  true ],
+  /** §5.1 — chỉ NV KT + Trưởng ca/Trưởng phòng quản lý mẫu theo loại */
+  'checklist-manage': [false,  true,  true,  false, false],
   'documents':  [true,   true,  true,  true,  false],  // Admin xem + gửi duyệt / phiên bản (4.1)
   'workflows':  [false,  false, false, true,  false],  // mẫu luồng phê duyệt — Admin C/U (4.1)
   'approvals':  [false,  false, true,  false, false], // chỉ Trưởng ca xử lý hàng chờ duyệt; Ban GĐ chỉ R (báo cáo)
@@ -120,7 +123,10 @@ const ACTION_ACCESS = {
   'DOCUMENT:APPROVE':           [false,  false, true,  false, false],
   'CHECKLIST_TEMPLATE:CREATE':  [false,  true,  true,  false, false],
   'CHECKLIST_TEMPLATE:UPDATE':  [false,  true,  true,  false, false],
-  'CHECKLIST_RESULT:CREATE':    [true,   false, true,  false, false], // CN + TC nộp checklist
+  /** §5.1 (A) — phê duyệt mẫu trong DB; UI mở rộng luồng sau */
+  'CHECKLIST_TEMPLATE:APPROVE': [false,  false, true,  false, false],
+  /** Ma trận không dùng cho CREATE — xử lý trong canDo (chỉ CN + Trưởng phòng). */
+  'CHECKLIST_RESULT:CREATE':    [false,  false, false, false, false],
   'EMPLOYEE:CREATE':            [false,  false, false, true,  false],
   'EMPLOYEE:UPDATE':            [false,  false, false, true,  false],
   'EMPLOYEE:DELETE':            [false,  false, false, true,  false], // PATCH activate/deactivate
@@ -135,6 +141,16 @@ const ACTION_ACCESS = {
 };
 
 export function canDo(user, action) {
+  /** Nộp checklist quét QR: chỉ Công nhân + Trưởng phòng (Trưởng ca / NV KT / Admin / BGD chỉ xem). */
+  if (action === 'CHECKLIST_RESULT:CREATE') {
+    const k = getRoleKey(user);
+    return k === 'congNhan' || k === 'truongPhong';
+  }
+  /** Tiếp nhận kết quả: Trưởng ca hoặc Trưởng phòng */
+  if (action === 'CHECKLIST_RESULT:APPROVE') {
+    const k = getRoleKey(user);
+    return k === 'truongCa' || k === 'truongPhong';
+  }
   const matrix = ACTION_ACCESS[action];
   if (!matrix) return false;
   const idx = ROLE_IDX[getRoleKey(user)];

@@ -1,5 +1,6 @@
 /**
  * checklist.controller.js — HTTP handler: /api/checklists.
+ * BFD mục 3: getPendingReviewResults + reviewChecklistResult (Trưởng ca APPROVE/REJECT).
  * Liên quan: services/checklist.service.js, routes/checklist.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -63,3 +64,15 @@ export const getResultById = asyncHandler(async (req, res) =>
 
 export const getResultsByAsset = asyncHandler(async (req, res) =>
   ok(res, await service.getResultsByAsset(req.params.assetId, req.query.limit)));
+
+export const getPendingReviewResults = asyncHandler(async (req, res) =>
+  ok(res, await service.getPendingReviewResults(Number(req.query.limit) || 50)));
+
+export const reviewChecklistResult = asyncHandler(async (req, res) => {
+  const decision = String(req.body.decision || '').toUpperCase();
+  return ok(res, await service.reviewChecklistResult(req.params.id, {
+    supervisorId: req.user.sub,
+    decision,
+    supervisorNotes: req.body.supervisorNotes?.trim() || null,
+  }));
+});

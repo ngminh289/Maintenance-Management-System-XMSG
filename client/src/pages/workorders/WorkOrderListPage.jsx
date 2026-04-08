@@ -24,7 +24,8 @@ const STATUS_TABS = [
   { key: '', label: 'Tất cả' },
   { key: 'PENDING_APPROVAL', label: 'Chờ duyệt' },
   { key: 'WAITING',          label: 'Chờ thực hiện' },
-  { key: 'IN_PROGRESS',      label: 'Đang thực hiện' },
+  { key: 'IN_PROGRESS',      label: 'Đang TH' },
+  { key: 'AWAITING_CLOSURE', label: 'Chờ NT' },
   { key: 'COMPLETED',        label: 'Hoàn thành' },
   { key: 'CANCELLED',        label: 'Đã hủy' },
 ];

@@ -5,11 +5,11 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
-  CheckSquare, Users, ShieldCheck, ChevronRight,
+  CheckSquare, ClipboardCheck, Layers, Users, ShieldCheck, ChevronRight,
   Factory, BarChart2, GitBranch,
 } from 'lucide-react';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
-import { canAccess, getRoleKey } from '../../utils/rbac.js';
+import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
 
 // roleKey → badge label hiển thị cạnh tên (TC / Trưởng phòng tách PositionID — rbac.js)
 const ROLE_BADGE = {
@@ -35,7 +35,9 @@ const MENU_GROUPS = [
       { to: '/assets',      routeKey: 'assets',      icon: Cpu,           label: 'Tài sản thiết bị' },
       { to: '/schedules',   routeKey: 'schedules',   icon: ClipboardList, label: 'Lịch bảo trì' },
       { to: '/work-orders', routeKey: 'work-orders', icon: Wrench,        label: 'Phiếu việc' },
-      { to: '/checklists',  routeKey: 'checklists',  icon: CheckSquare,   label: 'Checklist / QR' },
+      { to: '/checklists',  routeKey: 'checklists',  icon: CheckSquare,   label: 'Checklist / QR', end: true },
+      { to: '/checklists/review', routeKey: 'checklists', icon: ClipboardCheck, label: 'Tiếp nhận checklist', action: 'CHECKLIST_RESULT:APPROVE' },
+      { to: '/checklists/templates', routeKey: 'checklist-manage', icon: Layers, label: 'Mẫu checklist (theo loại)' },
     ],
   },
   {
@@ -60,10 +62,10 @@ const MENU_GROUPS = [
   },
 ];
 
-function NavItem({ to, icon: Icon, label }) {
+function NavItem({ to, icon: Icon, label, end }) {
   return (
     <NavLink
-      to={to} end={to === '/'}
+      to={to} end={end === true || to === '/'}
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
         ${isActive
@@ -85,9 +87,11 @@ export function Sidebar({ open, onClose }) {
   // Lọc menu: chỉ giữ group có ít nhất 1 item user được xem
   const visibleGroups = MENU_GROUPS.map(group => ({
     ...group,
-    items: group.items.filter(item =>
-      item.routeKey === null || canAccess(user, item.routeKey)
-    ),
+    items: group.items.filter(item => {
+      if (item.routeKey !== null && !canAccess(user, item.routeKey)) return false;
+      if (item.action && !canDo(user, item.action)) return false;
+      return true;
+    }),
   })).filter(g => g.items.length > 0);
 
   return (
@@ -119,7 +123,7 @@ export function Sidebar({ open, onClose }) {
                 {group.label}
               </p>
               <div className="space-y-0.5">
-                {group.items.map((item) => (
+                {group.items.map(({ routeKey: _rk, action: _ac, ...item }) => (
                   <NavItem key={item.to} {...item} />
                 ))}
               </div>

@@ -20,6 +20,7 @@ const COLS = `
   wo.WorkStartedAt        AS workStartedAt,
   wo.PausedAccumulatedSec AS pausedAccumulatedSec,
   wo.PauseStartedAt       AS pauseStartedAt,
+  wo.WorkReportedAt       AS workReportedAt,
   wo.Status         AS status,
   wo.WO_Source      AS woSource,
   wo.Priority       AS priority,
@@ -89,11 +90,12 @@ export async function findOpenPredictiveIdByAsset(assetId) {
   return rows[0]?.woId ?? null;
 }
 
-/** Giờ làm việc thuần (đã trừ pause) — chỉ khi phiếu đang chạy hoặc tạm dừng. */
+/** Giờ làm việc thuần (đã trừ pause). Đến WorkReportedAt nếu đã báo hoàn thành chờ nghiệm thu. */
 export function computeSuggestedActualHours(wo) {
   if (!wo?.workStartedAt) return undefined;
-  if (!['IN_PROGRESS', 'PAUSED'].includes(wo.status)) return undefined;
-  const end = Date.now();
+  if (!['IN_PROGRESS', 'PAUSED', 'AWAITING_CLOSURE'].includes(wo.status)) return undefined;
+  const reportedMs = wo.workReportedAt ? new Date(wo.workReportedAt).getTime() : null;
+  const end = reportedMs != null && Number.isFinite(reportedMs) ? reportedMs : Date.now();
   const start = new Date(wo.workStartedAt).getTime();
   if (!Number.isFinite(start)) return undefined;
   let pauseMs = (Number(wo.pausedAccumulatedSec) || 0) * 1000;
@@ -131,6 +133,18 @@ export async function applyTimingTransition(woId, fromStatus, toStatus) {
         PauseStartedAt = NULL
        WHERE WO_ID = ?`,
       [now, woId],
+    );
+  }
+  if (toStatus === 'AWAITING_CLOSURE' && fromStatus === 'IN_PROGRESS') {
+    await pool.query(
+      'UPDATE WorkOrders SET WorkReportedAt = ? WHERE WO_ID = ?',
+      [now, woId],
+    );
+  }
+  if (toStatus === 'IN_PROGRESS' && fromStatus === 'AWAITING_CLOSURE') {
+    await pool.query(
+      'UPDATE WorkOrders SET WorkReportedAt = NULL WHERE WO_ID = ?',
+      [woId],
     );
   }
 }

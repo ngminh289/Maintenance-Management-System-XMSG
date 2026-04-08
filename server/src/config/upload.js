@@ -2,6 +2,7 @@
  * upload.js — Cấu hình multer cho:
  *   - uploadDocument : tài liệu kỹ thuật số (DigitalAssets) → uploads/documents/
  *   - uploadPhoto    : ảnh minh chứng checklist hiện trường → uploads/photos/
+ *   - uploadWoPhotos : ảnh hiện trường WO (nhiều ảnh) → uploads/work-orders/
  * Dùng trong: routes/digitalAsset.routes.js, routes/checklist.routes.js.
  */
 import multer from 'multer';
@@ -15,8 +16,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Thư mục upload ─────────────────────────────────────────────────────────
 export const UPLOAD_DIR       = join(__dirname, '..', '..', 'uploads', 'documents');
 export const UPLOAD_PHOTO_DIR = join(__dirname, '..', '..', 'uploads', 'photos');
+export const UPLOAD_WO_DIR    = join(__dirname, '..', '..', 'uploads', 'work-orders');
 mkdirSync(UPLOAD_DIR,       { recursive: true });
 mkdirSync(UPLOAD_PHOTO_DIR, { recursive: true });
+mkdirSync(UPLOAD_WO_DIR,    { recursive: true });
 
 // ── Helper tên file ────────────────────────────────────────────────────────
 const uniqueName = (file) => {
@@ -48,6 +51,21 @@ const photoStorage = multer.diskStorage({
 });
 export const uploadPhoto = multer({
   storage:    photoStorage,
+  limits:     { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    PHOTO_EXT.has(extname(file.originalname).toLowerCase())
+      ? cb(null, true)
+      : cb(Object.assign(new Error('Chỉ hỗ trợ ảnh JPG/PNG/WEBP'), { status: 400 }));
+  },
+});
+
+const woPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_WO_DIR),
+  filename:    (_req, file, cb) => cb(null, uniqueName(file)),
+});
+/** Nhiều ảnh / lần — phiếu công việc hiện trường */
+export const uploadWoPhotos = multer({
+  storage:    woPhotoStorage,
   limits:     { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     PHOTO_EXT.has(extname(file.originalname).toLowerCase())

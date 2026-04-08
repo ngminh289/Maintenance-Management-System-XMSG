@@ -28,6 +28,7 @@ export const summary = asyncHandler(async (_req, res) => {
     SUM(Status = 'PENDING_APPROVAL') AS pendingApproval,
     SUM(Status = 'WAITING')          AS waiting,
     SUM(Status = 'IN_PROGRESS')      AS inProgress,
+    SUM(Status = 'AWAITING_CLOSURE') AS awaitingClosure,
     SUM(Status = 'COMPLETED')        AS completed,
     SUM(Status = 'CANCELLED')        AS cancelled
   FROM WorkOrders`);

@@ -44,6 +44,7 @@ export const WO_STATUS_LABEL = {
   WAITING:          'Chờ thực hiện',
   IN_PROGRESS:      'Đang thực hiện',
   PAUSED:           'Tạm dừng',
+  AWAITING_CLOSURE: 'Chờ nghiệm thu',
   COMPLETED:        'Hoàn thành',
   CANCELLED:        'Đã hủy',
 };
@@ -53,6 +54,7 @@ export const WO_STATUS_COLOR = {
   WAITING:          'blue',
   IN_PROGRESS:      'indigo',
   PAUSED:           'orange',
+  AWAITING_CLOSURE: 'purple',
   COMPLETED:        'green',
   CANCELLED:        'gray',
 };

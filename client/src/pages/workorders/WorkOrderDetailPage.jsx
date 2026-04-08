@@ -1,16 +1,13 @@
 /**
- * WorkOrderDetailPage.jsx — Chi tiết phiếu việc: thông tin, chuyển trạng thái, phân công, phê duyệt.
- * luongpheduyet.rule: Thợ nhận việc → Đang thực hiện → Hoàn thành.
- * Phân công: chỉ Công nhân (L1) + NV Kỹ thuật (L2) — khớp BFD điều phối hiện trường; backend cũng chặn L>2.
- *
- * RBAC UI: Nhận việc (WAITING→IN_PROGRESS) — chỉ người được phân công + WORK_ORDER:UPDATE.
- * Tạm dừng / tiếp tục / hoàn thành — thợ được giao hoặc Trưởng ca (điều phối).
- * Phê duyệt — WORK_ORDER:APPROVE; phân công — WORK_ORDER:ASSIGN.
- * Giờ thực tế: server tính từ WorkStartedAt (Nhận việc) đến Hoàn thành, trừ thời gian PAUSED; có thể ghi đè trong modal.
+ * WorkOrderDetailPage.jsx — Chi tiết WO: phân công, thực hiện, ảnh hiện trường, báo hoàn thành → chờ nghiệm thu → TC/TP đóng phiếu.
+ * Thợ (được giao): nhận việc, tạm dừng/tiếp tục, upload nhiều ảnh, báo hoàn thành (AWAITING_CLOSURE).
+ * Trưởng ca / Trưởng phòng: nghiệm thu đóng (COMPLETED), hoặc trả về làm tiếp (IN_PROGRESS).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, UserPlus, CheckCircle, Play, Pause, XCircle, Info } from 'lucide-react';
+import {
+  ArrowLeft, UserPlus, CheckCircle, Play, Pause, Info, Camera, Trash2, ExternalLink,
+} from 'lucide-react';
 import { workOrderApi } from '../../api/workOrder.api.js';
 import { employeeApi }  from '../../api/employee.api.js';
 import { approvalApi }  from '../../api/approval.api.js';
@@ -28,12 +25,20 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { canDo, LEVEL_TRUONG_CA } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
-/** Chỉ lực lượng thực hiện tại máy — không giao WO cho Trưởng ca / Admin / Ban GĐ. */
 const ASSIGNEE_MAX_LEVEL = 2;
+
+const API_ORIGIN = (import.meta.env.VITE_API_BASE || 'http://localhost:4000/api').replace(/\/?api\/?$/, '');
+
+function woPhotoSrc(filePath) {
+  if (!filePath) return '';
+  const p = String(filePath).replace(/^\/+/, '');
+  return `${API_ORIGIN.replace(/\/$/, '')}/${p}`;
+}
 
 export function WorkOrderDetailPage() {
   const { id } = useParams();
   const { user } = useAuth();
+  const fileInputRef = useRef(null);
   const [wo,        setWo]        = useState(null);
   const [approvals, setApprovals] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -44,8 +49,11 @@ export function WorkOrderDetailPage() {
   const [approveAction, setApproveAction] = useState('APPROVED');
   const [comment,   setComment]   = useState('');
   const [saving,    setSaving]    = useState(false);
-  const [completeOpen, setCompleteOpen] = useState(false);
-  const [completeHours, setCompleteHours] = useState('');
+  const [awaitingOpen, setAwaitingOpen] = useState(false);
+  const [awaitingHours, setAwaitingHours] = useState('');
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeHours, setCloseHours] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   const load = async () => {
     try {
@@ -74,16 +82,38 @@ export function WorkOrderDetailPage() {
   }, [id]);
 
   const changeStatus = async (status) => {
-    if (!confirm(`Chuyển trạng thái sang "${WO_STATUS_LABEL[status]}"?`)) return;
+    if (!confirm(`Chuyển sang «${WO_STATUS_LABEL[status] ?? status}»?`)) return;
     try {
       await workOrderApi.changeStatus(id, status);
-      toast.success('Đã cập nhật trạng thái');
+      toast.success('Đã cập nhật');
       load();
     } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi'); }
   };
 
-  const submitComplete = async () => {
-    const raw = completeHours.trim();
+  const submitAwaitingClosure = async () => {
+    const raw = awaitingHours.trim();
+    let actualHours;
+    if (raw !== '') {
+      const n = Number(raw.replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0) {
+        toast.error('Giờ thực tế không hợp lệ');
+        return;
+      }
+      actualHours = n;
+    }
+    setSaving(true);
+    try {
+      await workOrderApi.changeStatus(id, 'AWAITING_CLOSURE', raw === '' ? {} : { actualHours });
+      toast.success('Đã gửi chờ nghiệm thu');
+      setAwaitingOpen(false);
+      setAwaitingHours('');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi'); }
+    finally { setSaving(false); }
+  };
+
+  const submitCloseWorkOrder = async () => {
+    const raw = closeHours.trim();
     let actualHours;
     if (raw !== '') {
       const n = Number(raw.replace(',', '.'));
@@ -96,12 +126,36 @@ export function WorkOrderDetailPage() {
     setSaving(true);
     try {
       await workOrderApi.changeStatus(id, 'COMPLETED', raw === '' ? {} : { actualHours });
-      toast.success('Đã hoàn thành phiếu');
-      setCompleteOpen(false);
-      setCompleteHours('');
+      toast.success('Đã đóng phiếu');
+      setCloseOpen(false);
+      setCloseHours('');
       load();
     } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi'); }
     finally { setSaving(false); }
+  };
+
+  const onPickPhotos = async (e) => {
+    const files = e.target?.files;
+    if (!files?.length) return;
+    const fd = new FormData();
+    for (let i = 0; i < files.length; i += 1) fd.append('photos', files[i]);
+    setPhotoBusy(true);
+    try {
+      await workOrderApi.uploadPhotos(id, fd);
+      toast.success(`Đã tải ${files.length} ảnh`);
+      e.target.value = '';
+      load();
+    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi upload'); }
+    finally { setPhotoBusy(false); }
+  };
+
+  const removePhoto = async (photoId) => {
+    if (!confirm('Xóa ảnh này?')) return;
+    try {
+      await workOrderApi.deletePhoto(id, photoId);
+      toast.success('Đã xóa');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi'); }
   };
 
   const handleAssign = async () => {
@@ -119,7 +173,6 @@ export function WorkOrderDetailPage() {
   const handleApprove = async () => {
     setSaving(true);
     try {
-      // Lấy logId đang PENDING
       const pendingLog = approvals.find(a => a.status === 'PENDING');
       if (!pendingLog) { toast.error('Không có yêu cầu duyệt nào đang chờ'); return; }
       await approvalApi.action(pendingLog.logId, { action: approveAction, comment });
@@ -138,17 +191,20 @@ export function WorkOrderDetailPage() {
     (a) => Number(a.employeeId) === Number(user?.employeeId),
   );
   const isTcPlus = (user?.positionLevel ?? 0) >= LEVEL_TRUONG_CA;
-  const canAcceptWork =
-    canDo(user, 'WORK_ORDER:UPDATE') && isAssigned;
-  const canSuperviseFlow =
-    canDo(user, 'WORK_ORDER:UPDATE') && (isAssigned || isTcPlus);
+  const canUpdate = canDo(user, 'WORK_ORDER:UPDATE');
+  const canAcceptWork = canUpdate && isAssigned;
+  const canSuperviseFlow = canUpdate && (isAssigned || isTcPlus);
+  const canReportAwaiting = canUpdate && isAssigned && wo.status === 'IN_PROGRESS';
+  const canUploadPhotos = canUpdate && (isAssigned || isTcPlus)
+    && ['IN_PROGRESS', 'AWAITING_CLOSURE'].includes(wo.status);
+  const canCloseAfterReview = canUpdate && isTcPlus && wo.status === 'AWAITING_CLOSURE';
+  const canReopenFromAwaiting = canUpdate && isTcPlus && wo.status === 'AWAITING_CLOSURE';
   const canApprove =
     wo.status === 'PENDING_APPROVAL' && canDo(user, 'WORK_ORDER:APPROVE');
   const canAssign = canDo(user, 'WORK_ORDER:ASSIGN');
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Link to="/work-orders" className="text-gray-400 hover:text-gray-600"><ArrowLeft size={18} /></Link>
@@ -158,32 +214,69 @@ export function WorkOrderDetailPage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {canAcceptWork && wo.status === 'WAITING'      && <Button size="sm" onClick={() => changeStatus('IN_PROGRESS')}><Play size={13} /> Nhận việc</Button>}
-          {canSuperviseFlow && wo.status === 'IN_PROGRESS'  && <Button size="sm" variant="secondary" onClick={() => changeStatus('PAUSED')}><Pause size={13} /> Tạm dừng</Button>}
-          {canSuperviseFlow && wo.status === 'PAUSED'       && <Button size="sm" onClick={() => changeStatus('IN_PROGRESS')}><Play size={13} /> Tiếp tục</Button>}
-          {canSuperviseFlow && wo.status === 'IN_PROGRESS'  && (
+          {canAcceptWork && wo.status === 'WAITING' && (
+            <Button size="sm" onClick={() => changeStatus('IN_PROGRESS')}><Play size={13} /> Nhận việc</Button>
+          )}
+          {canSuperviseFlow && wo.status === 'IN_PROGRESS' && (
+            <Button size="sm" variant="secondary" onClick={() => changeStatus('PAUSED')}><Pause size={13} /> Tạm dừng</Button>
+          )}
+          {canSuperviseFlow && wo.status === 'PAUSED' && (
+            <Button size="sm" onClick={() => changeStatus('IN_PROGRESS')}><Play size={13} /> Tiếp tục</Button>
+          )}
+          {canReportAwaiting && (
             <Button
               size="sm"
               variant="success"
               onClick={() => {
                 const s = wo.suggestedActualHours;
                 if (s != null && Number.isFinite(Number(s))) {
-                  setCompleteHours(String(s).replace('.', ','));
+                  setAwaitingHours(String(s).replace('.', ','));
                 } else {
-                  setCompleteHours('');
+                  setAwaitingHours('');
                 }
-                setCompleteOpen(true);
+                setAwaitingOpen(true);
               }}
             >
-              <CheckCircle size={13} /> Hoàn thành
+              <CheckCircle size={13} /> Báo hoàn thành
             </Button>
           )}
-          {canApprove && <Button size="sm" variant="success" onClick={() => setApproveOpen(true)}><CheckCircle size={13} /> Phê duyệt</Button>}
+          {canReopenFromAwaiting && (
+            <Button size="sm" variant="secondary" onClick={() => changeStatus('IN_PROGRESS')}>
+              Làm tiếp
+            </Button>
+          )}
+          {canCloseAfterReview && (
+            <Button
+              size="sm"
+              variant="success"
+              onClick={() => {
+                const h = wo.actualHours ?? wo.suggestedActualHours;
+                if (h != null && Number.isFinite(Number(h))) {
+                  setCloseHours(String(h).replace('.', ','));
+                } else {
+                  setCloseHours('');
+                }
+                setCloseOpen(true);
+              }}
+            >
+              <CheckCircle size={13} /> Đóng phiếu
+            </Button>
+          )}
+          {canApprove && (
+            <Button size="sm" variant="success" onClick={() => setApproveOpen(true)}><CheckCircle size={13} /> Phê duyệt</Button>
+          )}
           {canAssign && (
             <Button size="sm" variant="secondary" onClick={() => setAssignOpen(true)}><UserPlus size={13} /> Phân công</Button>
           )}
         </div>
       </div>
+
+      {wo.status === 'AWAITING_CLOSURE' && isTcPlus && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-sm text-violet-950">
+          <span className="font-semibold">Chờ nghiệm thu.</span>{' '}
+          Xem ảnh hiện trường bên dưới, sau đó <strong>Đóng phiếu</strong> hoặc <strong>Làm tiếp</strong> nếu cần bổ sung.
+        </div>
+      )}
 
       {wo.status === 'WAITING' && canAssign && !(wo.assignments?.length) && (
         <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -192,13 +285,12 @@ export function WorkOrderDetailPage() {
             <p className="font-bold text-amber-900">Chưa phân công người hiện trường</p>
             <p className="mt-1 leading-relaxed">
               Bấm <strong>Phân công</strong> và chọn <strong>Công nhân</strong> hoặc <strong>Nhân viên Kỹ thuật</strong>.
-              Người được giao sẽ thấy phiếu trong <strong>Phiếu việc</strong> và nhận thông báo, rồi bấm <strong>Nhận việc</strong> khi bắt đầu.
             </p>
             <Link
               to={`/checklists?assetId=${wo.assetId}`}
               className="inline-block mt-2 text-sm font-semibold text-amber-900 underline hover:no-underline"
             >
-              Xem tài liệu / checklist theo tài sản (mã #{wo.assetId})
+              Checklist / QR — tài sản #{wo.assetId}
             </Link>
           </div>
         </div>
@@ -206,16 +298,14 @@ export function WorkOrderDetailPage() {
 
       {wo.status === 'WAITING' && isAssigned && (
         <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
-          <span className="font-semibold">Bạn được phân công phiếu này.</span>{' '}
-          Bấm <strong>Nhận việc</strong> khi bắt đầu. Tài liệu hướng dẫn:{' '}
+          <span className="font-semibold">Bạn được phân công.</span>{' '}
           <Link to={`/checklists?assetId=${wo.assetId}`} className="font-bold text-blue-800 underline">
-            Checklist / QR — tài sản #{wo.assetId}
+            Tài liệu / QR — #{wo.assetId}
           </Link>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Info */}
         <Card title="Thông tin phiếu" className="lg:col-span-2">
           <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
             {[
@@ -225,7 +315,7 @@ export function WorkOrderDetailPage() {
               ['Ngày dự kiến', fDate(wo.plannedDate)],
               ['Ngày thực tế', fDate(wo.actualDate)],
               ['Giờ ước tính', wo.estimatedHours ? `${wo.estimatedHours}h` : '—'],
-              ['Giờ thực tế',  wo.actualHours    ? `${wo.actualHours}h`    : '—'],
+              ['Giờ thực tế',  wo.actualHours != null && wo.actualHours !== '' ? `${wo.actualHours}h` : '—'],
               ['Nguồn',        wo.woSource],
             ].map(([l, v]) => (
               <div key={l}>
@@ -240,7 +330,6 @@ export function WorkOrderDetailPage() {
           </div>
         </Card>
 
-        {/* Assignments */}
         <Card title="Nhân viên phụ trách">
           {wo.assignments?.length > 0
             ? (
@@ -263,7 +352,76 @@ export function WorkOrderDetailPage() {
         </Card>
       </div>
 
-      {/* Approval history */}
+      {['IN_PROGRESS', 'AWAITING_CLOSURE'].includes(wo.status) && (
+        <Card title="Ảnh hiện trường">
+          {canUploadPhotos && (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp"
+                multiple
+                className="hidden"
+                onChange={onPickPhotos}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                loading={photoBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Camera size={14} /> Thêm ảnh
+              </Button>
+              <span className="text-xs text-gray-500">JPG / PNG / WEBP, tối đa 15 ảnh/lần, mỗi file ≤ 10MB</span>
+            </div>
+          )}
+          {!wo.photos?.length && (
+            <p className="text-sm text-gray-400">Chưa có ảnh.</p>
+          )}
+          {wo.photos?.length > 0 && (
+            <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {wo.photos.map((p) => {
+                const src = woPhotoSrc(p.filePath);
+                const own = p.uploadedBy != null && Number(p.uploadedBy) === Number(user?.employeeId);
+                const canDel = canUploadPhotos && (own || isTcPlus);
+                return (
+                  <li key={p.photoId} className="relative group rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
+                    <a href={src} target="_blank" rel="noopener noreferrer" className="block aspect-square">
+                      <img src={src} alt="" className="w-full h-full object-cover" />
+                    </a>
+                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <a
+                        href={src}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-white/90 text-gray-700 shadow"
+                        title="Mở"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                      {canDel && (
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-lg bg-white/90 text-red-600 shadow"
+                          title="Xóa"
+                          onClick={() => removePhoto(p.photoId)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-500 px-2 py-1 truncate">
+                      {p.uploadedByName ?? '—'} · {p.createdAt ? fDateTime(p.createdAt) : ''}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      )}
+
       {approvals.length > 0 && (
         <Card title="Lịch sử phê duyệt">
           <div className="space-y-3">
@@ -276,7 +434,7 @@ export function WorkOrderDetailPage() {
                 </Badge>
                 <div>
                   <p className="font-semibold text-gray-900">{a.approverName ?? 'Chờ phê duyệt'} · <span className="font-normal text-gray-600">{fDateTime(a.actionDate)}</span></p>
-                  {a.comment && <p className="font-medium text-gray-700 text-xs mt-1">"{a.comment}"</p>}
+                  {a.comment && <p className="font-medium text-gray-700 text-xs mt-1">&quot;{a.comment}&quot;</p>}
                 </div>
               </div>
             ))}
@@ -284,12 +442,10 @@ export function WorkOrderDetailPage() {
         </Card>
       )}
 
-      {/* Assign modal */}
       <Modal open={assignOpen} onClose={() => setAssignOpen(false)} title="Phân công nhân viên" size="sm">
         <div className="space-y-4">
           <p className="text-xs text-gray-600 leading-relaxed">
-            Chỉ hiển thị <strong>Công nhân</strong> và <strong>Nhân viên Kỹ thuật</strong> (thực hiện tại hiện trường).
-            Trưởng ca phân công, không tự ghi tên mình vào phiếu trừ trường hợp đặc biệt có quy trình riêng.
+            Công nhân / NV Kỹ thuật thực hiện tại hiện trường.
           </p>
           <Select label="Nhân viên thực hiện" value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)}>
             <option value="">— Chọn nhân viên —</option>
@@ -302,28 +458,46 @@ export function WorkOrderDetailPage() {
         </div>
       </Modal>
 
-      {/* Hoàn thành — gửi ActualHours (tùy chọn; để trống = không ghi DB) */}
-      <Modal open={completeOpen} onClose={() => setCompleteOpen(false)} title="Hoàn thành phiếu" size="sm">
+      <Modal open={awaitingOpen} onClose={() => setAwaitingOpen(false)} title="Báo hoàn thành (chờ nghiệm thu)" size="sm">
         <div className="space-y-4">
-          <p className="text-xs text-gray-600 leading-relaxed">
-            Hệ thống <strong>tự tính</strong> từ lúc <strong>Nhận việc</strong> đến bây giờ (đã trừ thời gian <strong>Tạm dừng</strong>). Ô bên dưới đã điền gợi ý — có thể sửa để ghi đè, hoặc xóa hết để lưu theo số tự động lúc bấm xác nhận.
+          <p className="text-xs text-gray-600">
+            Trưởng ca / Trưởng phòng sẽ xem ảnh hiện trường và <strong>đóng phiếu</strong>. Giờ làm gợi ý đến thời điểm báo cáo (đã trừ tạm dừng).
           </p>
           <Input
-            label="Giờ thực tế (tùy chọn)"
+            label="Giờ thực tế (tuỳ chọn)"
             type="text"
             inputMode="decimal"
-            placeholder="VD: 2 hoặc 0,5"
-            value={completeHours}
-            onChange={(e) => setCompleteHours(e.target.value)}
+            placeholder="Để trống = tự tính"
+            value={awaitingHours}
+            onChange={(e) => setAwaitingHours(e.target.value)}
           />
           <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setCompleteOpen(false)}>Hủy</Button>
-            <Button variant="success" onClick={submitComplete} loading={saving}>Xác nhận hoàn thành</Button>
+            <Button variant="secondary" onClick={() => setAwaitingOpen(false)}>Hủy</Button>
+            <Button variant="success" onClick={submitAwaitingClosure} loading={saving}>Gửi</Button>
           </div>
         </div>
       </Modal>
 
-      {/* Approve modal */}
+      <Modal open={closeOpen} onClose={() => setCloseOpen(false)} title="Nghiệm thu — đóng phiếu" size="sm">
+        <div className="space-y-4">
+          <p className="text-xs text-gray-600">
+            Xác nhận đã kiểm tra (ảnh / hiện trường). Có thể chỉnh lại giờ thực tế trước khi đóng.
+          </p>
+          <Input
+            label="Giờ thực tế (tuỳ chọn)"
+            type="text"
+            inputMode="decimal"
+            placeholder="Để trống = giữ theo báo cáo thợ"
+            value={closeHours}
+            onChange={(e) => setCloseHours(e.target.value)}
+          />
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={() => setCloseOpen(false)}>Hủy</Button>
+            <Button variant="success" onClick={submitCloseWorkOrder} loading={saving}>Đóng phiếu</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={approveOpen} onClose={() => setApproveOpen(false)} title="Xử lý phê duyệt" size="sm">
         <div className="space-y-4">
           <Select label="Hành động" value={approveAction} onChange={e => setApproveAction(e.target.value)}>

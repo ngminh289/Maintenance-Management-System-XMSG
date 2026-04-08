@@ -207,6 +207,10 @@ CREATE TABLE IF NOT EXISTS ChecklistTemplateItems (
                               NOT NULL DEFAULT 'PASS_FAIL',
     RangeMin     DECIMAL(10,2),
     RangeMax     DECIMAL(10,2),
+    SafeNumericMin DECIMAL(12,4),
+    SafeNumericMax DECIMAL(12,4),
+    OutOfRangeSuggest ENUM('WARNING','NG'),
+    PassFailFailSuggest ENUM('WARNING','NG'),
     Unit         VARCHAR(20),
     SortOrder    INT          NOT NULL DEFAULT 0,
     IsRequired   BOOLEAN      NOT NULL DEFAULT TRUE,
@@ -256,7 +260,7 @@ CREATE TABLE IF NOT EXISTS WorkOrders (
     ActualDate     DATE,
     EstimatedHours DECIMAL(5,2),
     ActualHours    DECIMAL(5,2),
-    Status         ENUM('PENDING_APPROVAL','WAITING','IN_PROGRESS','PAUSED','COMPLETED','CANCELLED')
+    Status         ENUM('PENDING_APPROVAL','WAITING','IN_PROGRESS','PAUSED','AWAITING_CLOSURE','COMPLETED','CANCELLED')
                                 NOT NULL DEFAULT 'WAITING',
     WO_Source      ENUM('SCHEDULE','PREDICTIVE','MANUAL','CORRECTIVE') NOT NULL DEFAULT 'MANUAL',
     Priority       ENUM('EMERGENCY','HIGH','MEDIUM','LOW') NOT NULL DEFAULT 'MEDIUM',
@@ -282,6 +286,18 @@ CREATE TABLE IF NOT EXISTS WO_Assignments (
     INDEX idx_employee (EmployeeID),
     FOREIGN KEY (WO_ID)      REFERENCES WorkOrders(WO_ID)     ON DELETE CASCADE,
     FOREIGN KEY (EmployeeID) REFERENCES Employees(EmployeeID) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- WorkOrderPhotos — ảnh hiện trường khi thực hiện WO (migration 029; timing cột xem migration 021).
+CREATE TABLE IF NOT EXISTS WorkOrderPhotos (
+    PhotoID    INT AUTO_INCREMENT PRIMARY KEY,
+    WO_ID      INT          NOT NULL,
+    FilePath   VARCHAR(512) NOT NULL,
+    UploadedBy INT          NULL,
+    CreatedAt  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_wo (WO_ID),
+    FOREIGN KEY (WO_ID)      REFERENCES WorkOrders(WO_ID)     ON DELETE CASCADE,
+    FOREIGN KEY (UploadedBy) REFERENCES Employees(EmployeeID) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -360,13 +376,19 @@ CREATE TABLE IF NOT EXISTS ChecklistResults (
     EvidencePhoto VARCHAR(255),
     Notes         TEXT,
     ReadingValue  INT,
+    ReviewStatus  ENUM('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+    ReviewedBy    INT,
+    ReviewedAt    DATETIME,
+    SupervisorNotes TEXT,
     INDEX idx_asset    (AssetID),
+    INDEX idx_review_status (ReviewStatus),
     INDEX idx_wo       (WO_ID),
     INDEX idx_checker  (CheckerID),
     INDEX idx_checktime (CheckTime),
     FOREIGN KEY (AssetID)   REFERENCES Assets(AssetID),
     FOREIGN KEY (WO_ID)     REFERENCES WorkOrders(WO_ID)     ON DELETE SET NULL,
-    FOREIGN KEY (CheckerID) REFERENCES Employees(EmployeeID)
+    FOREIGN KEY (CheckerID) REFERENCES Employees(EmployeeID),
+    FOREIGN KEY (ReviewedBy) REFERENCES Employees(EmployeeID)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------

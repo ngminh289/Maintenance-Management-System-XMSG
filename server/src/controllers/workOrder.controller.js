@@ -27,8 +27,26 @@ export const changeStatus = asyncHandler(async (req, res) => {
   const result = await service.changeStatus(req.params.id, req.body.status, {
     actorLevel: req.user.positionLevel,
     actualHours: req.body.actualHours,
+    employeeId: req.user.sub,
   });
   return ok(res, result);
+});
+
+export const addPhotos = asyncHandler(async (req, res) => {
+  const photos = await service.addWorkOrderPhotos(Number(req.params.id), req.files || [], {
+    employeeId: req.user.sub,
+    actorLevel: req.user.positionLevel,
+  });
+  return ok(res, photos, 201);
+});
+
+export const deletePhoto = asyncHandler(async (req, res) => {
+  const photos = await service.deleteWorkOrderPhoto(
+    Number(req.params.id),
+    Number(req.params.photoId),
+    { employeeId: req.user.sub, actorLevel: req.user.positionLevel },
+  );
+  return ok(res, photos);
 });
 
 export const assign = asyncHandler(async (req, res) =>

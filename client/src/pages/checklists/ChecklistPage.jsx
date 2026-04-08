@@ -1,22 +1,29 @@
 /**
- * ChecklistPage.jsx — QR Scan simulation + Submit checklist.
- * luongxulykiemtra.rule: Quét QR → hiển thị 2 Tab (Checklist + Tài liệu SOP) → Submit → Auto-logic.
- * QR: mã gắn với tài sản — quét (hoặc nhập mã) để mở đúng thiết bị, xem tài liệu SOP + checklist.
- * Không phải “mở khóa” vật lý trừ khi nhà máy tích hợp cổng/PLC; trong app = mở ngữ cảnh làm việc an toàn.
- * RBAC: gửi kết quả chỉ khi CHECKLIST_RESULT:CREATE (Công nhân, Trưởng ca); NV KT xem mẫu, không nộp.
+ * ChecklistPage.jsx — QR: mọi user đăng nhập xem thông tin tài sản + SOP + lịch sử.
+ * Nộp checklist: chỉ Công nhân + Trưởng phòng (CHECKLIST_RESULT:CREATE).
+ * Gợi ý đánh giá tổng thể (WARNING/NG) theo ngưỡng mẫu: Numeric/Range ngoài min-max; PassFail «Không đạt».
+ * BFD mục 3: sau khi gửi → TC/TP tiếp nhận tại /checklists/review.
  */
 import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { QrCode, FileText, CheckSquare, AlertTriangle, XCircle, CheckCircle, ExternalLink, Tag } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  QrCode, FileText, CheckSquare, AlertTriangle, XCircle, CheckCircle, ExternalLink, Tag,
+  Cpu, MapPin, Hash, Calendar, Building2, ClipboardList, Wrench, Lightbulb,
+} from 'lucide-react';
 import { checklistApi } from '../../api/checklist.api.js';
+import { assetApi } from '../../api/asset.api.js';
 import { Button }  from '../../components/ui/Button.jsx';
 import { Input, Textarea, Select } from '../../components/ui/Input.jsx';
 import { Badge }   from '../../components/ui/Badge.jsx';
 import { Card }    from '../../components/ui/Card.jsx';
 import { Spinner } from '../../components/ui/Spinner.jsx';
-import { CHECKLIST_STATUS_COLOR, fDateTime } from '../../utils/format.js';
+import {
+  CHECKLIST_STATUS_COLOR, APPROVAL_STATUS_COLOR, ASSET_STATUS_LABEL, WO_SOURCE_LABEL,
+  fDate, fDateTime, fNumber,
+} from '../../utils/format.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { canDo } from '../../utils/rbac.js';
+import { canAccess, canDo } from '../../utils/rbac.js';
+import { deriveChecklistOverallSuggestion } from '../../utils/checklistSuggest.js';
 import toast from 'react-hot-toast';
 
 const INPUT_TYPE_LABEL = {
@@ -32,10 +39,14 @@ export function ChecklistPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const canSubmitChecklist = canDo(user, 'CHECKLIST_RESULT:CREATE');
+  const canOpenAssetPage = canAccess(user, 'assets');
+  const canOpenWorkOrder = canAccess(user, 'work-orders');
   const [assetInput,  setAssetInput]  = useState('');
   const [qrData,      setQrData]      = useState(null);
   const [scanning,    setScanning]    = useState(false);
-  const [activeTab,   setActiveTab]   = useState('checklist');
+  const [activeTab,   setActiveTab]   = useState('device');
+  const [maintHistory, setMaintHistory] = useState(null);
+  const [maintLoading, setMaintLoading] = useState(false);
   const [overallStatus, setOverallStatus] = useState('OK');
   const [notes,       setNotes]       = useState('');
   const [readingValue, setReadingValue] = useState('');
@@ -49,6 +60,25 @@ export function ChecklistPage() {
     const aid = searchParams.get('assetId')?.trim();
     if (aid) setAssetInput(aid);
   }, [searchParams]);
+
+  const assetIdForMaint = qrData?.asset?.assetId;
+
+  useEffect(() => {
+    if (activeTab !== 'maint' || !assetIdForMaint) return;
+    let cancelled = false;
+    (async () => {
+      setMaintLoading(true);
+      try {
+        const res = await assetApi.getMaintenanceHistory(assetIdForMaint, { limit: 50 });
+        if (!cancelled) setMaintHistory(res.data.data ?? []);
+      } catch {
+        if (!cancelled) setMaintHistory([]);
+      } finally {
+        if (!cancelled) setMaintLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, assetIdForMaint]);
 
   // Tập hợp tất cả tags từ documents để hiển thị bộ lọc
   const allDocTags = useMemo(() => {
@@ -68,6 +98,11 @@ export function ChecklistPage() {
     );
   }, [qrData, activeTagFilter]);
 
+  const overallSuggestion = useMemo(
+    () => deriveChecklistOverallSuggestion(qrData?.checklistTemplate?.items, answers),
+    [qrData, answers],
+  );
+
   const handleScan = async () => {
     if (!assetInput.trim()) return;
     setScanning(true);
@@ -77,6 +112,8 @@ export function ChecklistPage() {
     try {
       const res = await checklistApi.getQRInfo(assetInput.trim());
       setQrData(res.data.data);
+      setActiveTab('device');
+      setMaintHistory(null);
       toast.success(`Đã tải thông tin: ${res.data.data.asset.assetName}`);
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'Không tìm thấy tài sản');
@@ -116,9 +153,17 @@ export function ChecklistPage() {
       }
 
       setSubmitted(res.data.data);
-      toast.success('Đã gửi kết quả kiểm tra thành công!');
-      setQrData(null);
+      toast.success('Đã gửi — chờ Trưởng ca / Trưởng phòng xác nhận.');
+      setReadingValue('');
+      setNotes('');
+      setAnswers({});
       setEvidencePhoto(null);
+      setOverallStatus('OK');
+      try {
+        const refresh = await checklistApi.getQRInfo(String(qrData.asset.assetId));
+        setQrData(refresh.data.data);
+      } catch { /* giữ qrData cũ */ }
+      setActiveTab('histChecklist');
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'Lỗi gửi checklist');
     } finally { setSubmitting(false); }
@@ -131,13 +176,13 @@ export function ChecklistPage() {
   ];
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-4xl mx-auto space-y-5">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
-        <p className="font-bold text-indigo-900 mb-1">Quét QR trong quy trình bảo trì là gì?</p>
+        <p className="font-bold text-indigo-900 mb-1">Quét QR — xem đúng thiết bị</p>
         <p className="leading-relaxed text-indigo-900/90">
-          Mã QR (hoặc <strong>mã tài sản</strong>) gắn với <strong>đúng một thiết bị</strong> trong hệ thống. Quét hoặc nhập mã để mở{' '}
-          <strong>checklist kiểm tra</strong> và <strong>tài liệu SOP</strong> đúng máy — tránh làm nhầm tài liệu giữa nhiều tài sản.
-          Đây là bước <em>an toàn nghiệp vụ</em>; <strong>không</strong> thay cho khóa cửa / PLC trừ khi nhà máy tích hợp thêm thiết bị vật lý.
+          <strong>Mọi người</strong> có thể nhập mã / quét QR để xem <strong>thông tin tài sản</strong>, tài liệu SOP và lịch sử.
+          Chỉ <strong>công nhân</strong> và <strong>trưởng phòng</strong> mới <strong>gửi checklist</strong> kiểm tra từ đây.
+          Sau khi gửi, <strong>trưởng ca hoặc trưởng phòng</strong> xử lý tại &quot;Tiếp nhận checklist&quot; rồi hệ thống mới cập nhật trạng thái / phiếu việc.
         </p>
       </div>
 
@@ -163,50 +208,61 @@ export function ChecklistPage() {
 
       {/* Kết quả submit */}
       {submitted && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-5 flex items-start gap-3">
-          <CheckCircle size={20} className="text-green-600 flex-shrink-0 mt-0.5" />
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-start gap-3">
+          <CheckCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold text-green-800">Kết quả đã được ghi nhận!</p>
-            <p className="text-sm text-green-700 mt-1">
-              {submitted.workOrderId
-                ? `Đã tự động tạo phiếu việc WO-${String(submitted.workOrderId).padStart(4, '0')} chờ phê duyệt.`
-                : 'Tài sản đang hoạt động bình thường.'}
+            <p className="font-semibold text-amber-900">Đã gửi kết quả kiểm tra</p>
+            <p className="text-sm text-amber-800 mt-1">
+              {submitted.message ?? 'Trưởng ca / Trưởng phòng sẽ xác nhận OK / theo dõi / NG. Sau khi phê duyệt, hệ thống mới đổi trạng thái tài sản và tạo phiếu việc (nếu có).'}
             </p>
-            <button className="text-sm text-green-700 underline mt-2" onClick={() => setSubmitted(null)}>
+            {submitted.checklistId != null && (
+              <p className="text-xs text-amber-700 mt-2">Mã phiếu checklist: #{submitted.checklistId}</p>
+            )}
+            <button type="button" className="text-sm text-amber-800 underline mt-2" onClick={() => setSubmitted(null)}>
               Kiểm tra tài sản khác
             </button>
           </div>
         </div>
       )}
 
-      {/* 2-Tab Panel */}
-      {qrData && (
+      {qrData && (() => {
+        const asset = qrData.asset;
+        const typeName = asset.typeName || asset.assetTypeName;
+        const statusLabel = ASSET_STATUS_LABEL[asset.status] ?? asset.status;
+        const tabDefs = [
+          { key: 'device', label: 'Thiết bị', icon: Cpu },
+          { key: 'checklist', label: 'Checklist', icon: CheckSquare },
+          { key: 'docs', label: `SOP (${qrData.documents?.length ?? 0})`, icon: FileText },
+          { key: 'histChecklist', label: 'Lịch sử checklist', icon: ClipboardList },
+          { key: 'maint', label: 'Lịch sử bảo trì', icon: Wrench },
+        ];
+        return (
         <>
-          {/* Asset header */}
-          <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center gap-4">
-            <div className="p-3 bg-blue-50 rounded-xl">
-              <QrCode size={22} className="text-blue-600" />
+          <div className="flex flex-wrap items-center gap-3 justify-between bg-slate-900 text-white rounded-xl px-4 py-3 shadow-md">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 bg-white/10 rounded-lg shrink-0">
+                <QrCode size={22} className="text-sky-300" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-white truncate text-base">{asset.assetName}</p>
+                <p className="text-xs text-slate-300 truncate">
+                  Mã tài sản <span className="font-mono text-white">#{asset.assetId}</span>
+                  {typeName ? ` · ${typeName}` : ''}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold text-gray-900">{qrData.asset.assetName}</p>
-              <p className="text-sm text-gray-500">{qrData.asset.typeName} · {qrData.asset.locationName}</p>
-            </div>
-            <Badge color={CHECKLIST_STATUS_COLOR[qrData.asset.status] ?? 'gray'} className="ml-auto">
-              {qrData.asset.status}
-            </Badge>
+            <span className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-full bg-white/15 text-white border border-white/20">
+              {statusLabel}
+            </span>
           </div>
 
-          {/* Tabs */}
-          <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden -mb-[1px]">
-            {[
-              { key: 'checklist', label: 'Checklist', icon: CheckSquare },
-              { key: 'docs',      label: `Tài liệu SOP (${qrData.documents?.length ?? 0})`, icon: FileText },
-              { key: 'history',   label: 'Lịch sử', icon: CheckCircle },
-            ].map(({ key, label, icon: Icon }) => (
+          <div className="flex flex-wrap border-b border-gray-200 bg-white rounded-t-xl overflow-x-auto -mb-[1px] gap-0">
+            {tabDefs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
+                type="button"
                 onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
                   ${activeTab === key
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'}`}
@@ -215,6 +271,69 @@ export function ChecklistPage() {
               </button>
             ))}
           </div>
+
+          {activeTab === 'device' && (
+            <Card title="Thông tin thiết bị">
+              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                <div className="flex gap-3 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                  <Hash size={18} className="text-gray-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mã hệ thống</p>
+                    <p className="font-mono font-semibold text-gray-900 mt-0.5">#{asset.assetId}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                  <Building2 size={18} className="text-gray-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Loại</p>
+                    <p className="font-medium text-gray-900 mt-0.5">{typeName ?? '—'}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                  <MapPin size={18} className="text-gray-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Vị trí</p>
+                    <p className="font-medium text-gray-900 mt-0.5">{asset.locationName ?? '—'}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
+                  <Calendar size={18} className="text-gray-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ngày đưa vào vận hành</p>
+                    <p className="font-medium text-gray-900 mt-0.5">{asset.commissionDate ? fDate(asset.commissionDate) : '—'}</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 rounded-xl border border-gray-100 bg-gray-50/80 p-4 sm:col-span-2">
+                  <Cpu size={18} className="text-gray-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Hãng / Số seri</p>
+                    <p className="font-medium text-gray-900 mt-0.5">
+                      {[asset.manufacturer, asset.serialNumber].filter(Boolean).join(' · ') || '—'}
+                    </p>
+                  </div>
+                </div>
+                {asset.description ? (
+                  <div className="sm:col-span-2 rounded-xl border border-gray-100 bg-white p-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mô tả</p>
+                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{asset.description}</p>
+                  </div>
+                ) : null}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                {canOpenAssetPage && (
+                  <Link
+                    to={`/assets/${asset.assetId}`}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    <ExternalLink size={16} /> Mở trang chi tiết tài sản
+                  </Link>
+                )}
+                {!canOpenAssetPage && (
+                  <p className="text-xs text-gray-500">Bạn chỉ xem nhanh tại đây — không có quyền mở module Tài sản.</p>
+                )}
+              </div>
+            </Card>
+          )}
 
           {/* Tab: Checklist */}
           {activeTab === 'checklist' && (
@@ -289,6 +408,28 @@ export function ChecklistPage() {
 
                 {canSubmitChecklist ? (
                   <>
+                    {overallSuggestion.suggested && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-4 space-y-3">
+                        <p className="text-sm font-semibold text-amber-950 flex items-center gap-2">
+                          <Lightbulb size={18} className="text-amber-600 shrink-0" />
+                          Gợi ý đánh giá tổng thể (theo ngưỡng trên mẫu checklist)
+                        </p>
+                        <ul className="text-xs text-amber-900/95 list-disc list-inside space-y-1">
+                          {overallSuggestion.reasons.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="w-full sm:w-auto"
+                          onClick={() => setOverallStatus(overallSuggestion.suggested)}
+                        >
+                          Áp dụng gợi ý: {overallSuggestion.suggested === 'NG' ? 'NG' : 'CẢNH BÁO'}
+                        </Button>
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-semibold text-gray-800 mb-3">Đánh giá tổng thể *</p>
                       <div className="grid grid-cols-3 gap-2">
@@ -340,7 +481,8 @@ export function ChecklistPage() {
                   </>
                 ) : (
                   <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-                    Tài khoản của bạn chỉ xem mẫu checklist / tài liệu. Nộp kết quả kiểm tra do <strong>Công nhân</strong> hoặc <strong>Trưởng ca</strong> thực hiện trên hiện trường.
+                    Tài khoản của bạn chỉ xem thiết bị / SOP / lịch sử. Soạn mẫu checklist: trang <strong>Mẫu checklist (theo loại)</strong>.
+                    <strong> Gửi kết quả kiểm tra</strong> chỉ dành cho <strong>công nhân</strong> hoặc <strong>trưởng phòng</strong>.
                   </p>
                 )}
               </div>
@@ -419,29 +561,70 @@ export function ChecklistPage() {
             </Card>
           )}
 
-          {/* Tab: History */}
-          {activeTab === 'history' && (
-            <Card title="Lịch sử kiểm tra gần đây">
+          {activeTab === 'histChecklist' && (
+            <Card title="Lịch sử kiểm tra checklist">
               {qrData.recentResults?.length === 0
-                ? <p className="text-sm text-gray-400 py-6 text-center">Chưa có lịch sử</p>
+                ? <p className="text-sm text-gray-400 py-6 text-center">Chưa có phiếu checklist ghi nhận</p>
                 : (
                   <div className="space-y-2">
                     {qrData.recentResults.map(r => (
-                      <div key={r.checklistId} className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
+                      <div key={r.checklistId} className="flex flex-wrap items-center gap-2 py-3 border-b border-gray-100 last:border-0">
                         <Badge color={CHECKLIST_STATUS_COLOR[r.overallStatus]}>{r.overallStatus}</Badge>
-                        <div className="flex-1">
+                        {r.reviewStatus && (
+                          <Badge color={APPROVAL_STATUS_COLOR[r.reviewStatus] ?? 'gray'}>{r.reviewStatus}</Badge>
+                        )}
+                        <div className="flex-1 min-w-[200px]">
                           <p className="text-sm font-medium text-gray-700">{fDateTime(r.checkTime)}</p>
-                          {r.notes && <p className="text-sm font-medium text-gray-800 mt-0.5">{r.notes}</p>}
+                          {r.checkerName && <p className="text-xs text-gray-500">Người nộp: {r.checkerName}</p>}
+                          {r.notes && <p className="text-sm text-gray-800 mt-0.5">{r.notes}</p>}
                         </div>
                       </div>
                     ))}
                   </div>
-                )
-              }
+                )}
+            </Card>
+          )}
+
+          {activeTab === 'maint' && (
+            <Card title="Lịch sử bảo trì (phiếu việc đã hoàn thành)">
+              {maintLoading && (
+                <div className="flex justify-center py-10"><Spinner /></div>
+              )}
+              {!maintLoading && (!maintHistory || maintHistory.length === 0) && (
+                <p className="text-sm text-gray-400 py-6 text-center">Chưa có bản ghi bảo trì hoàn thành cho thiết bị này</p>
+              )}
+              {!maintLoading && maintHistory?.length > 0 && (
+                <ul className="divide-y divide-gray-100">
+                  {maintHistory.map((row) => (
+                    <li key={row.historyId} className="py-3 flex flex-col sm:flex-row sm:items-start gap-2">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <span className="text-sm font-semibold text-gray-900">{fDate(row.completedDate)}</span>
+                        <Badge color="gray">{WO_SOURCE_LABEL[row.woSource] ?? row.woSource}</Badge>
+                      </div>
+                      <div className="flex-1 min-w-0 text-sm text-gray-700">
+                        {row.description && <p className="leading-snug">{row.description}</p>}
+                        <p className="text-xs text-gray-500 mt-1">
+                          {row.actualHours != null && <>Giờ thực tế: {fNumber(row.actualHours)} h · </>}
+                          {row.totalRuntimeHours != null && <>Tổng giờ chạy (ghi nhận): {fNumber(row.totalRuntimeHours)} h</>}
+                        </p>
+                        {canOpenWorkOrder && row.workOrderId && (
+                          <Link
+                            to={`/work-orders/${row.workOrderId}`}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline mt-1"
+                          >
+                            Xem WO #{String(row.workOrderId).padStart(4, '0')} <ExternalLink size={12} />
+                          </Link>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           )}
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }

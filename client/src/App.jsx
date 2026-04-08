@@ -19,6 +19,8 @@ import { AssetDetailPage }      from './pages/assets/AssetDetailPage.jsx';
 import { WorkOrderListPage }    from './pages/workorders/WorkOrderListPage.jsx';
 import { WorkOrderDetailPage }  from './pages/workorders/WorkOrderDetailPage.jsx';
 import { ChecklistPage }        from './pages/checklists/ChecklistPage.jsx';
+import { ChecklistReviewPage }  from './pages/checklists/ChecklistReviewPage.jsx';
+import { ChecklistTemplatesPage } from './pages/checklists/ChecklistTemplatesPage.jsx';
 import { ApprovalsPage }        from './pages/approvals/ApprovalsPage.jsx';
 import { EmployeesPage }        from './pages/employees/EmployeesPage.jsx';
 import { SchedulesPage }        from './pages/schedules/SchedulesPage.jsx';
@@ -72,7 +74,12 @@ export default function App() {
             {/* Checklist / QR — nhân viên + giám sát (trừ Admin, BGĐ) */}
             <Route element={<RoleGuard routeKey="checklists" />}>
               <Route path="/checklists"                element={<ChecklistPage />} />
+              <Route path="/checklists/review"         element={<ChecklistReviewPage />} />
               <Route path="/checklists/scan/:assetId"  element={<ChecklistPage />} />
+            </Route>
+
+            <Route element={<RoleGuard routeKey="checklist-manage" />}>
+              <Route path="/checklists/templates" element={<ChecklistTemplatesPage />} />
             </Route>
 
             {/* Kho tài liệu — nhân viên + giám sát (trừ Admin, BGĐ) */}

@@ -1,13 +1,14 @@
 /**
  * checklistResult.model.js — SQL thuần cho ChecklistResults + ChecklistDetails.
+ * BFD mục 3: ReviewStatus (PENDING → APPROVED/REJECTED) sau khi Trưởng ca xử lý.
  * Dùng trong: services/checklist.service.js.
  */
 import { getPool } from '../config/database.js';
 
 export async function create({ assetId, woId, checkerId, overallStatus, evidencePhoto, notes, readingValue }) {
   const [result] = await getPool().query(
-    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, ReadingValue)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, ReadingValue, ReviewStatus)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
     [assetId, woId || null, checkerId, overallStatus, evidencePhoto || null, notes || null, readingValue ?? null],
   );
   return result.insertId;
@@ -28,10 +29,14 @@ export async function findById(id) {
       `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
               cr.WO_ID AS woId, cr.CheckerID AS checkerId, e.FullName AS checkerName,
               cr.OverallStatus AS overallStatus, cr.EvidencePhoto AS evidencePhoto,
-              cr.Notes AS notes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime
+              cr.Notes AS notes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime,
+              cr.ReviewStatus AS reviewStatus, cr.ReviewedBy AS reviewedBy,
+              er.FullName AS reviewerName, cr.ReviewedAt AS reviewedAt,
+              cr.SupervisorNotes AS supervisorNotes
        FROM ChecklistResults cr
        JOIN Assets a    ON a.AssetID       = cr.AssetID
        JOIN Employees e ON e.EmployeeID    = cr.CheckerID
+       LEFT JOIN Employees er ON er.EmployeeID = cr.ReviewedBy
        WHERE cr.ChecklistID = ?`,
       [id],
     ).then(([r]) => r),
@@ -49,11 +54,39 @@ export async function findById(id) {
 export async function findByAsset(assetId, limit = 20) {
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
-            cr.CheckTime AS checkTime, e.FullName AS checkerName, cr.ReadingValue AS readingValue
+            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus
      FROM ChecklistResults cr
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
      WHERE cr.AssetID = ? ORDER BY cr.CheckTime DESC LIMIT ?`,
     [assetId, limit],
+  );
+  return rows;
+}
+
+export async function setReviewOutcome(checklistId, { reviewStatus, reviewedBy, supervisorNotes }) {
+  const [r] = await getPool().query(
+    `UPDATE ChecklistResults
+     SET ReviewStatus = ?, ReviewedBy = ?, ReviewedAt = NOW(), SupervisorNotes = ?
+     WHERE ChecklistID = ? AND ReviewStatus = 'PENDING'`,
+    [reviewStatus, reviewedBy, supervisorNotes ?? null, checklistId],
+  );
+  return r.affectedRows;
+}
+
+export async function findPendingReview(limit = 50) {
+  const [rows] = await getPool().query(
+    `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
+            cr.OverallStatus AS overallStatus, cr.CheckTime AS checkTime,
+            cr.Notes AS notes, cr.ReadingValue AS readingValue,
+            cr.CheckerID AS checkerId, e.FullName AS checkerName
+     FROM ChecklistResults cr
+     JOIN Assets a ON a.AssetID = cr.AssetID
+     JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     WHERE cr.ReviewStatus = 'PENDING'
+     ORDER BY cr.CheckTime ASC
+     LIMIT ?`,
+    [Number(limit)],
   );
   return rows;
 }

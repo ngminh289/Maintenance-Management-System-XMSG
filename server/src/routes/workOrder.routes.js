@@ -10,6 +10,7 @@ import { validate }          from '../middleware/validate.js';
 import {
   createWOSchema, updateWOSchema, changeStatusSchema, assignSchema,
 } from '../validators/workOrder.validator.js';
+import { uploadWoPhotos } from '../config/upload.js';
 import * as ctrl from '../controllers/workOrder.controller.js';
 
 export const workOrderRouter = Router();
@@ -35,6 +36,17 @@ workOrderRouter.patch('/:id/status',
   requirePermission('WORK_ORDER', 'UPDATE'),
   validate(changeStatusSchema),
   ctrl.changeStatus,
+);
+
+workOrderRouter.post('/:id/photos',
+  requirePermission('WORK_ORDER', 'UPDATE'),
+  uploadWoPhotos.array('photos', 15),
+  ctrl.addPhotos,
+);
+
+workOrderRouter.delete('/:id/photos/:photoId',
+  requirePermission('WORK_ORDER', 'UPDATE'),
+  ctrl.deletePhoto,
 );
 
 // Phân công nhân viên

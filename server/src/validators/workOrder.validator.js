@@ -3,7 +3,7 @@
  * Dùng trong: routes/workOrder.routes.js.
  */
 const VALID_PRIORITY = ['EMERGENCY', 'HIGH', 'MEDIUM', 'LOW'];
-const VALID_STATUS   = ['WAITING', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'CANCELLED'];
+const VALID_STATUS   = ['WAITING', 'IN_PROGRESS', 'PAUSED', 'AWAITING_CLOSURE', 'COMPLETED', 'CANCELLED'];
 
 export function createWOSchema(body) {
   if (!body.assetId || isNaN(Number(body.assetId))) return 'AssetID không hợp lệ';

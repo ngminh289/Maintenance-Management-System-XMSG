@@ -31,7 +31,10 @@ export async function findById(id) {
     ).then(([r]) => r),
     getPool().query(
       `SELECT ItemID AS itemId, QuestionText AS questionText, InputType AS inputType,
-              RangeMin AS rangeMin, RangeMax AS rangeMax, Unit AS unit, SortOrder AS sortOrder, IsRequired AS isRequired
+              RangeMin AS rangeMin, RangeMax AS rangeMax,
+              SafeNumericMin AS safeNumericMin, SafeNumericMax AS safeNumericMax,
+              OutOfRangeSuggest AS outOfRangeSuggest, PassFailFailSuggest AS passFailFailSuggest,
+              Unit AS unit, SortOrder AS sortOrder, IsRequired AS isRequired
        FROM ChecklistTemplateItems WHERE TemplateID = ? ORDER BY SortOrder`,
       [id],
     ).then(([r]) => r),
@@ -69,16 +72,33 @@ export async function removeTemplate(id) {
   return result.affectedRows;
 }
 
-export async function addItem({ templateId, questionText, inputType, rangeMin, rangeMax, unit, sortOrder, isRequired }) {
+export async function addItem({
+  templateId, questionText, inputType, rangeMin, rangeMax,
+  safeNumericMin, safeNumericMax, outOfRangeSuggest, passFailFailSuggest,
+  unit, sortOrder, isRequired,
+}) {
   const [result] = await getPool().query(
-    'INSERT INTO ChecklistTemplateItems (TemplateID, QuestionText, InputType, RangeMin, RangeMax, Unit, SortOrder, IsRequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [templateId, questionText, inputType || 'PASS_FAIL', rangeMin ?? null, rangeMax ?? null, unit || null, sortOrder || 0, isRequired !== false],
+    `INSERT INTO ChecklistTemplateItems (
+       TemplateID, QuestionText, InputType, RangeMin, RangeMax,
+       SafeNumericMin, SafeNumericMax, OutOfRangeSuggest, PassFailFailSuggest,
+       Unit, SortOrder, IsRequired
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      templateId, questionText, inputType || 'PASS_FAIL', rangeMin ?? null, rangeMax ?? null,
+      safeNumericMin ?? null, safeNumericMax ?? null, outOfRangeSuggest ?? null, passFailFailSuggest ?? null,
+      unit || null, sortOrder || 0, isRequired !== false,
+    ],
   );
   return result.insertId;
 }
 
 export async function updateItem(itemId, data) {
-  const map = { questionText: 'QuestionText', inputType: 'InputType', rangeMin: 'RangeMin', rangeMax: 'RangeMax', unit: 'Unit', sortOrder: 'SortOrder', isRequired: 'IsRequired' };
+  const map = {
+    questionText: 'QuestionText', inputType: 'InputType', rangeMin: 'RangeMin', rangeMax: 'RangeMax',
+    safeNumericMin: 'SafeNumericMin', safeNumericMax: 'SafeNumericMax',
+    outOfRangeSuggest: 'OutOfRangeSuggest', passFailFailSuggest: 'PassFailFailSuggest',
+    unit: 'Unit', sortOrder: 'SortOrder', isRequired: 'IsRequired',
+  };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {

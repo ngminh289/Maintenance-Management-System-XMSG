@@ -10,12 +10,26 @@ export function templateSchema(body) {
   return null;
 }
 
+/** POST /templates/:id/items — nội dung câu hỏi bắt buộc */
+export function templateItemSchema(body) {
+  if (!body.questionText?.trim()) return 'Nội dung câu hỏi không được để trống';
+  return null;
+}
+
 export function submitChecklistSchema(body) {
   if (!body.assetId || isNaN(Number(body.assetId))) return 'AssetID không hợp lệ';
   if (!body.overallStatus || !VALID_STATUS.includes(body.overallStatus)) {
     return `OverallStatus không hợp lệ. Chấp nhận: ${VALID_STATUS.join(', ')}`;
   }
   if (body.readingValue !== undefined && isNaN(Number(body.readingValue))) return 'ReadingValue phải là số';
+  return null;
+}
+
+const REVIEW_DECISIONS = ['APPROVE', 'REJECT'];
+
+export function reviewChecklistSchema(body) {
+  const d = String(body.decision || '').toUpperCase();
+  if (!REVIEW_DECISIONS.includes(d)) return `decision phải là ${REVIEW_DECISIONS.join(' hoặc ')}`;
   return null;
 }
 

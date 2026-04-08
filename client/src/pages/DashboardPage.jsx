@@ -91,15 +91,16 @@ function OperationalDashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Tổng tài sản"   value={a.total}  icon={Cpu}           color="blue"   sub={`${a.available ?? 0} sẵn sàng`} />
         <StatCard label="Cảnh báo/Hỏng"  value={(a.caution ?? 0) + (a.broken ?? 0)} icon={AlertTriangle} color="red" sub={`${a.monitoring ?? 0} đang theo dõi`} />
-        <StatCard label="Phiếu đang mở"  value={(wo.pendingApproval ?? 0) + (wo.waiting ?? 0) + (wo.inProgress ?? 0)} icon={Wrench} color="orange" sub={`${wo.completed ?? 0} hoàn thành`} />
+        <StatCard label="Phiếu đang mở"  value={(wo.pendingApproval ?? 0) + (wo.waiting ?? 0) + (wo.inProgress ?? 0) + (wo.awaitingClosure ?? 0)} icon={Wrench} color="orange" sub={`${wo.completed ?? 0} hoàn thành`} />
         <StatCard label="Chờ phê duyệt"  value={summary?.pendingApprovals} icon={ShieldCheck} color="yellow" sub="Phiếu + tài liệu" />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
           { label: 'Chờ duyệt',      value: wo.pendingApproval, color: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
           { label: 'Chờ thực hiện',  value: wo.waiting,         color: 'bg-blue-50 border-blue-200 text-blue-800' },
           { label: 'Đang thực hiện', value: wo.inProgress,      color: 'bg-indigo-50 border-indigo-200 text-indigo-800' },
+          { label: 'Chờ nghiệm thu', value: wo.awaitingClosure, color: 'bg-violet-50 border-violet-200 text-violet-900' },
           { label: 'Hoàn thành',     value: wo.completed,       color: 'bg-green-50 border-green-200 text-green-800' },
         ].map(({ label, value, color }) => (
           <div key={label} className={`rounded-xl border p-4 text-center ${color}`}>
@@ -483,7 +484,7 @@ function FieldDashboard() {
           <div className="space-y-2">
             {[
               { to: '/assets',      icon: Cpu,          label: 'Xem tài sản thiết bị',     desc: 'Thông tin & lịch sử bảo trì' },
-              { to: '/checklists',  icon: CheckCircle,  label: 'Checklist hiện trường',     desc: 'Ghi nhận kết quả kiểm tra' },
+              { to: '/checklists',  icon: CheckCircle,  label: 'Quét QR / Checklist',       desc: 'Xem thiết bị; gửi phiếu: CN hoặc Trưởng phòng' },
               { to: '/documents',   icon: FileText,     label: 'Kho tài liệu',              desc: 'SOP, bản vẽ, hướng dẫn' },
               ...(isKyThuat ? [
                 { to: '/schedules', icon: Calendar,     label: 'Lịch bảo trì',             desc: 'Soạn lịch, gửi Trưởng ca duyệt' },

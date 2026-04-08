@@ -1,26 +1,36 @@
 /**
  * workOrder.service.js — Nghiệp vụ Phiếu công việc: tạo, phân công, chuyển trạng thái.
- * luongpheduyet.rule: PENDING_APPROVAL → WAITING → IN_PROGRESS → COMPLETED/CANCELLED.
- * WO từ lịch đã phê duyệt: createFromApprovedSchedule → WAITING (không lặp bước phê duyệt phiếu).
- * WO hoàn thành → workOrderMaintenanceSync: lịch sử bảo trì + reset chu kỳ giờ (trừ CORRECTIVE) + đồng bộ lịch ngày.
- * Liên quan: models/workOrder.model.js, workOrderMaintenanceSync.service.js, approval.service.js, notification.service.js.
+ * Luồng thực hiện: WAITING → IN_PROGRESS → AWAITING_CLOSURE (thợ báo xong + ảnh) → COMPLETED (TC/TP nghiệm thu đóng).
+ * WO từ lịch đã phê duyệt: createFromApprovedSchedule → WAITING.
+ * WO hoàn thành → workOrderMaintenanceSync; checklist/ hệ thống có thể gọi updateStatus COMPLETED trực tiếp.
+ * Liên quan: workOrderPhoto.model.js, workOrderMaintenanceSync, approval, notification.
  */
 import { createError }  from '../utils/createError.js';
 import { getPagination, paginatedResult } from '../utils/paginate.js';
+import { unlink } from 'fs/promises';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
 import * as model       from '../models/workOrder.model.js';
+import * as photoModel  from '../models/workOrderPhoto.model.js';
 import * as workOrderMaintSync from './workOrderMaintenanceSync.service.js';
 import * as approvalSvc from './approval.service.js';
 import * as notifService from './notification.service.js';
 import * as assetModel   from '../models/asset.model.js';
-import * as employeeModel from '../models/employee.model.js';
 import { assignFieldTechnicianToWorkOrder } from './workOrderFieldAssign.service.js';
+
+/** Thư mục gốc server (…/server) — resolve đường dẫn file ảnh WO */
+const SERVER_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+
+/** Level ≥ 3: Trưởng ca / Trưởng phòng — nghiệm thu đóng phiếu */
+const SUPERVISOR_MIN_LEVEL = 3;
 
 // Trạng thái cho phép chuyển tiếp (guard)
 const TRANSITIONS = {
-  PENDING_APPROVAL: [],               // Chờ sếp duyệt, không cho thợ đổi
-  WAITING:          ['IN_PROGRESS'],  // Thợ nhận việc
-  IN_PROGRESS:      ['PAUSED', 'COMPLETED'],
+  PENDING_APPROVAL: [],
+  WAITING:          ['IN_PROGRESS'],
+  IN_PROGRESS:      ['PAUSED', 'AWAITING_CLOSURE'],
   PAUSED:           ['IN_PROGRESS', 'CANCELLED'],
+  AWAITING_CLOSURE: ['IN_PROGRESS', 'COMPLETED'],
   COMPLETED:        [],
   CANCELLED:        [],
 };
@@ -44,11 +54,14 @@ export async function getAll(query) {
 export async function getById(id) {
   const wo = await model.findById(id);
   if (!wo) throw createError('Không tìm thấy phiếu công việc', 404);
-  const assignments = await model.getAssignments(id);
-  const suggestedActualHours = ['IN_PROGRESS', 'PAUSED'].includes(wo.status)
+  const [assignments, photos] = await Promise.all([
+    model.getAssignments(id),
+    photoModel.listByWo(id),
+  ]);
+  const suggestedActualHours = ['IN_PROGRESS', 'PAUSED', 'AWAITING_CLOSURE'].includes(wo.status)
     ? (model.computeSuggestedActualHours(wo) ?? null)
     : null;
-  return { ...wo, assignments, suggestedActualHours };
+  return { ...wo, assignments, photos, suggestedActualHours };
 }
 
 /** Tạo WorkOrder thủ công (Level >= 2) + tự động submit approval */
@@ -116,55 +129,149 @@ export async function update(id, data) {
   return getById(id);
 }
 
-/** Chuyển trạng thái phiếu với validation */
-export async function changeStatus(id, newStatus, { actorLevel, actualHours } = {}) {
+async function loadAssignmentsSet(woId) {
+  const rows = await model.getAssignments(woId);
+  return { rows, isAssigned: (employeeId) => rows.some((a) => Number(a.employeeId) === Number(employeeId)) };
+}
+
+/** Chuyển trạng thái phiếu với validation (bước 6: chỉ giám sát đóng từ AWAITING_CLOSURE). */
+export async function changeStatus(id, newStatus, { actorLevel, actualHours, employeeId } = {}) {
   const wo = await model.findById(id);
   if (!wo) throw createError('Không tìm thấy phiếu công việc', 404);
+
+  const { rows: assignmentRows, isAssigned } = await loadAssignmentsSet(id);
+  const assigned = isAssigned(employeeId);
+  const isSupervisor = (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
 
   const allowed = TRANSITIONS[wo.status] || [];
   if (!allowed.includes(newStatus)) {
     throw createError(`Không thể chuyển từ ${wo.status} → ${newStatus}`, 400);
   }
 
-  // Chỉ level >= 2 mới được huỷ
   if (newStatus === 'CANCELLED' && (actorLevel ?? 0) < 2) {
     throw createError('Không đủ quyền hủy phiếu', 403);
   }
 
+  if (newStatus === 'AWAITING_CLOSURE') {
+    if (!assigned) {
+      throw createError('Chỉ người được phân công mới báo hoàn thành chờ nghiệm thu', 403);
+    }
+  }
+
+  if (newStatus === 'COMPLETED') {
+    if (wo.status !== 'AWAITING_CLOSURE') {
+      throw createError('Chỉ đóng phiếu khi đang chờ nghiệm thu', 400);
+    }
+    if (!isSupervisor) {
+      throw createError('Chỉ Trưởng ca / Trưởng phòng mới nghiệm thu và đóng phiếu', 403);
+    }
+  }
+
+  if (newStatus === 'IN_PROGRESS' && wo.status === 'AWAITING_CLOSURE' && !isSupervisor) {
+    throw createError('Chỉ giám sát mới cho phép làm tiếp sau chờ nghiệm thu', 403);
+  }
+
+  let precomputedAwaitingHours;
+  if (newStatus === 'AWAITING_CLOSURE') {
+    if (actualHours !== undefined && actualHours !== null && String(actualHours).trim() !== '') {
+      const n = Number(String(actualHours).replace(',', '.'));
+      precomputedAwaitingHours = Number.isFinite(n) ? n : model.computeSuggestedActualHours(wo);
+    } else {
+      precomputedAwaitingHours = model.computeSuggestedActualHours(wo);
+    }
+  }
+
   await model.applyTimingTransition(id, wo.status, newStatus);
 
-  let extra = {};
-  if (newStatus === 'COMPLETED') {
-    const actualDate = new Date().toISOString().split('T')[0];
-    let resolvedHours = actualHours;
-    if (actualHours === undefined) {
-      resolvedHours = model.computeSuggestedActualHours(wo);
+  if (newStatus === 'AWAITING_CLOSURE') {
+    await model.updateStatus(id, newStatus, { actualHours: precomputedAwaitingHours ?? null });
+    for (const a of assignmentRows) {
+      if (Number(a.employeeId) !== Number(employeeId)) {
+        await notifService.send(
+          a.employeeId,
+          `WO #${id} đã báo hoàn thành — chờ Trưởng ca/Trưởng phòng nghiệm thu.`,
+          'WORK_ORDER_ASSIGNED',
+        );
+      }
     }
-    extra = { actualDate, actualHours: resolvedHours };
+    await notifService.notifyManagers(
+      `WO #${id} chờ nghiệm thu đóng phiếu (${wo.assetName ?? 'tài sản'}).`,
+      'SYSTEM_ALERT',
+      3,
+    );
+  } else if (newStatus === 'COMPLETED') {
+    const actualDate = new Date().toISOString().split('T')[0];
+    const fresh = await model.findById(id);
+    let resolvedHours = actualHours;
+    if (resolvedHours === undefined || resolvedHours === null || String(resolvedHours).trim() === '') {
+      resolvedHours = fresh.actualHours ?? model.computeSuggestedActualHours(fresh);
+    } else {
+      const n = Number(String(resolvedHours).replace(',', '.'));
+      resolvedHours = Number.isFinite(n) ? n : (fresh.actualHours ?? model.computeSuggestedActualHours(fresh));
+    }
+    await model.updateStatus(id, newStatus, { actualDate, actualHours: resolvedHours });
+
+    if (wo.assetId) {
+      await assetModel.updateStatus(wo.assetId, 'AVAILABLE');
+      const completedRow = await model.findById(id);
+      await workOrderMaintSync.afterWorkOrderCompleted(completedRow);
+    }
+    if (wo.createdBy) {
+      await notifService.send(wo.createdBy, `Phiếu WO #${id} đã hoàn thành. Tài sản đã trở lại AVAILABLE.`, 'WORK_ORDER_COMPLETED');
+    }
+  } else {
+    await model.updateStatus(id, newStatus, {});
   }
 
-  await model.updateStatus(id, newStatus, extra);
-
-  // Khi WO hoàn thành → máy trở về AVAILABLE (Workflow sheet 3.1 bước 3)
-  if (newStatus === 'COMPLETED' && wo.assetId) {
-    await assetModel.updateStatus(wo.assetId, 'AVAILABLE');
-    const completedRow = await model.findById(id);
-    await workOrderMaintSync.afterWorkOrderCompleted(completedRow);
-  }
-
-  // Thông báo khi phiếu bắt đầu hoặc hoàn thành
-  if (newStatus === 'IN_PROGRESS') {
-    const assignments = await model.getAssignments(id);
-    for (const a of assignments) {
+  if (newStatus === 'IN_PROGRESS' && wo.status === 'WAITING') {
+    for (const a of assignmentRows) {
       await notifService.send(a.employeeId, `Phiếu WO #${id} đã bắt đầu. Vui lòng theo dõi.`, 'WORK_ORDER_ASSIGNED');
     }
   }
 
-  if (newStatus === 'COMPLETED' && wo.createdBy) {
-    await notifService.send(wo.createdBy, `Phiếu WO #${id} đã hoàn thành. Tài sản đã trở lại AVAILABLE.`, 'WORK_ORDER_COMPLETED');
-  }
+  return getById(id);
+}
 
-  return model.findById(id);
+/** Đính kèm nhiều ảnh hiện trường (IN_PROGRESS | AWAITING_CLOSURE). */
+export async function addWorkOrderPhotos(woId, files, { employeeId, actorLevel }) {
+  const wo = await model.findById(woId);
+  if (!wo) throw createError('Không tìm thấy phiếu công việc', 404);
+  if (!['IN_PROGRESS', 'AWAITING_CLOSURE'].includes(wo.status)) {
+    throw createError('Chỉ đính ảnh khi đang thực hiện hoặc chờ nghiệm thu', 400);
+  }
+  const { isAssigned } = await loadAssignmentsSet(woId);
+  const isSupervisor = (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
+  if (!isAssigned(employeeId) && !isSupervisor) {
+    throw createError('Không có quyền đính ảnh cho phiếu này', 403);
+  }
+  const list = files || [];
+  if (!list.length) throw createError('Chọn ít nhất một ảnh', 400);
+  for (const f of list) {
+    const rel = `uploads/work-orders/${f.filename}`;
+    await photoModel.insertRow(woId, rel, employeeId);
+  }
+  return photoModel.listByWo(woId);
+}
+
+function absUploadPath(filePath) {
+  const parts = String(filePath).split('/').filter(Boolean);
+  return join(SERVER_ROOT, ...parts);
+}
+
+/** Xóa một ảnh WO (người upload hoặc giám sát). */
+export async function deleteWorkOrderPhoto(woId, photoId, { employeeId, actorLevel }) {
+  const row = await photoModel.findById(photoId);
+  if (!row || Number(row.woId) !== Number(woId)) {
+    throw createError('Không tìm thấy ảnh', 404);
+  }
+  const isSupervisor = (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
+  const own = row.uploadedBy != null && Number(row.uploadedBy) === Number(employeeId);
+  if (!own && !isSupervisor) {
+    throw createError('Không có quyền xóa ảnh này', 403);
+  }
+  await unlink(absUploadPath(row.filePath)).catch(() => {});
+  await photoModel.remove(photoId);
+  return photoModel.listByWo(woId);
 }
 
 export async function assign(woId, employeeId, { actorLevel } = {}) {
