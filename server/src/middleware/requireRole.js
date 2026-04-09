@@ -1,6 +1,6 @@
 /**
  * requireRole.js — Kiểm tra cấp độ chức vụ (RBAC đơn giản dựa Level từ Positions).
- * Level: 1 = Nhân viên | 2 = Trưởng nhóm | 3 = Quản lý.
+ * Level: 1 = NV | 2 = Trưởng nhóm | 3 = Quản lý | 4+ = Quản trị / Ban GĐ.
  * Dùng sau requireAuth trong: các routes cần phân quyền.
  */
 import { fail } from '../utils/response.js';

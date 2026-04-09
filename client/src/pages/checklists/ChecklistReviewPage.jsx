@@ -1,5 +1,6 @@
 /**
  * ChecklistReviewPage.jsx — Duyệt checklist chờ (APPROVE/REJECT); hiển thị ngưỡng mẫu để đối chiếu.
+ * Nghiệm thu: đủ ghi chú hiện trường, vật tư/linh kiện, giờ chạy, ảnh minh chứng, từng câu checklist.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navigate, Link } from 'react-router-dom';
@@ -256,34 +257,46 @@ export function ChecklistReviewPage() {
 
                 {!detailLoading && detail && (
                   <>
-                    <div className="flex flex-wrap gap-4 text-sm">
-                      {detail.readingValue != null && (
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
-                          <span className="text-slate-500 text-xs">Giờ chạy</span>
-                          <p className="font-bold text-slate-900 tabular-nums">{detail.readingValue}</p>
+                    <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/40 px-4 py-3">
+                      <p className="text-sm font-bold text-indigo-950 mb-2">
+                        Hồ sơ nghiệm thu — tóm tắt từ hiện trường
+                      </p>
+                      <div className="flex flex-wrap gap-4 text-sm">
+                        {detail.readingValue != null && (
+                          <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 shadow-sm">
+                            <span className="text-slate-500 text-xs">Chỉ số đồng hồ (nộp)</span>
+                            <p className="font-bold text-slate-900 tabular-nums">{detail.readingValue}</p>
+                          </div>
+                        )}
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 shadow-sm">
+                          <span className="text-slate-500 text-xs">Nộp lúc</span>
+                          <p className="font-semibold text-slate-900">{fDateTime(detail.checkTime)}</p>
                         </div>
-                      )}
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
-                        <span className="text-slate-500 text-xs">Nộp lúc</span>
-                        <p className="font-semibold text-slate-900">{fDateTime(detail.checkTime)}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
-                        <span className="text-slate-500 text-xs">Người nộp</span>
-                        <p className="font-semibold text-slate-900">{detail.checkerName}</p>
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 shadow-sm">
+                          <span className="text-slate-500 text-xs">Người nộp</span>
+                          <p className="font-semibold text-slate-900">{detail.checkerName}</p>
+                        </div>
                       </div>
                     </div>
 
                     {detail.notes && (
-                      <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
-                        <span className="text-xs font-medium text-amber-900">Ghi chú</span>
+                      <div className="rounded-xl border border-blue-200 bg-blue-50/85 px-4 py-3 text-sm text-slate-900">
+                        <span className="text-xs font-bold text-blue-900 uppercase tracking-wide">Ghi chú hiện trường</span>
                         <p className="mt-1 whitespace-pre-wrap leading-relaxed">{detail.notes}</p>
+                      </div>
+                    )}
+
+                    {detail.partsNotes && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+                        <span className="text-xs font-bold text-amber-900 uppercase tracking-wide">Linh kiện / vật tư (đã thay, cần thay)</span>
+                        <p className="mt-1 whitespace-pre-wrap leading-relaxed">{detail.partsNotes}</p>
                       </div>
                     )}
 
                     {photoHref && (
                       <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
                         <p className="text-xs text-slate-600 px-4 py-2 border-b border-slate-200 flex items-center gap-2 bg-white">
-                          <ImageIcon size={14} aria-hidden /> Ảnh
+                          <ImageIcon size={14} aria-hidden /> Ảnh minh chứng hiện trường
                         </p>
                         <a href={photoHref} target="_blank" rel="noopener noreferrer" className="block p-3">
                           <img

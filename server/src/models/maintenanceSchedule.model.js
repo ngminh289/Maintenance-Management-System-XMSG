@@ -3,7 +3,7 @@
  * patchLastExecutedDate / findCalendarOperationalByAsset: đồng bộ với WO hoàn thành (workOrderMaintenanceSync).
  * Dùng trong: maintenanceSchedule.service.js, workOrderMaintenanceSync.service.js.
  */
-import { getPool } from '../config/database.js';
+import { getPool } from "../config/database.js";
 
 const COLS = `
   ms.ScheduleID        AS scheduleId,
@@ -31,35 +31,78 @@ const BASE_JOIN = `
   JOIN Assets a    ON a.AssetID       = ms.AssetID
   JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID`;
 
-export async function findAll({ assetId, status, maintenanceType, priority, limit, offset } = {}) {
+export async function findAll({
+  assetId,
+  status,
+  maintenanceType,
+  priority,
+  limit,
+  offset,
+} = {}) {
   const params = [];
-  let where = 'WHERE 1=1';
-  if (assetId)          { where += ' AND ms.AssetID = ?';         params.push(assetId); }
-  if (status)           { where += ' AND ms.Status = ?';          params.push(status); }
-  if (maintenanceType)  { where += ' AND ms.MaintenanceType = ?'; params.push(maintenanceType); }
-  if (priority)         { where += ' AND ms.Priority = ?';        params.push(priority); }
-  const pagination = limit != null ? 'LIMIT ? OFFSET ?' : '';
-  if (limit != null)    { params.push(limit, offset); }
+  let where = "WHERE 1=1";
+  if (assetId) {
+    where += " AND ms.AssetID = ?";
+    params.push(assetId);
+  }
+  if (status) {
+    where += " AND ms.Status = ?";
+    params.push(status);
+  }
+  if (maintenanceType) {
+    where += " AND ms.MaintenanceType = ?";
+    params.push(maintenanceType);
+  }
+  if (priority) {
+    where += " AND ms.Priority = ?";
+    params.push(priority);
+  }
+  const pagination = limit != null ? "LIMIT ? OFFSET ?" : "";
+  if (limit != null) {
+    params.push(limit, offset);
+  }
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${BASE_JOIN} ${where} ORDER BY ms.StartDate DESC ${pagination}`, params,
+    `SELECT ${COLS} ${BASE_JOIN} ${where} ORDER BY ms.StartDate DESC ${pagination}`,
+    params,
   );
   return rows;
 }
 
-export async function count({ assetId, status, maintenanceType, priority } = {}) {
+export async function count({
+  assetId,
+  status,
+  maintenanceType,
+  priority,
+} = {}) {
   const params = [];
-  let where = 'WHERE 1=1';
-  if (assetId)         { where += ' AND AssetID = ?';         params.push(assetId); }
-  if (status)          { where += ' AND Status = ?';          params.push(status); }
-  if (maintenanceType) { where += ' AND MaintenanceType = ?'; params.push(maintenanceType); }
-  if (priority)        { where += ' AND Priority = ?';        params.push(priority); }
-  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt FROM MaintenanceSchedules ${where}`, params);
+  let where = "WHERE 1=1";
+  if (assetId) {
+    where += " AND AssetID = ?";
+    params.push(assetId);
+  }
+  if (status) {
+    where += " AND Status = ?";
+    params.push(status);
+  }
+  if (maintenanceType) {
+    where += " AND MaintenanceType = ?";
+    params.push(maintenanceType);
+  }
+  if (priority) {
+    where += " AND Priority = ?";
+    params.push(priority);
+  }
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt FROM MaintenanceSchedules ${where}`,
+    params,
+  );
   return Number(rows[0].cnt);
 }
 
 export async function findById(id) {
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${BASE_JOIN} WHERE ms.ScheduleID = ?`, [id],
+    `SELECT ${COLS} ${BASE_JOIN} WHERE ms.ScheduleID = ?`,
+    [id],
   );
   return rows[0] || null;
 }
@@ -77,12 +120,42 @@ export async function findHourlyByAsset(assetId) {
 }
 
 export async function create(data) {
-  const { assetId, scheduleName, maintenanceType, description, frequencyValue, frequencyUnit, startDate, nextDueDate, endDate, estimatedTime, priority, digitalAssetId, createdBy, status } = data;
+  const {
+    assetId,
+    scheduleName,
+    maintenanceType,
+    description,
+    frequencyValue,
+    frequencyUnit,
+    startDate,
+    nextDueDate,
+    endDate,
+    estimatedTime,
+    priority,
+    digitalAssetId,
+    createdBy,
+    status,
+  } = data;
   const [result] = await getPool().query(
     `INSERT INTO MaintenanceSchedules
      (AssetID, ScheduleName, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, NextDueDate, EndDate, EstimatedTime, Priority, DigitalAssetID, CreatedBy, Status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [assetId, scheduleName || '', maintenanceType, description, frequencyValue || null, frequencyUnit || 'HOURS', startDate, nextDueDate ?? null, endDate || null, estimatedTime || null, priority || 'MEDIUM', digitalAssetId || null, createdBy || null, status || 'DRAFT'],
+    [
+      assetId,
+      scheduleName || "",
+      maintenanceType,
+      description,
+      frequencyValue || null,
+      frequencyUnit || "HOURS",
+      startDate,
+      nextDueDate ?? null,
+      endDate || null,
+      estimatedTime || null,
+      priority || "MEDIUM",
+      digitalAssetId || null,
+      createdBy || null,
+      status || "DRAFT",
+    ],
   );
   return result.insertId;
 }
@@ -90,15 +163,15 @@ export async function create(data) {
 /** Cập nhật sau khi bảo trì: lưu LastExecutedDate và NextDueDate mới */
 export async function setExecuted(id, lastExecutedDate, nextDueDate) {
   await getPool().query(
-    'UPDATE MaintenanceSchedules SET LastExecutedDate = ?, NextDueDate = ?, Status = ? WHERE ScheduleID = ?',
-    [lastExecutedDate, nextDueDate, 'PENDING', id],
+    "UPDATE MaintenanceSchedules SET LastExecutedDate = ?, NextDueDate = ?, Status = ? WHERE ScheduleID = ?",
+    [lastExecutedDate, nextDueDate, "PENDING", id],
   );
 }
 
 /** Chỉ cập nhật ngày hoàn thành thực tế (WO từ lịch đóng — NextDueDate đã lùi lúc tạo phiếu). */
 export async function patchLastExecutedDate(scheduleId, lastExecutedDate) {
   await getPool().query(
-    'UPDATE MaintenanceSchedules SET LastExecutedDate = ? WHERE ScheduleID = ?',
+    "UPDATE MaintenanceSchedules SET LastExecutedDate = ? WHERE ScheduleID = ?",
     [lastExecutedDate, scheduleId],
   );
 }
@@ -136,25 +209,47 @@ export async function findActiveCalendarSchedules() {
 }
 
 export async function update(id, data) {
-  const map = { scheduleName: 'ScheduleName', description: 'Description', frequencyValue: 'FrequencyValue', frequencyUnit: 'FrequencyUnit', startDate: 'StartDate', nextDueDate: 'NextDueDate', lastExecutedDate: 'LastExecutedDate', endDate: 'EndDate', estimatedTime: 'EstimatedTime', priority: 'Priority', status: 'Status' };
+  const map = {
+    scheduleName: "ScheduleName",
+    description: "Description",
+    frequencyValue: "FrequencyValue",
+    frequencyUnit: "FrequencyUnit",
+    startDate: "StartDate",
+    nextDueDate: "NextDueDate",
+    lastExecutedDate: "LastExecutedDate",
+    endDate: "EndDate",
+    estimatedTime: "EstimatedTime",
+    priority: "Priority",
+    status: "Status",
+  };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {
-    if (data[key] !== undefined) { setClauses.push(`${col} = ?`); params.push(data[key] ?? null); }
+    if (data[key] !== undefined) {
+      setClauses.push(`${col} = ?`);
+      params.push(data[key] ?? null);
+    }
   }
   if (!setClauses.length) return 0;
   params.push(id);
   const [result] = await getPool().query(
-    `UPDATE MaintenanceSchedules SET ${setClauses.join(', ')} WHERE ScheduleID = ?`, params,
+    `UPDATE MaintenanceSchedules SET ${setClauses.join(", ")} WHERE ScheduleID = ?`,
+    params,
   );
   return result.affectedRows;
 }
 
 export async function updateStatus(id, status) {
-  await getPool().query('UPDATE MaintenanceSchedules SET Status = ? WHERE ScheduleID = ?', [status, id]);
+  await getPool().query(
+    "UPDATE MaintenanceSchedules SET Status = ? WHERE ScheduleID = ?",
+    [status, id],
+  );
 }
 
 export async function remove(id) {
-  const [result] = await getPool().query('DELETE FROM MaintenanceSchedules WHERE ScheduleID = ?', [id]);
+  const [result] = await getPool().query(
+    "DELETE FROM MaintenanceSchedules WHERE ScheduleID = ?",
+    [id],
+  );
   return result.affectedRows;
 }

@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS Employees (
     EmailVerified BOOLEAN     NOT NULL DEFAULT FALSE,
     IsActive      BOOLEAN     NOT NULL DEFAULT TRUE,
     WasEverActivated BOOLEAN  NOT NULL DEFAULT FALSE,
+    LeaveStartAt DATETIME NULL,
+    LeaveEndAt   DATETIME NULL,
     Phone        VARCHAR(20),
     PositionID   INT          NOT NULL,
     DepartmentID INT          NOT NULL,

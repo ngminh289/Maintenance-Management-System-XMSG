@@ -2,62 +2,103 @@
  * SchedulesPage.jsx — Lịch bảo trì: DRAFT/REJECTED → nút Gửi → PENDING_APPROVAL → (Trưởng ca duyệt tại Phê duyệt) → PENDING.
  * HOURS / ngày; WO chỉ từ lịch đã duyệt (PENDING…). Sửa/xóa: nháp & từ chối; Admin (level≥4) được vượt quy tắc.
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from "react";
 import {
-  Plus, Play, Calendar, Clock,
-  AlertTriangle, CheckCircle, Pencil, Trash2, Send,
-} from 'lucide-react';
-import { scheduleApi } from '../../api/schedule.api.js';
-import { assetApi }    from '../../api/asset.api.js';
-import { Button }      from '../../components/ui/Button.jsx';
-import { Badge }       from '../../components/ui/Badge.jsx';
-import { Modal }       from '../../components/ui/Modal.jsx';
-import { Input, Select, Textarea } from '../../components/ui/Input.jsx';
-import { Pagination }  from '../../components/ui/Pagination.jsx';
-import { EmptyState }  from '../../components/ui/EmptyState.jsx';
-import { PageLoader }  from '../../components/ui/Spinner.jsx';
-import { fDate }       from '../../utils/format.js';
-import { useAuth } from '../../contexts/AuthContext.jsx';
-import { canDo } from '../../utils/rbac.js';
-import toast from 'react-hot-toast';
+  Plus,
+  Play,
+  Calendar,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  Pencil,
+  Trash2,
+  Send,
+} from "lucide-react";
+import { scheduleApi } from "../../api/schedule.api.js";
+import { assetApi } from "../../api/asset.api.js";
+import { Button } from "../../components/ui/Button.jsx";
+import { Badge } from "../../components/ui/Badge.jsx";
+import { Modal } from "../../components/ui/Modal.jsx";
+import { Input, Select, Textarea } from "../../components/ui/Input.jsx";
+import { Pagination } from "../../components/ui/Pagination.jsx";
+import { EmptyState } from "../../components/ui/EmptyState.jsx";
+import { PageLoader } from "../../components/ui/Spinner.jsx";
+import { fDate } from "../../utils/format.js";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import { canDo } from "../../utils/rbac.js";
+import toast from "react-hot-toast";
 
-const TYPE_COLOR   = { PREVENTIVE: 'blue', PREDICTIVE: 'yellow', CORRECTIVE: 'red' };
-const TYPE_LABEL   = { PREVENTIVE: 'Định kỳ', PREDICTIVE: 'Dự đoán', CORRECTIVE: 'Khắc phục' };
-const UNIT_LABEL   = { HOURS: 'giờ', DAYS: 'ngày', WEEKS: 'tuần', MONTHS: 'tháng', YEARS: 'năm' };
+const TYPE_COLOR = {
+  PREVENTIVE: "blue",
+  PREDICTIVE: "yellow",
+  CORRECTIVE: "red",
+};
+const TYPE_LABEL = {
+  PREVENTIVE: "Định kỳ",
+  PREDICTIVE: "Dự đoán",
+  CORRECTIVE: "Khắc phục",
+};
+const UNIT_LABEL = {
+  HOURS: "giờ",
+  DAYS: "ngày",
+  WEEKS: "tuần",
+  MONTHS: "tháng",
+  YEARS: "năm",
+};
 const STATUS_COLOR = {
-  DRAFT: 'gray', PENDING_APPROVAL: 'yellow', PENDING: 'blue', IN_PROGRESS: 'blue',
-  COMPLETED: 'green', OVERDUE: 'red', CANCELLED: 'gray', REJECTED: 'orange',
+  DRAFT: "gray",
+  PENDING_APPROVAL: "yellow",
+  PENDING: "blue",
+  IN_PROGRESS: "blue",
+  COMPLETED: "green",
+  OVERDUE: "red",
+  CANCELLED: "gray",
+  REJECTED: "orange",
 };
 const STATUS_LABEL = {
-  DRAFT: 'Bản nháp', PENDING_APPROVAL: 'Chờ duyệt', PENDING: 'Chờ TH', IN_PROGRESS: 'Đang TH',
-  COMPLETED: 'Hoàn thành', OVERDUE: 'Quá hạn', CANCELLED: 'Hủy', REJECTED: 'Từ chối',
+  DRAFT: "Bản nháp",
+  PENDING_APPROVAL: "Chờ duyệt",
+  PENDING: "Chờ TH",
+  IN_PROGRESS: "Đang TH",
+  COMPLETED: "Hoàn thành",
+  OVERDUE: "Quá hạn",
+  CANCELLED: "Hủy",
+  REJECTED: "Từ chối",
 };
 
-const EMPTY_FORM = { maintenanceType: 'PREVENTIVE', frequencyValue: 30, frequencyUnit: 'DAYS' };
+const EMPTY_FORM = {
+  maintenanceType: "PREVENTIVE",
+  frequencyValue: 30,
+  frequencyUnit: "DAYS",
+};
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
-  return Math.round((new Date(dateStr) - new Date(new Date().toDateString())) / 86400000);
+  return Math.round(
+    (new Date(dateStr) - new Date(new Date().toDateString())) / 86400000,
+  );
 }
 
 function DueDateChip({ nextDueDate, frequencyUnit, status }) {
-  if (['DRAFT', 'PENDING_APPROVAL', 'REJECTED'].includes(status)) {
+  if (["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(status)) {
     return <span className="text-xs text-gray-400 italic">Chưa hiệu lực</span>;
   }
-  if (frequencyUnit === 'HOURS') {
+  if (frequencyUnit === "HOURS") {
     return <span className="text-xs text-gray-400 italic">Theo giờ chạy</span>;
   }
   if (!nextDueDate) return <span className="text-xs text-gray-400">—</span>;
 
   const days = daysUntil(nextDueDate);
 
-  if (status === 'OVERDUE' || days < 0) {
+  if (status === "OVERDUE" || days < 0) {
     return (
       <div className="flex flex-col gap-0.5">
         <span className="inline-flex items-center gap-1 text-xs font-bold text-red-700 bg-red-50 rounded-full px-2 py-0.5">
           <AlertTriangle size={10} /> Quá hạn {Math.abs(days)} ngày
         </span>
-        <span className="text-xs text-red-500 font-medium">{fDate(nextDueDate)}</span>
+        <span className="text-xs text-red-500 font-medium">
+          {fDate(nextDueDate)}
+        </span>
       </div>
     );
   }
@@ -67,7 +108,9 @@ function DueDateChip({ nextDueDate, frequencyUnit, status }) {
         <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">
           <Clock size={10} /> Còn {days} ngày
         </span>
-        <span className="text-xs text-amber-600 font-medium">{fDate(nextDueDate)}</span>
+        <span className="text-xs text-amber-600 font-medium">
+          {fDate(nextDueDate)}
+        </span>
       </div>
     );
   }
@@ -76,7 +119,9 @@ function DueDateChip({ nextDueDate, frequencyUnit, status }) {
       <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 rounded-full px-2 py-0.5">
         <CheckCircle size={10} /> Còn {days} ngày
       </span>
-      <span className="text-xs text-green-600 font-medium">{fDate(nextDueDate)}</span>
+      <span className="text-xs text-green-600 font-medium">
+        {fDate(nextDueDate)}
+      </span>
     </div>
   );
 }
@@ -88,25 +133,47 @@ function ScheduleForm({ form, setF, assets }) {
       <div className="grid grid-cols-2 gap-4">
         <Input
           label="Tên lịch *"
-          value={form.scheduleName ?? ''}
-          onChange={e => setF('scheduleName', e.target.value)}
+          value={form.scheduleName ?? ""}
+          onChange={(e) => setF("scheduleName", e.target.value)}
           placeholder="VD: PM máy lọc bụi tháng 1"
         />
-        <Select label="Tài sản *" value={form.assetId ?? ''} onChange={e => setF('assetId', e.target.value)}>
+        <Select
+          label="Tài sản *"
+          value={form.assetId ?? ""}
+          onChange={(e) => setF("assetId", e.target.value)}
+        >
           <option value="">— Chọn tài sản —</option>
-          {assets.map(a => <option key={a.assetId} value={a.assetId}>{a.assetName}</option>)}
+          {assets.map((a) => (
+            <option key={a.assetId} value={a.assetId}>
+              {a.assetName}
+            </option>
+          ))}
         </Select>
-        <Select label="Loại bảo trì" value={form.maintenanceType} onChange={e => setF('maintenanceType', e.target.value)}>
+        <Select
+          label="Loại bảo trì"
+          value={form.maintenanceType}
+          onChange={(e) => setF("maintenanceType", e.target.value)}
+        >
           <option value="PREVENTIVE">Định kỳ (Preventive)</option>
           <option value="PREDICTIVE">Dự đoán (Predictive)</option>
           <option value="CORRECTIVE">Khắc phục (Corrective)</option>
         </Select>
         <div className="flex gap-2 items-end">
           <div className="flex-1">
-            <Input label="Tần suất" type="number" min={1} value={form.frequencyValue ?? 30} onChange={e => setF('frequencyValue', e.target.value)} />
+            <Input
+              label="Tần suất"
+              type="number"
+              min={1}
+              value={form.frequencyValue ?? 30}
+              onChange={(e) => setF("frequencyValue", e.target.value)}
+            />
           </div>
           <div className="flex-1">
-            <Select label="Đơn vị" value={form.frequencyUnit ?? 'DAYS'} onChange={e => setF('frequencyUnit', e.target.value)}>
+            <Select
+              label="Đơn vị"
+              value={form.frequencyUnit ?? "DAYS"}
+              onChange={(e) => setF("frequencyUnit", e.target.value)}
+            >
               <option value="DAYS">Ngày</option>
               <option value="WEEKS">Tuần</option>
               <option value="MONTHS">Tháng</option>
@@ -114,23 +181,37 @@ function ScheduleForm({ form, setF, assets }) {
             </Select>
           </div>
         </div>
-        <Input label="Ngày bắt đầu *" type="date" value={form.startDate ?? ''} onChange={e => setF('startDate', e.target.value)} />
-        <Input label="Ngày kết thúc"  type="date" value={form.endDate   ?? ''} onChange={e => setF('endDate',   e.target.value)} />
+        <Input
+          label="Ngày bắt đầu *"
+          type="date"
+          value={form.startDate ?? ""}
+          onChange={(e) => setF("startDate", e.target.value)}
+        />
+        <Input
+          label="Ngày kết thúc"
+          type="date"
+          value={form.endDate ?? ""}
+          onChange={(e) => setF("endDate", e.target.value)}
+        />
       </div>
       <Textarea
         label="Mô tả công việc *"
-        value={form.description ?? ''}
-        onChange={e => setF('description', e.target.value)}
+        value={form.description ?? ""}
+        onChange={(e) => setF("description", e.target.value)}
         placeholder="Mô tả nội dung bảo trì cần thực hiện..."
       />
-      {form.frequencyUnit !== 'HOURS' && form.startDate && (
+      {form.frequencyUnit !== "HOURS" && form.startDate && (
         <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
-          Ngày đến hạn đầu tiên: <strong>{fDate(form.startDate)}</strong> + {form.frequencyValue} {UNIT_LABEL[form.frequencyUnit] ?? form.frequencyUnit}. Sau khi tạo/hoàn thành WO, hệ thống tự tính chu kỳ tiếp theo.
+          Ngày đến hạn đầu tiên: <strong>{fDate(form.startDate)}</strong> +{" "}
+          {form.frequencyValue}{" "}
+          {UNIT_LABEL[form.frequencyUnit] ?? form.frequencyUnit}. Sau khi
+          tạo/hoàn thành WO, hệ thống tự tính chu kỳ tiếp theo.
         </p>
       )}
-      {form.frequencyUnit === 'HOURS' && (
+      {form.frequencyUnit === "HOURS" && (
         <p className="text-xs text-indigo-700 bg-indigo-50 rounded-lg px-3 py-2">
-          Lịch theo giờ chạy — hệ thống dự báo ngày PM dựa vào đồng hồ tích lũy và trung bình giờ/ngày của tài sản.
+          Lịch theo giờ chạy — hệ thống dự báo ngày PM dựa vào đồng hồ tích lũy
+          và trung bình giờ/ngày của tài sản.
         </p>
       )}
     </div>
@@ -140,16 +221,16 @@ function ScheduleForm({ form, setF, assets }) {
 // ── Main component ──────────────────────────────────────────────────────────
 export function SchedulesPage() {
   const { user } = useAuth();
-  const [schedules,  setSchedules]  = useState([]);
-  const [assets,     setAssets]     = useState([]);
-  const [total,      setTotal]      = useState(0);
-  const [loading,    setLoading]    = useState(true);
-  const [page,       setPage]       = useState(1);
+  const [schedules, setSchedules] = useState([]);
+  const [assets, setAssets] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
-  const [editItem,   setEditItem]   = useState(null);  // lịch đang sửa
-  const [deleteItem, setDeleteItem] = useState(null);  // lịch đang xóa
-  const [form,       setForm]       = useState(EMPTY_FORM);
-  const [saving,     setSaving]     = useState(false);
+  const [editItem, setEditItem] = useState(null); // lịch đang sửa
+  const [deleteItem, setDeleteItem] = useState(null); // lịch đang xóa
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
   const LIMIT = 15;
 
   const load = useCallback(async () => {
@@ -158,38 +239,51 @@ export function SchedulesPage() {
       const res = await scheduleApi.getAll({ page, limit: LIMIT });
       setSchedules(res.data.data?.items ?? []);
       setTotal(res.data.data?.total ?? 0);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }, [page]);
 
   useEffect(() => {
     load();
-    assetApi.getAll({ limit: 200 }).then(r => setAssets(r.data.data?.items ?? [])).catch(() => {});
+    assetApi
+      .getAll({ limit: 200 })
+      .then((r) => setAssets(r.data.data?.items ?? []))
+      .catch(() => {});
   }, [load]);
 
   const handleGenerateWO = async (id) => {
     try {
       const res = await scheduleApi.generateWO(id);
-      toast.success(`Đã tạo WO-${String(res.data.data?.workOrderId ?? 0).padStart(4, '0')} từ lịch bảo trì`);
+      toast.success(
+        `Đã tạo WO-${String(res.data.data?.workOrderId ?? 0).padStart(4, "0")} từ lịch bảo trì`,
+      );
       load();
-    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi tạo phiếu'); }
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Lỗi tạo phiếu");
+    }
   };
 
   const handleSubmit = async (id) => {
     try {
       await scheduleApi.submit(id);
-      toast.success('Đã gửi lịch bảo trì vào luồng phê duyệt');
+      toast.success("Đã gửi lịch bảo trì vào luồng phê duyệt");
       load();
-    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi gửi phê duyệt'); }
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Lỗi gửi phê duyệt");
+    }
   };
 
-  const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   const validateForm = (f) => {
     if (!f.assetId || !f.scheduleName?.trim() || !f.startDate) {
-      toast.error('Vui lòng điền đầy đủ: Tài sản, Tên lịch, Ngày bắt đầu'); return false;
+      toast.error("Vui lòng điền đầy đủ: Tài sản, Tên lịch, Ngày bắt đầu");
+      return false;
     }
     if (!f.description?.trim()) {
-      toast.error('Vui lòng nhập mô tả công việc'); return false;
+      toast.error("Vui lòng nhập mô tả công việc");
+      return false;
     }
     return true;
   };
@@ -202,26 +296,29 @@ export function SchedulesPage() {
       await scheduleApi.create({
         ...form,
         frequencyValue: Number(form.frequencyValue || 30),
-        frequencyUnit:  (form.frequencyUnit || 'DAYS').toUpperCase(),
+        frequencyUnit: (form.frequencyUnit || "DAYS").toUpperCase(),
       });
-      toast.success('Đã tạo lịch bảo trì');
+      toast.success("Đã tạo lịch bảo trì");
       setCreateOpen(false);
       setForm(EMPTY_FORM);
       load();
-    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi tạo lịch'); }
-    finally { setSaving(false); }
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Lỗi tạo lịch");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const openEdit = (s) => {
     setForm({
-      assetId:         String(s.assetId ?? ''),
-      scheduleName:    s.scheduleName ?? '',
-      maintenanceType: s.maintenanceType ?? 'PREVENTIVE',
-      description:     s.description ?? '',
-      frequencyValue:  s.frequencyValue ?? 30,
-      frequencyUnit:   s.frequencyUnit ?? 'DAYS',
-      startDate:       s.startDate ? s.startDate.split('T')[0] : '',
-      endDate:         s.endDate   ? s.endDate.split('T')[0]   : '',
+      assetId: String(s.assetId ?? ""),
+      scheduleName: s.scheduleName ?? "",
+      maintenanceType: s.maintenanceType ?? "PREVENTIVE",
+      description: s.description ?? "",
+      frequencyValue: s.frequencyValue ?? 30,
+      frequencyUnit: s.frequencyUnit ?? "DAYS",
+      startDate: s.startDate ? s.startDate.split("T")[0] : "",
+      endDate: s.endDate ? s.endDate.split("T")[0] : "",
     });
     setEditItem(s);
   };
@@ -234,13 +331,16 @@ export function SchedulesPage() {
       await scheduleApi.update(editItem.scheduleId, {
         ...form,
         frequencyValue: Number(form.frequencyValue || 30),
-        frequencyUnit:  (form.frequencyUnit || 'DAYS').toUpperCase(),
+        frequencyUnit: (form.frequencyUnit || "DAYS").toUpperCase(),
       });
-      toast.success('Đã cập nhật lịch bảo trì');
+      toast.success("Đã cập nhật lịch bảo trì");
       setEditItem(null);
       load();
-    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi cập nhật'); }
-    finally { setSaving(false); }
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Lỗi cập nhật");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -248,48 +348,84 @@ export function SchedulesPage() {
     setSaving(true);
     try {
       await scheduleApi.remove(deleteItem.scheduleId);
-      toast.success('Đã xóa lịch bảo trì');
+      toast.success("Đã xóa lịch bảo trì");
       setDeleteItem(null);
       load();
-    } catch (err) { toast.error(err.response?.data?.message ?? 'Lỗi xóa'); }
-    finally { setSaving(false); }
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Lỗi xóa");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const canCreateSch = canDo(user, 'SCHEDULE:CREATE');
-  const canUpdateSch = canDo(user, 'SCHEDULE:UPDATE');
-  const canSubmitSch = canDo(user, 'SCHEDULE:SUBMIT');
-  const canApproveSch = canDo(user, 'SCHEDULE:APPROVE');
-  const canDeleteSch = canDo(user, 'SCHEDULE:DELETE');
+  const canCreateSch = canDo(user, "SCHEDULE:CREATE");
+  const canUpdateSch = canDo(user, "SCHEDULE:UPDATE");
+  const canSubmitSch = canDo(user, "SCHEDULE:SUBMIT");
+  const canApproveSch = canDo(user, "SCHEDULE:APPROVE");
+  const canDeleteSch = canDo(user, "SCHEDULE:DELETE");
   const adminBypass = (user?.positionLevel ?? 0) >= 4;
 
-  const isOperational = (s) => ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(s.status);
-  const canEditRow = (s) => adminBypass || ['DRAFT', 'REJECTED'].includes(s.status);
-  const canDeleteRow = (s) => adminBypass || ['DRAFT', 'REJECTED'].includes(s.status);
+  const isOperational = (s) =>
+    ["PENDING", "IN_PROGRESS", "OVERDUE"].includes(s.status);
+  const canEditRow = (s) =>
+    adminBypass || ["DRAFT", "REJECTED"].includes(s.status);
+  const canDeleteRow = (s) =>
+    adminBypass || ["DRAFT", "REJECTED"].includes(s.status);
 
-  const overdueCount = schedules.filter(s => isOperational(s) && s.frequencyUnit !== 'HOURS' && daysUntil(s.nextDueDate) < 0).length;
-  const warningCount = schedules.filter(s => {
-    if (!isOperational(s) || s.frequencyUnit === 'HOURS') return false;
+  const overdueCount = schedules.filter(
+    (s) =>
+      isOperational(s) &&
+      s.frequencyUnit !== "HOURS" &&
+      daysUntil(s.nextDueDate) < 0,
+  ).length;
+  const warningCount = schedules.filter((s) => {
+    if (!isOperational(s) || s.frequencyUnit === "HOURS") return false;
     const d = daysUntil(s.nextDueDate);
     return d !== null && d >= 0 && d <= 7;
   }).length;
 
   const TH_TOOLTIPS = {
-    'Tần suất': 'Chu kỳ lặp lại giữa các lần bảo trì (vd. mỗi 30 ngày).',
-    'Ngày bắt đầu': 'Ngày bắt đầu áp dụng kế hoạch lịch.',
-    'Ngày đến hạn': 'Mốc lần bảo trì tiếp theo cần hoàn thành (sau khi tạo WO từ lịch, mốc này được lùi thêm 1 chu kỳ).',
-    'Ngày TH cuối': 'Ngày hệ thống ghi nhận đã phát sinh WO / cập nhật chu kỳ gần nhất (không phải ngày thợ hoàn thành phiếu).',
+    "Tần suất": "Chu kỳ lặp lại giữa các lần bảo trì (vd. mỗi 30 ngày).",
+    "Ngày bắt đầu": "Ngày bắt đầu áp dụng kế hoạch lịch.",
+    "Ngày đến hạn":
+      "Mốc lần bảo trì tiếp theo cần hoàn thành (sau khi tạo WO từ lịch, mốc này được lùi thêm 1 chu kỳ).",
+    "Ngày TH cuối":
+      "Ngày hệ thống ghi nhận đã phát sinh WO / cập nhật chu kỳ gần nhất (không phải ngày thợ hoàn thành phiếu).",
   };
 
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-blue-950">
-        <p className="font-bold text-blue-900 mb-1">Luồng lịch → phiếu việc → hiện trường</p>
+        <p className="font-bold text-blue-900 mb-1">
+          Luồng lịch → phiếu việc → hiện trường
+        </p>
         <ul className="list-disc pl-5 space-y-1 text-blue-900/90 leading-relaxed">
-          <li>Sau khi <strong>Thêm lịch</strong>, trạng thái là <strong>Bản nháp</strong> — bấm <strong>Gửi</strong> trên dòng đó để vào <strong>Chờ duyệt</strong>, rồi xử lý tại menu <strong>Phê duyệt</strong>.</li>
-          <li><strong>Lịch</strong> phải được duyệt trước (trạng thái <strong>Chờ TH</strong> trên lịch = kế hoạch đã OK, chờ đến hạn thực hiện).</li>
-          <li>Nút <strong>WO</strong> hoặc scheduler tạo <strong>phiếu việc</strong> vào <strong>Chờ thực hiện</strong> — <em>không</em> lặp bước phê duyệt phiếu (vì kế hoạch đã duyệt).</li>
-          <li>Trưởng ca / Trưởng phòng <strong>phân công</strong> công nhân hoặc NV Kỹ thuật trên chi tiết phiếu; người được giao xem phiếu tại <strong>Phiếu việc</strong> + thông báo.</li>
-          <li>Tại máy: mở <strong>Checklist / QR</strong> (mã tài sản) để xem SOP/tài liệu — QR ở đây là <strong>nhận diện thiết bị</strong>, không phải khoá vật lý trừ khi nhà máy tích hợp thêm.</li>
+          <li>
+            Sau khi <strong>Thêm lịch</strong>, trạng thái là{" "}
+            <strong>Bản nháp</strong> — bấm <strong>Gửi</strong> trên dòng đó để
+            vào <strong>Chờ duyệt</strong>, rồi xử lý tại menu{" "}
+            <strong>Phê duyệt</strong>.
+          </li>
+          <li>
+            <strong>Lịch</strong> phải được duyệt trước (trạng thái{" "}
+            <strong>Chờ TH</strong> trên lịch = kế hoạch đã OK, chờ đến hạn thực
+            hiện).
+          </li>
+          <li>
+            Nút <strong>WO</strong> hoặc scheduler tạo{" "}
+            <strong>phiếu việc</strong> vào <strong>Chờ thực hiện</strong> —{" "}
+            <em>không</em> lặp bước phê duyệt phiếu (vì kế hoạch đã duyệt).
+          </li>
+          <li>
+            Trưởng ca / Trưởng phòng <strong>phân công</strong> công nhân hoặc
+            NV Kỹ thuật trên chi tiết phiếu; người được giao xem phiếu tại{" "}
+            <strong>Phiếu việc</strong> + thông báo.
+          </li>
+          <li>
+            Tại máy: mở <strong>Checklist / QR</strong> (mã tài sản) để xem
+            SOP/tài liệu — QR ở đây là <strong>nhận diện thiết bị</strong>,
+            không phải khoá vật lý trừ khi nhà máy tích hợp thêm.
+          </li>
         </ul>
       </div>
 
@@ -299,13 +435,17 @@ export function SchedulesPage() {
           {overdueCount > 0 && (
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
               <AlertTriangle size={16} className="text-red-600 shrink-0" />
-              <span className="text-sm font-bold text-red-700">{overdueCount} lịch quá hạn — hệ thống đã tự tạo WO</span>
+              <span className="text-sm font-bold text-red-700">
+                {overdueCount} lịch quá hạn — hệ thống đã tự tạo WO
+              </span>
             </div>
           )}
           {warningCount > 0 && (
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
               <Clock size={16} className="text-amber-600 shrink-0" />
-              <span className="text-sm font-bold text-amber-700">{warningCount} lịch sắp đến hạn (≤ 7 ngày)</span>
+              <span className="text-sm font-bold text-amber-700">
+                {warningCount} lịch sắp đến hạn (≤ 7 ngày)
+              </span>
             </div>
           )}
         </div>
@@ -313,129 +453,230 @@ export function SchedulesPage() {
 
       {canCreateSch && (
         <div className="flex justify-end">
-          <Button onClick={() => { setForm(EMPTY_FORM); setCreateOpen(true); }}>
+          <Button
+            onClick={() => {
+              setForm(EMPTY_FORM);
+              setCreateOpen(true);
+            }}
+          >
             <Plus size={15} /> Thêm lịch bảo trì
           </Button>
         </div>
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        {loading ? <PageLoader />
-          : schedules.length === 0 ? <EmptyState icon={Calendar} title="Chưa có lịch bảo trì" />
-          : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    {['Tên lịch', 'Tài sản', 'Loại', 'Trạng thái', 'Tần suất', 'Ngày bắt đầu', 'Ngày đến hạn', 'Ngày TH cuối', ''].map((h) => (
-                      <th
-                        key={h || 'actions'}
-                        title={h ? TH_TOOLTIPS[h] : undefined}
-                        className="text-left text-xs font-bold text-gray-700 uppercase tracking-wide px-4 py-3 whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {schedules.map(s => {
-                    const op = isOperational(s);
-                    const days = op && s.frequencyUnit !== 'HOURS' ? daysUntil(s.nextDueDate) : null;
-                    const isOverdue = days !== null && days < 0;
-                    const isWarning = days !== null && days >= 0 && days <= 7;
-                    return (
-                      <tr key={s.scheduleId} className={`hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/40' : isWarning ? 'bg-amber-50/40' : ''}`}>
-                        <td className="px-4 py-3 font-semibold text-gray-900">{s.scheduleName}</td>
-                        <td className="px-4 py-3 font-medium text-gray-800">{s.assetName}</td>
-                        <td className="px-4 py-3">
-                          <Badge color={TYPE_COLOR[s.maintenanceType] ?? 'gray'}>{TYPE_LABEL[s.maintenanceType] ?? s.maintenanceType}</Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge color={STATUS_COLOR[s.status] ?? 'gray'}>{STATUS_LABEL[s.status] ?? s.status}</Badge>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
-                          {s.frequencyValue} {UNIT_LABEL[s.frequencyUnit] ?? s.frequencyUnit}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{fDate(s.startDate)}</td>
-                        <td className="px-4 py-3">
-                          <DueDateChip nextDueDate={s.nextDueDate} frequencyUnit={s.frequencyUnit} status={s.status} />
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                          {fDate(s.lastExecutedDate) || <span className="text-gray-400 italic text-xs">Chưa TH</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            {canSubmitSch && ['DRAFT', 'REJECTED'].includes(s.status) && (
-                              <Button size="xs" variant="secondary" onClick={() => handleSubmit(s.scheduleId)} title="Gửi Trưởng ca duyệt">
+        {loading ? (
+          <PageLoader />
+        ) : schedules.length === 0 ? (
+          <EmptyState icon={Calendar} title="Chưa có lịch bảo trì" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {[
+                    "Tên lịch",
+                    "Tài sản",
+                    "Loại",
+                    "Trạng thái",
+                    "Tần suất",
+                    "Ngày bắt đầu",
+                    "Ngày đến hạn",
+                    "Ngày TH cuối",
+                    "",
+                  ].map((h) => (
+                    <th
+                      key={h || "actions"}
+                      title={h ? TH_TOOLTIPS[h] : undefined}
+                      className="text-left text-xs font-bold text-gray-700 uppercase tracking-wide px-4 py-3 whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {schedules.map((s) => {
+                  const op = isOperational(s);
+                  const days =
+                    op && s.frequencyUnit !== "HOURS"
+                      ? daysUntil(s.nextDueDate)
+                      : null;
+                  const isOverdue = days !== null && days < 0;
+                  const isWarning = days !== null && days >= 0 && days <= 7;
+                  return (
+                    <tr
+                      key={s.scheduleId}
+                      className={`hover:bg-gray-50 transition-colors ${isOverdue ? "bg-red-50/40" : isWarning ? "bg-amber-50/40" : ""}`}
+                    >
+                      <td className="px-4 py-3 font-semibold text-gray-900">
+                        {s.scheduleName}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-800">
+                        {s.assetName}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge color={TYPE_COLOR[s.maintenanceType] ?? "gray"}>
+                          {TYPE_LABEL[s.maintenanceType] ?? s.maintenanceType}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge color={STATUS_COLOR[s.status] ?? "gray"}>
+                          {STATUS_LABEL[s.status] ?? s.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                        {s.frequencyValue}{" "}
+                        {UNIT_LABEL[s.frequencyUnit] ?? s.frequencyUnit}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                        {fDate(s.startDate)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <DueDateChip
+                          nextDueDate={s.nextDueDate}
+                          frequencyUnit={s.frequencyUnit}
+                          status={s.status}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                        {fDate(s.lastExecutedDate) || (
+                          <span className="text-gray-400 italic text-xs">
+                            Chưa TH
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          {canSubmitSch &&
+                            ["DRAFT", "REJECTED"].includes(s.status) && (
+                              <Button
+                                size="xs"
+                                variant="secondary"
+                                onClick={() => handleSubmit(s.scheduleId)}
+                                title="Gửi Trưởng ca duyệt"
+                              >
                                 <Send size={11} /> Gửi
                               </Button>
                             )}
-                            {canApproveSch && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(s.status) && (
-                              <Button size="xs" variant="secondary" onClick={() => handleGenerateWO(s.scheduleId)} title="Tạo WO thủ công">
+                          {canApproveSch &&
+                            ["PENDING", "IN_PROGRESS", "OVERDUE"].includes(
+                              s.status,
+                            ) && (
+                              <Button
+                                size="xs"
+                                variant="secondary"
+                                onClick={() => handleGenerateWO(s.scheduleId)}
+                                title="Tạo WO thủ công"
+                              >
                                 <Play size={11} /> WO
                               </Button>
                             )}
-                            {canUpdateSch && canEditRow(s) && (
-                              <button type="button" onClick={() => openEdit(s)} title="Sửa lịch"
-                                className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors">
-                                <Pencil size={13} />
-                              </button>
-                            )}
-                            {canDeleteSch && canDeleteRow(s) && (
-                              <button type="button" onClick={() => setDeleteItem(s)} title="Xóa lịch"
-                                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors">
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
+                          {canUpdateSch && canEditRow(s) && (
+                            <button
+                              type="button"
+                              onClick={() => openEdit(s)}
+                              title="Sửa lịch"
+                              className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          {canDeleteSch && canDeleteRow(s) && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteItem(s)}
+                              title="Xóa lịch"
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-      <Pagination page={page} totalPages={Math.ceil(total / LIMIT)} onChange={setPage} />
+      <Pagination
+        page={page}
+        totalPages={Math.ceil(total / LIMIT)}
+        onChange={setPage}
+      />
 
       {/* Modal Tạo mới */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thêm lịch bảo trì" size="lg">
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Thêm lịch bảo trì"
+        size="lg"
+      >
         <form onSubmit={handleCreate} className="space-y-4">
           <ScheduleForm form={form} setF={setF} assets={assets} />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Hủy</Button>
-            <Button type="submit" loading={saving}>Thêm lịch</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCreateOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button type="submit" loading={saving}>
+              Thêm lịch
+            </Button>
           </div>
         </form>
       </Modal>
 
       {/* Modal Sửa */}
-      <Modal open={!!editItem} onClose={() => setEditItem(null)} title="Sửa lịch bảo trì" size="lg">
+      <Modal
+        open={!!editItem}
+        onClose={() => setEditItem(null)}
+        title="Sửa lịch bảo trì"
+        size="lg"
+      >
         <form onSubmit={handleEdit} className="space-y-4">
           <ScheduleForm form={form} setF={setF} assets={assets} />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setEditItem(null)}>Hủy</Button>
-            <Button type="submit" loading={saving}>Lưu thay đổi</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setEditItem(null)}
+            >
+              Hủy
+            </Button>
+            <Button type="submit" loading={saving}>
+              Lưu thay đổi
+            </Button>
           </div>
         </form>
       </Modal>
 
       {/* Modal xác nhận Xóa */}
-      <Modal open={!!deleteItem} onClose={() => setDeleteItem(null)} title="Xác nhận xóa" size="sm">
+      <Modal
+        open={!!deleteItem}
+        onClose={() => setDeleteItem(null)}
+        title="Xác nhận xóa"
+        size="sm"
+      >
         {deleteItem && (
           <div className="space-y-4">
             <p className="text-sm text-gray-700">
-              Bạn có chắc muốn xóa lịch bảo trì <strong>"{deleteItem.scheduleName}"</strong>
-              {' '}của tài sản <strong>{deleteItem.assetName}</strong>?
+              Bạn có chắc muốn xóa lịch bảo trì{" "}
+              <strong>"{deleteItem.scheduleName}"</strong> của tài sản{" "}
+              <strong>{deleteItem.assetName}</strong>?
             </p>
             <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
               Hành động này không thể hoàn tác.
             </p>
             <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setDeleteItem(null)}>Hủy</Button>
+              <Button variant="secondary" onClick={() => setDeleteItem(null)}>
+                Hủy
+              </Button>
               <Button variant="danger" onClick={handleDelete} loading={saving}>
                 <Trash2 size={14} /> Xóa lịch
               </Button>

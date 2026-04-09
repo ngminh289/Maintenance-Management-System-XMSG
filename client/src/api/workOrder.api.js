@@ -1,3 +1,6 @@
+/**
+ * workOrder.api.js — Client gọi /api/work-orders (CRUD, ảnh, phân công, closure-notes nháp, reset mốc giờ CORRECTIVE).
+ */
 import { api } from './index.js';
 export const workOrderApi = {
   getAll:       (params) => api.get('/work-orders', { params }),
@@ -5,6 +8,10 @@ export const workOrderApi = {
   create:       (data)   => api.post('/work-orders', data),
   update:       (id, d)  => api.put(`/work-orders/${id}`, d),
   changeStatus: (id, status, data = {}) => api.patch(`/work-orders/${id}/status`, { status, ...data }),
+  saveClosureNotes: (id, data) =>
+    api.patch(`/work-orders/${id}/closure-notes`, data),
+  resetRuntimeBaseline: (id) =>
+    api.post(`/work-orders/${id}/counter-reset-baseline`),
   uploadPhotos: (id, formData) => api.post(`/work-orders/${id}/photos`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),

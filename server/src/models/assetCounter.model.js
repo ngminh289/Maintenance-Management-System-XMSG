@@ -2,7 +2,7 @@
  * assetCounter.model.js — SQL thuần cho AssetCounters + AssetRuntimeLogs.
  * Dùng trong: services/assetCounter.service.js (luồng dự báo bảo trì giờ chạy).
  */
-import { getPool } from '../config/database.js';
+import { getPool } from "../config/database.js";
 
 export async function findByAsset(assetId) {
   const [rows] = await getPool().query(
@@ -16,7 +16,16 @@ export async function findByAsset(assetId) {
   return rows[0] || null;
 }
 
-export async function upsert(assetId, { totalAccumulatedHours, lastReadingValue, averageHoursPerDay, estimatedNextPMDate, lastMaintenanceTotal }) {
+export async function upsert(
+  assetId,
+  {
+    totalAccumulatedHours,
+    lastReadingValue,
+    averageHoursPerDay,
+    estimatedNextPMDate,
+    lastMaintenanceTotal,
+  },
+) {
   await getPool().query(
     `INSERT INTO AssetCounters (AssetID, TotalAccumulatedHours, LastReadingValue, AverageHoursPerDay, EstimatedNextPMDate, LastMaintenanceTotal)
      VALUES (?, ?, ?, ?, ?, ?)
@@ -26,18 +35,31 @@ export async function upsert(assetId, { totalAccumulatedHours, lastReadingValue,
        AverageHoursPerDay    = VALUES(AverageHoursPerDay),
        EstimatedNextPMDate   = VALUES(EstimatedNextPMDate),
        LastMaintenanceTotal  = IF(VALUES(LastMaintenanceTotal) IS NOT NULL, VALUES(LastMaintenanceTotal), LastMaintenanceTotal)`,
-    [assetId, totalAccumulatedHours, lastReadingValue, averageHoursPerDay ?? 0, estimatedNextPMDate ?? null, lastMaintenanceTotal ?? null],
+    [
+      assetId,
+      totalAccumulatedHours,
+      lastReadingValue,
+      averageHoursPerDay ?? 0,
+      estimatedNextPMDate ?? null,
+      lastMaintenanceTotal ?? null,
+    ],
   );
 }
 
 export async function setLastMaintenanceTotal(assetId, total) {
   await getPool().query(
-    'UPDATE AssetCounters SET LastMaintenanceTotal = ? WHERE AssetID = ?',
+    "UPDATE AssetCounters SET LastMaintenanceTotal = ? WHERE AssetID = ?",
     [total, assetId],
   );
 }
 
-export async function createRuntimeLog({ assetId, readingValue, deltaHours, checklistId, dataSource = 'MANUAL' }) {
+export async function createRuntimeLog({
+  assetId,
+  readingValue,
+  deltaHours,
+  checklistId,
+  dataSource = "MANUAL",
+}) {
   const [result] = await getPool().query(
     `INSERT INTO AssetRuntimeLogs (AssetID, ReadingValue, DeltaHours, ChecklistID, DataSource)
      VALUES (?, ?, ?, ?, ?)`,

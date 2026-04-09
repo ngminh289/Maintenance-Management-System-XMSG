@@ -1,9 +1,10 @@
 /**
  * employee.model.js — SQL thuần cho bảng Employees.
  * Chú ý: findByUsernameOrEmail trả về PasswordHash — chỉ dùng trong auth.service.
- * Dùng trong: services/auth.service.js, services/employee.service.js.
+ * Lịch nghỉ: LeaveStartAt / LeaveEndAt; onScheduledLeave = NOW() trong [start,end] (migration 030).
+ * Dùng trong: auth.service, employee.service, workOrderFieldAssign.
  */
-import { getPool } from '../config/database.js';
+import { getPool } from "../config/database.js";
 
 const PUBLIC_COLS = `
   e.EmployeeID   AS employeeId,
@@ -14,6 +15,10 @@ const PUBLIC_COLS = `
   e.EmailVerified AS emailVerified,
   e.IsActive     AS isActive,
   e.WasEverActivated AS wasEverActivated,
+  e.LeaveStartAt AS leaveStartAt,
+  e.LeaveEndAt   AS leaveEndAt,
+  (e.LeaveStartAt IS NOT NULL AND e.LeaveEndAt IS NOT NULL
+   AND NOW() >= e.LeaveStartAt AND NOW() <= e.LeaveEndAt) AS onScheduledLeave,
   e.CreatedAt    AS createdAt,
   e.PositionID   AS positionId,
   p.PositionName AS positionName,
@@ -26,20 +31,36 @@ const BASE_JOIN = `
   JOIN Positions   p ON p.PositionID   = e.PositionID
   JOIN Departments d ON d.DepartmentID = e.DepartmentID`;
 
-export async function findAll({ limit, offset, departmentId, positionId, isActive, search } = {}) {
+export async function findAll({
+  limit,
+  offset,
+  departmentId,
+  positionId,
+  isActive,
+  search,
+} = {}) {
   const params = [];
-  let where = 'WHERE 1=1';
+  let where = "WHERE 1=1";
 
-  if (departmentId !== undefined) { where += ' AND e.DepartmentID = ?'; params.push(departmentId); }
-  if (positionId !== undefined)   { where += ' AND e.PositionID = ?';   params.push(positionId); }
-  if (isActive !== undefined)     { where += ' AND e.IsActive = ?';     params.push(isActive); }
-  if (search)                     {
-    where += ' AND (e.FullName LIKE ? OR e.Username LIKE ? OR e.Email LIKE ?)';
+  if (departmentId !== undefined) {
+    where += " AND e.DepartmentID = ?";
+    params.push(departmentId);
+  }
+  if (positionId !== undefined) {
+    where += " AND e.PositionID = ?";
+    params.push(positionId);
+  }
+  if (isActive !== undefined) {
+    where += " AND e.IsActive = ?";
+    params.push(isActive);
+  }
+  if (search) {
+    where += " AND (e.FullName LIKE ? OR e.Username LIKE ? OR e.Email LIKE ?)";
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
-  const orderBy = 'ORDER BY e.FullName';
-  const pagination = limit !== undefined ? 'LIMIT ? OFFSET ?' : '';
+  const orderBy = "ORDER BY e.FullName";
+  const pagination = limit !== undefined ? "LIMIT ? OFFSET ?" : "";
   if (limit !== undefined) params.push(limit, offset);
 
   const [rows] = await getPool().query(
@@ -49,17 +70,34 @@ export async function findAll({ limit, offset, departmentId, positionId, isActiv
   return rows;
 }
 
-export async function count({ departmentId, positionId, isActive, search } = {}) {
+export async function count({
+  departmentId,
+  positionId,
+  isActive,
+  search,
+} = {}) {
   const params = [];
-  let where = 'WHERE 1=1';
-  if (departmentId !== undefined) { where += ' AND DepartmentID = ?'; params.push(departmentId); }
-  if (positionId !== undefined)   { where += ' AND PositionID = ?';   params.push(positionId); }
-  if (isActive !== undefined)     { where += ' AND IsActive = ?';     params.push(isActive); }
+  let where = "WHERE 1=1";
+  if (departmentId !== undefined) {
+    where += " AND DepartmentID = ?";
+    params.push(departmentId);
+  }
+  if (positionId !== undefined) {
+    where += " AND PositionID = ?";
+    params.push(positionId);
+  }
+  if (isActive !== undefined) {
+    where += " AND IsActive = ?";
+    params.push(isActive);
+  }
   if (search) {
-    where += ' AND (FullName LIKE ? OR Username LIKE ? OR Email LIKE ?)';
+    where += " AND (FullName LIKE ? OR Username LIKE ? OR Email LIKE ?)";
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
-  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt FROM Employees ${where}`, params);
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt FROM Employees ${where}`,
+    params,
+  );
   return Number(rows[0].cnt);
 }
 
@@ -91,14 +129,20 @@ export async function findByUsernameOrEmail(username, email) {
 
 export async function findByEmail(email) {
   const [rows] = await getPool().query(
-    'SELECT EmployeeID AS employeeId, FullName AS fullName, Email AS email FROM Employees WHERE Email = ?',
+    "SELECT EmployeeID AS employeeId, FullName AS fullName, Email AS email FROM Employees WHERE Email = ?",
     [email],
   );
   return rows[0] || null;
 }
 
 export async function create({
-  fullName, username, passwordHash, email, phone, positionId, departmentId,
+  fullName,
+  username,
+  passwordHash,
+  email,
+  phone,
+  positionId,
+  departmentId,
   emailVerified = false,
   isActive = true,
   wasEverActivated,
@@ -107,14 +151,31 @@ export async function create({
   const [result] = await getPool().query(
     `INSERT INTO Employees (FullName, Username, PasswordHash, Email, Phone, PositionID, DepartmentID, EmailVerified, IsActive, WasEverActivated)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [fullName, username, passwordHash, email, phone || null, positionId, departmentId, emailVerified, isActive, ever],
+    [
+      fullName,
+      username,
+      passwordHash,
+      email,
+      phone || null,
+      positionId,
+      departmentId,
+      emailVerified,
+      isActive,
+      ever,
+    ],
   );
   return result.insertId;
 }
 
 export async function update(id, fields) {
-  const allowed = ['FullName', 'Email', 'Phone', 'PositionID', 'DepartmentID'];
-  const map = { fullName: 'FullName', email: 'Email', phone: 'Phone', positionId: 'PositionID', departmentId: 'DepartmentID' };
+  const allowed = ["FullName", "Email", "Phone", "PositionID", "DepartmentID"];
+  const map = {
+    fullName: "FullName",
+    email: "Email",
+    phone: "Phone",
+    positionId: "PositionID",
+    departmentId: "DepartmentID",
+  };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {
@@ -126,18 +187,24 @@ export async function update(id, fields) {
   if (setClauses.length === 0) return 0;
   params.push(id);
   const [result] = await getPool().query(
-    `UPDATE Employees SET ${setClauses.join(', ')} WHERE EmployeeID = ?`,
+    `UPDATE Employees SET ${setClauses.join(", ")} WHERE EmployeeID = ?`,
     params,
   );
   return result.affectedRows;
 }
 
 export async function setEmailVerified(id) {
-  await getPool().query('UPDATE Employees SET EmailVerified = TRUE WHERE EmployeeID = ?', [id]);
+  await getPool().query(
+    "UPDATE Employees SET EmailVerified = TRUE WHERE EmployeeID = ?",
+    [id],
+  );
 }
 
 export async function updatePassword(id, passwordHash) {
-  await getPool().query('UPDATE Employees SET PasswordHash = ? WHERE EmployeeID = ?', [passwordHash, id]);
+  await getPool().query(
+    "UPDATE Employees SET PasswordHash = ? WHERE EmployeeID = ?",
+    [passwordHash, id],
+  );
 }
 
 /** Tìm nhân viên theo Level chức vụ (dùng để gửi notification cho quản lý) */
@@ -152,16 +219,23 @@ export async function findAllByLevel(minLevel) {
   return rows;
 }
 
+export async function updateLeaveSchedule(employeeId, leaveStartAt, leaveEndAt) {
+  await getPool().query(
+    `UPDATE Employees SET LeaveStartAt = ?, LeaveEndAt = ? WHERE EmployeeID = ?`,
+    [leaveStartAt, leaveEndAt, employeeId],
+  );
+}
+
 export async function setActive(id, isActive) {
   if (isActive) {
     const [result] = await getPool().query(
-      'UPDATE Employees SET IsActive = TRUE, WasEverActivated = TRUE WHERE EmployeeID = ?',
+      "UPDATE Employees SET IsActive = TRUE, WasEverActivated = TRUE WHERE EmployeeID = ?",
       [id],
     );
     return result.affectedRows;
   }
   const [result] = await getPool().query(
-    'UPDATE Employees SET IsActive = FALSE WHERE EmployeeID = ?',
+    "UPDATE Employees SET IsActive = FALSE WHERE EmployeeID = ?",
     [id],
   );
   return result.affectedRows;

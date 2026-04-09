@@ -14,40 +14,42 @@
  *            models/checklistResult.model.js.
  *
  * getResultById: bổ sung checklistTemplateName, assetTypeName, locationName và threshold từng câu (màn duyệt).
+ * getQRInfo: kèm runtimeCounter (LastReadingValue…) để form checklist hiển thị và chặn nhập < lần trước ngay khi gửi.
  */
-import { createError } from '../utils/createError.js';
-import * as templateModel from '../models/checklistTemplate.model.js';
-import * as resultModel   from '../models/checklistResult.model.js';
-import * as assetModel    from '../models/asset.model.js';
-import * as workOrderModel from '../models/workOrder.model.js';
-import * as workOrderMaintSync from './workOrderMaintenanceSync.service.js';
-import * as workOrderSvc  from './workOrder.service.js';
-import * as counterSvc    from './assetCounter.service.js';
-import * as notifService  from './notification.service.js';
+import { createError } from "../utils/createError.js";
+import * as templateModel from "../models/checklistTemplate.model.js";
+import * as resultModel from "../models/checklistResult.model.js";
+import * as assetModel from "../models/asset.model.js";
+import * as workOrderModel from "../models/workOrder.model.js";
+import * as workOrderMaintSync from "./workOrderMaintenanceSync.service.js";
+import * as workOrderSvc from "./workOrder.service.js";
+import * as counterSvc from "./assetCounter.service.js";
+import * as counterModel from "../models/assetCounter.model.js";
+import * as notifService from "./notification.service.js";
 
 const INPUT_TYPE_TO_DB = {
-  PassFail: 'PASS_FAIL',
-  PASS_FAIL: 'PASS_FAIL',
-  Numeric: 'NUMERIC',
-  NUMERIC: 'NUMERIC',
-  Text: 'TEXT',
-  TEXT: 'TEXT',
-  Photo: 'PHOTO',
-  PHOTO: 'PHOTO',
-  Range: 'RANGE',
-  RANGE: 'RANGE',
-  Selection: 'SELECTION',
-  SELECTION: 'SELECTION',
+  PassFail: "PASS_FAIL",
+  PASS_FAIL: "PASS_FAIL",
+  Numeric: "NUMERIC",
+  NUMERIC: "NUMERIC",
+  Text: "TEXT",
+  TEXT: "TEXT",
+  Photo: "PHOTO",
+  PHOTO: "PHOTO",
+  Range: "RANGE",
+  RANGE: "RANGE",
+  Selection: "SELECTION",
+  SELECTION: "SELECTION",
 };
 
 /** API client (PassFail) ↔ MySQL ENUM (PASS_FAIL) */
 const DB_INPUT_TO_CLIENT = {
-  PASS_FAIL: 'PassFail',
-  NUMERIC: 'Numeric',
-  TEXT: 'Text',
-  PHOTO: 'Photo',
-  RANGE: 'Range',
-  SELECTION: 'Selection',
+  PASS_FAIL: "PassFail",
+  NUMERIC: "Numeric",
+  TEXT: "Text",
+  PHOTO: "Photo",
+  RANGE: "Range",
+  SELECTION: "Selection",
 };
 
 function mapTemplateForClient(t) {
@@ -63,11 +65,14 @@ function mapTemplateForClient(t) {
 
 /** Khớp dòng ChecklistDetails với câu mẫu (theo nội dung + kiểu nhập). */
 function matchTemplateItemForReview(templateItems, detailRow) {
-  const detailClient = DB_INPUT_TO_CLIENT[detailRow.inputType] || detailRow.inputType;
+  const detailClient =
+    DB_INPUT_TO_CLIENT[detailRow.inputType] || detailRow.inputType;
   let item = templateItems.find(
-    (i) => i.questionText === detailRow.questionText && i.inputType === detailClient,
+    (i) =>
+      i.questionText === detailRow.questionText && i.inputType === detailClient,
   );
-  if (!item) item = templateItems.find((t) => t.questionText === detailRow.questionText);
+  if (!item)
+    item = templateItems.find((t) => t.questionText === detailRow.questionText);
   return item || null;
 }
 
@@ -84,34 +89,36 @@ function thresholdPayloadFromTemplateItem(item) {
 }
 
 function normalizeDetailInputType(inputType) {
-  if (!inputType) return 'PASS_FAIL';
-  return INPUT_TYPE_TO_DB[inputType] || 'PASS_FAIL';
+  if (!inputType) return "PASS_FAIL";
+  return INPUT_TYPE_TO_DB[inputType] || "PASS_FAIL";
 }
 
 function normalizeItemPayload(data) {
-  if (!data || typeof data !== 'object') return data;
+  if (!data || typeof data !== "object") return data;
   const out = { ...data };
   if (out.inputType !== undefined) {
     out.inputType = normalizeDetailInputType(out.inputType);
   }
-  for (const key of ['outOfRangeSuggest', 'passFailFailSuggest']) {
-    if (out[key] === '' || out[key] === undefined) {
+  for (const key of ["outOfRangeSuggest", "passFailFailSuggest"]) {
+    if (out[key] === "" || out[key] === undefined) {
       if (Object.prototype.hasOwnProperty.call(out, key)) out[key] = null;
       continue;
     }
-    if (typeof out[key] === 'string') {
+    if (typeof out[key] === "string") {
       const u = out[key].toUpperCase();
-      out[key] = u === 'WARNING' || u === 'NG' ? u : null;
+      out[key] = u === "WARNING" || u === "NG" ? u : null;
     }
   }
-  if (out.safeNumericMin === '' || out.safeNumericMin === undefined) {
-    if (Object.prototype.hasOwnProperty.call(out, 'safeNumericMin')) out.safeNumericMin = null;
+  if (out.safeNumericMin === "" || out.safeNumericMin === undefined) {
+    if (Object.prototype.hasOwnProperty.call(out, "safeNumericMin"))
+      out.safeNumericMin = null;
   } else if (out.safeNumericMin != null) {
     const n = Number(out.safeNumericMin);
     out.safeNumericMin = Number.isNaN(n) ? null : n;
   }
-  if (out.safeNumericMax === '' || out.safeNumericMax === undefined) {
-    if (Object.prototype.hasOwnProperty.call(out, 'safeNumericMax')) out.safeNumericMax = null;
+  if (out.safeNumericMax === "" || out.safeNumericMax === undefined) {
+    if (Object.prototype.hasOwnProperty.call(out, "safeNumericMax"))
+      out.safeNumericMax = null;
   } else if (out.safeNumericMax != null) {
     const n = Number(out.safeNumericMax);
     out.safeNumericMax = Number.isNaN(n) ? null : n;
@@ -125,7 +132,7 @@ async function enrichDetailsForInsert(assetTypeId, details) {
   const template = await templateModel.findByAssetTypeId(assetTypeId);
   if (!template) {
     return details.map((d) => ({
-      questionText: d.questionText || `Câu #${d.questionId ?? '?'}`,
+      questionText: d.questionText || `Câu #${d.questionId ?? "?"}`,
       inputType: normalizeDetailInputType(d.inputType),
       answerValue: d.answerValue,
       isOK: d.isOK !== false && d.isOk !== false,
@@ -136,7 +143,8 @@ async function enrichDetailsForInsert(assetTypeId, details) {
   return details.map((d) => {
     const item = byId.get(Number(d.questionId));
     return {
-      questionText: d.questionText || item?.questionText || `Câu #${d.questionId ?? '?'}`,
+      questionText:
+        d.questionText || item?.questionText || `Câu #${d.questionId ?? "?"}`,
       inputType: normalizeDetailInputType(d.inputType || item?.inputType),
       answerValue: d.answerValue,
       isOK: d.isOK !== false && d.isOk !== false,
@@ -152,26 +160,34 @@ export async function getTemplates(assetTypeId) {
 
 export async function getTemplateById(id) {
   const t = await templateModel.findById(id);
-  if (!t) throw createError('Không tìm thấy mẫu checklist', 404);
+  if (!t) throw createError("Không tìm thấy mẫu checklist", 404);
   return mapTemplateForClient(t);
 }
 
-export async function createTemplate({ assetTypeId, templateName, description }) {
+export async function createTemplate({
+  assetTypeId,
+  templateName,
+  description,
+}) {
   const typeId = Number(assetTypeId);
   const existing = await templateModel.findAll(typeId);
   if (existing.length > 0) {
     throw createError(
-      'Loại tài sản này đã có mẫu checklist. Chỉ được một mẫu / loại — mở chỉnh sửa mẫu hiện có.',
+      "Loại tài sản này đã có mẫu checklist. Chỉ được một mẫu / loại — mở chỉnh sửa mẫu hiện có.",
       409,
     );
   }
-  const id = await templateModel.createTemplate({ assetTypeId: typeId, templateName, description });
+  const id = await templateModel.createTemplate({
+    assetTypeId: typeId,
+    templateName,
+    description,
+  });
   return mapTemplateForClient(await templateModel.findById(id));
 }
 
 export async function updateTemplate(id, data) {
   const cur = await templateModel.findById(id);
-  if (!cur) throw createError('Không tìm thấy mẫu checklist', 404);
+  if (!cur) throw createError("Không tìm thấy mẫu checklist", 404);
   await templateModel.updateTemplate(id, data);
   return mapTemplateForClient(await templateModel.findById(id));
 }
@@ -183,15 +199,18 @@ export async function removeTemplate(id) {
 
 export async function addItem(templateId, data) {
   const t = await templateModel.findById(templateId);
-  if (!t) throw createError('Không tìm thấy mẫu checklist', 404);
+  if (!t) throw createError("Không tìm thấy mẫu checklist", 404);
   const payload = normalizeItemPayload(data);
   await templateModel.addItem({ templateId: Number(templateId), ...payload });
   return mapTemplateForClient(await templateModel.findById(templateId));
 }
 
 export async function updateItem(itemId, data) {
-  const affected = await templateModel.updateItem(itemId, normalizeItemPayload(data));
-  if (!affected) throw createError('Không tìm thấy câu hỏi', 404);
+  const affected = await templateModel.updateItem(
+    itemId,
+    normalizeItemPayload(data),
+  );
+  if (!affected) throw createError("Không tìm thấy câu hỏi", 404);
 }
 
 export async function removeItem(itemId) {
@@ -202,14 +221,14 @@ export async function removeItem(itemId) {
 
 export async function getQRInfo(assetId) {
   const asset = await assetModel.findById(assetId);
-  if (!asset) throw createError('Không tìm thấy tài sản', 404);
+  if (!asset) throw createError("Không tìm thấy tài sản", 404);
 
   const template = await templateModel.findByAssetTypeId(asset.assetTypeId);
   const checklistTemplate = template
     ? mapTemplateForClient(await templateModel.findById(template.templateId))
     : null;
 
-  const { getPool } = await import('../config/database.js');
+  const { getPool } = await import("../config/database.js");
   const [documents] = await getPool().query(
     `SELECT da.DigitalAssetID AS digitalAssetId,
             da.FileName       AS fileName,
@@ -227,25 +246,33 @@ export async function getQRInfo(assetId) {
      ORDER BY da.UploadDate DESC`,
     [assetId],
   );
-  const documentsWithTags = documents.map(doc => ({
+  const documentsWithTags = documents.map((doc) => ({
     ...doc,
     tags: doc.tagNames
-      ? doc.tagNames.split('||').map((name, i) => ({
-          tagId:   Number(doc.tagIds.split('||')[i]),
+      ? doc.tagNames.split("||").map((name, i) => ({
+          tagId: Number(doc.tagIds.split("||")[i]),
           tagName: name,
         }))
       : [],
     tagNames: undefined,
-    tagIds:   undefined,
+    tagIds: undefined,
   }));
 
   const recentResults = await resultModel.findByAsset(assetId, 5);
+
+  const counterRow = await counterModel.findByAsset(assetId);
+  const runtimeCounter = {
+    lastReadingValue: Number(counterRow?.lastReadingValue ?? 0),
+    totalAccumulatedHours: Number(counterRow?.totalAccumulatedHours ?? 0),
+    lastUpdated: counterRow?.lastUpdated ?? null,
+  };
 
   return {
     asset,
     checklistTemplate,
     documents: documentsWithTags,
     recentResults,
+    runtimeCounter,
   };
 }
 
@@ -256,49 +283,63 @@ export async function getQRInfo(assetId) {
  * @returns {Promise<number|null>} newWorkOrderId
  */
 export async function applyApprovedChecklistEffects(row) {
-  const { checklistId, assetId, woId, checkerId, overallStatus, readingValue } = row;
+  const { checklistId, assetId, woId, checkerId, overallStatus, readingValue } =
+    row;
   const asset = await assetModel.findById(assetId);
-  if (!asset) throw createError('Không tìm thấy tài sản', 404);
+  if (!asset) throw createError("Không tìm thấy tài sản", 404);
 
   if (readingValue != null) {
-    await counterSvc.recordReading({ assetId, readingValue, checklistId, dataSource: 'MANUAL' });
+    await counterSvc.recordReading({
+      assetId,
+      readingValue,
+      checklistId,
+      dataSource: "MANUAL",
+    });
   }
 
   let newWorkOrderId = null;
 
-  if (overallStatus === 'OK') {
-    await assetModel.updateStatus(assetId, 'AVAILABLE');
+  if (overallStatus === "OK") {
+    await assetModel.updateStatus(assetId, "AVAILABLE");
     if (woId) {
       const w = await workOrderModel.findById(woId);
-      const autoHours = w ? workOrderModel.computeSuggestedActualHours(w) : undefined;
-      await workOrderModel.updateStatus(woId, 'COMPLETED', {
-        actualDate: new Date().toISOString().split('T')[0],
+      const autoHours = w
+        ? workOrderModel.computeSuggestedActualHours(w)
+        : undefined;
+      await workOrderModel.updateStatus(woId, "COMPLETED", {
+        actualDate: new Date().toISOString().split("T")[0],
         ...(autoHours !== undefined ? { actualHours: autoHours } : {}),
       });
       const completedWo = await workOrderModel.findById(woId);
       await workOrderMaintSync.afterWorkOrderCompleted(completedWo);
     }
-  } else if (overallStatus === 'WARNING') {
-    await assetModel.updateStatus(assetId, 'MONITORING');
+  } else if (overallStatus === "WARNING") {
+    await assetModel.updateStatus(assetId, "MONITORING");
     newWorkOrderId = await workOrderSvc.createAutomatic({
-      assetId, woSource: 'PREDICTIVE', priority: 'HIGH',
+      assetId,
+      woSource: "PREDICTIVE",
+      priority: "HIGH",
       description: `[CẢNH BÁO] Checklist #${checklistId}: ${asset.assetName} — Theo dõi thêm (đã xác nhận giám sát)`,
       createdBy: checkerId,
     });
     await notifService.notifyManagers(
       `CẢNH BÁO: [${asset.assetName}] checklist #${checklistId} đã được giám sát duyệt. WO #${newWorkOrderId} chờ phê duyệt.`,
-      'SYSTEM_ALERT', 2,
+      "SYSTEM_ALERT",
+      2,
     );
-  } else if (overallStatus === 'NG') {
-    await assetModel.updateStatus(assetId, 'BROKEN');
+  } else if (overallStatus === "NG") {
+    await assetModel.updateStatus(assetId, "BROKEN");
     newWorkOrderId = await workOrderSvc.createAutomatic({
-      assetId, woSource: 'CORRECTIVE', priority: 'EMERGENCY',
+      assetId,
+      woSource: "CORRECTIVE",
+      priority: "EMERGENCY",
       description: `[SỰ CỐ] Checklist #${checklistId}: ${asset.assetName} — NG (đã xác nhận giám sát)`,
       createdBy: checkerId,
     });
     await notifService.notifyManagers(
       `SỰ CỐ: [${asset.assetName}] checklist #${checklistId} giám sát xác nhận NG. WO #${newWorkOrderId} đã tạo.`,
-      'SYSTEM_ALERT', 2,
+      "SYSTEM_ALERT",
+      2,
     );
   }
 
@@ -310,29 +351,64 @@ export async function applyApprovedChecklistEffects(row) {
 /**
  * Nộp kết quả — trạng thái PENDING, không đổi asset/WO/counter.
  */
-export async function submitResult({ assetId, woId, readingValue, overallStatus, evidencePhoto, notes, details, checkerId }) {
+export async function submitResult({
+  assetId,
+  woId,
+  readingValue,
+  overallStatus,
+  evidencePhoto,
+  notes,
+  partsNotes,
+  details,
+  checkerId,
+}) {
   const asset = await assetModel.findById(assetId);
-  if (!asset) throw createError('Không tìm thấy tài sản', 404);
+  if (!asset) throw createError("Không tìm thấy tài sản", 404);
+
+  if (readingValue != null && readingValue !== "") {
+    const rv = Number(readingValue);
+    if (!Number.isFinite(rv) || rv < 0) {
+      throw createError("Giá trị đồng hồ phải là số ≥ 0", 400);
+    }
+    const counterRow = await counterModel.findByAsset(assetId);
+    const last = Number(counterRow?.lastReadingValue ?? 0);
+    if (rv < last) {
+      throw createError(
+        `Giá trị đồng hồ phải ≥ ${last} giờ (đã lưu lần trước; không được nhỏ hơn).`,
+        400,
+      );
+    }
+  }
 
   const enriched = await enrichDetailsForInsert(asset.assetTypeId, details);
 
-  const checklistId = await resultModel.create({ assetId, woId, checkerId, overallStatus, evidencePhoto, notes, readingValue });
+  const checklistId = await resultModel.create({
+    assetId,
+    woId,
+    checkerId,
+    overallStatus,
+    evidencePhoto,
+    notes,
+    partsNotes: partsNotes?.trim?.() || null,
+    readingValue,
+  });
   if (enriched?.length) {
     await resultModel.createDetails(checklistId, enriched);
   }
 
   await notifService.notifyManagers(
     `Checklist #${checklistId} chờ TC/TP: ${asset.assetName} — ${overallStatus}. Người nộp ID ${checkerId}.`,
-    'SYSTEM_ALERT',
+    "SYSTEM_ALERT",
     3,
   );
 
   return {
     checklistId,
     overallStatus,
-    reviewStatus: 'PENDING',
+    reviewStatus: "PENDING",
     newWorkOrderId: null,
-    message: 'Đã gửi kết quả. Chờ Trưởng ca / Trưởng phòng xác nhận (OK / Theo dõi / NG) trước khi hệ thống cập nhật tài sản và phiếu việc.',
+    message:
+      "Đã gửi kết quả. Chờ Trưởng ca / Trưởng phòng xác nhận (OK / Theo dõi / NG) trước khi hệ thống cập nhật tài sản và phiếu việc.",
   };
 }
 
@@ -342,31 +418,34 @@ export async function getPendingReviewResults(limit = 50) {
   return resultModel.findPendingReview(limit);
 }
 
-export async function reviewChecklistResult(checklistId, { supervisorId, decision, supervisorNotes }) {
+export async function reviewChecklistResult(
+  checklistId,
+  { supervisorId, decision, supervisorNotes },
+) {
   const row = await resultModel.findById(checklistId);
-  if (!row) throw createError('Không tìm thấy kết quả checklist', 404);
-  if (row.reviewStatus !== 'PENDING') {
-    throw createError('Kết quả này đã được xử lý', 409);
+  if (!row) throw createError("Không tìm thấy kết quả checklist", 404);
+  if (row.reviewStatus !== "PENDING") {
+    throw createError("Kết quả này đã được xử lý", 409);
   }
 
-  const dec = String(decision || '').toUpperCase();
-  if (dec === 'REJECT') {
+  const dec = String(decision || "").toUpperCase();
+  if (dec === "REJECT") {
     const n = await resultModel.setReviewOutcome(checklistId, {
-      reviewStatus: 'REJECTED',
+      reviewStatus: "REJECTED",
       reviewedBy: supervisorId,
       supervisorNotes,
     });
-    if (!n) throw createError('Không thể từ chối (đã xử lý?)', 409);
+    if (!n) throw createError("Không thể từ chối (đã xử lý?)", 409);
     await notifService.send(
       row.checkerId,
-      `Giám sát từ chối checklist #${checklistId} (${row.assetName}). ${supervisorNotes ? `Lý do: ${supervisorNotes}` : ''}`,
-      'SYSTEM_ALERT',
+      `Giám sát từ chối checklist #${checklistId} (${row.assetName}). ${supervisorNotes ? `Lý do: ${supervisorNotes}` : ""}`,
+      "SYSTEM_ALERT",
     );
-    return { checklistId, reviewStatus: 'REJECTED', newWorkOrderId: null };
+    return { checklistId, reviewStatus: "REJECTED", newWorkOrderId: null };
   }
 
-  if (dec !== 'APPROVE') {
-    throw createError('decision phải là APPROVE hoặc REJECT', 400);
+  if (dec !== "APPROVE") {
+    throw createError("decision phải là APPROVE hoặc REJECT", 400);
   }
 
   const newWorkOrderId = await applyApprovedChecklistEffects({
@@ -379,18 +458,18 @@ export async function reviewChecklistResult(checklistId, { supervisorId, decisio
   });
 
   const updated = await resultModel.setReviewOutcome(checklistId, {
-    reviewStatus: 'APPROVED',
+    reviewStatus: "APPROVED",
     reviewedBy: supervisorId,
     supervisorNotes,
   });
-  if (!updated) throw createError('Không thể xác nhận (đã xử lý?)', 409);
+  if (!updated) throw createError("Không thể xác nhận (đã xử lý?)", 409);
 
-  return { checklistId, reviewStatus: 'APPROVED', newWorkOrderId };
+  return { checklistId, reviewStatus: "APPROVED", newWorkOrderId };
 }
 
 export async function getResultById(id) {
   const r = await resultModel.findById(id);
-  if (!r) throw createError('Không tìm thấy kết quả checklist', 404);
+  if (!r) throw createError("Không tìm thấy kết quả checklist", 404);
 
   const asset = await assetModel.findById(r.assetId);
   let checklistTemplateName = null;
@@ -398,7 +477,9 @@ export async function getResultById(id) {
   if (asset?.assetTypeId) {
     const head = await templateModel.findByAssetTypeId(asset.assetTypeId);
     if (head) {
-      const t = mapTemplateForClient(await templateModel.findById(head.templateId));
+      const t = mapTemplateForClient(
+        await templateModel.findById(head.templateId),
+      );
       checklistTemplateName = t?.templateName ?? null;
       templateItems = t?.items || [];
     }
@@ -422,18 +503,34 @@ export async function getResultById(id) {
   };
 }
 
-export async function getResults({ page = 1, limit = 20, checkerId, assetId, reviewStatus } = {}) {
+export async function getResults({
+  page = 1,
+  limit = 20,
+  checkerId,
+  assetId,
+  reviewStatus,
+} = {}) {
   const offset = (page - 1) * limit;
-  const { getPool } = await import('../config/database.js');
+  const { getPool } = await import("../config/database.js");
   const conditions = [];
   const params = [];
-  if (checkerId) { conditions.push('cr.CheckerID = ?'); params.push(checkerId); }
-  if (assetId)   { conditions.push('cr.AssetID = ?');   params.push(assetId); }
-  if (reviewStatus) { conditions.push('cr.ReviewStatus = ?'); params.push(reviewStatus); }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  if (checkerId) {
+    conditions.push("cr.CheckerID = ?");
+    params.push(checkerId);
+  }
+  if (assetId) {
+    conditions.push("cr.AssetID = ?");
+    params.push(assetId);
+  }
+  if (reviewStatus) {
+    conditions.push("cr.ReviewStatus = ?");
+    params.push(reviewStatus);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const [[{ total }]] = await getPool().query(
-    `SELECT COUNT(*) AS total FROM ChecklistResults cr ${where}`, params
+    `SELECT COUNT(*) AS total FROM ChecklistResults cr ${where}`,
+    params,
   );
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId,
@@ -447,13 +544,13 @@ export async function getResults({ page = 1, limit = 20, checkerId, assetId, rev
      ${where}
      ORDER BY cr.CheckTime DESC
      LIMIT ? OFFSET ?`,
-    [...params, Number(limit), Number(offset)]
+    [...params, Number(limit), Number(offset)],
   );
   return { items: rows, total, page: Number(page), limit: Number(limit) };
 }
 
 export async function getResultsByAsset(assetId, limit = 20) {
   const asset = await assetModel.findById(assetId);
-  if (!asset) throw createError('Không tìm thấy tài sản', 404);
+  if (!asset) throw createError("Không tìm thấy tài sản", 404);
   return resultModel.findByAsset(assetId, limit);
 }

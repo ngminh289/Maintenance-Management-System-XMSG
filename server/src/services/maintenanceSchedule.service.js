@@ -7,14 +7,14 @@
  *   DRAFT | REJECTED → gửi SUBMIT → PENDING_APPROVAL → Trưởng ca duyệt → PENDING (chờ TH) | REJECTED | DRAFT (yêu cầu sửa)
  * Liên quan: models/maintenanceSchedule.model.js, services/notification.service.js.
  */
-import { createError } from '../utils/createError.js';
-import { getPagination, paginatedResult } from '../utils/paginate.js';
-import * as model from '../models/maintenanceSchedule.model.js';
-import * as assetModel from '../models/asset.model.js';
-import * as workOrderSvc from './workOrder.service.js';
-import * as notifService from './notification.service.js';
-import * as approvalSvc from './approval.service.js';
-import * as approvalLogModel from '../models/approvalLog.model.js';
+import { createError } from "../utils/createError.js";
+import { getPagination, paginatedResult } from "../utils/paginate.js";
+import * as model from "../models/maintenanceSchedule.model.js";
+import * as assetModel from "../models/asset.model.js";
+import * as workOrderSvc from "./workOrder.service.js";
+import * as notifService from "./notification.service.js";
+import * as approvalSvc from "./approval.service.js";
+import * as approvalLogModel from "../models/approvalLog.model.js";
 
 /** Số ngày cảnh báo trước khi đến hạn */
 const WARN_DAYS = 7;
@@ -31,13 +31,22 @@ const WARN_DAYS = 7;
 export function calcNextDueDate(baseDate, value, unit) {
   const d = new Date(baseDate);
   switch (unit) {
-    case 'DAYS':   d.setDate(d.getDate() + value);       break;
-    case 'WEEKS':  d.setDate(d.getDate() + value * 7);   break;
-    case 'MONTHS': d.setMonth(d.getMonth() + value);     break;
-    case 'YEARS':  d.setFullYear(d.getFullYear() + value); break;
-    default:       break;
+    case "DAYS":
+      d.setDate(d.getDate() + value);
+      break;
+    case "WEEKS":
+      d.setDate(d.getDate() + value * 7);
+      break;
+    case "MONTHS":
+      d.setMonth(d.getMonth() + value);
+      break;
+    case "YEARS":
+      d.setFullYear(d.getFullYear() + value);
+      break;
+    default:
+      break;
   }
-  return d.toISOString().split('T')[0];
+  return d.toISOString().split("T")[0];
 }
 
 /** Số ngày từ hôm nay đến nextDueDate (âm = quá hạn) */
@@ -64,46 +73,66 @@ export async function getAll(query) {
 
 export async function getById(id) {
   const schedule = await model.findById(id);
-  if (!schedule) throw createError('Không tìm thấy lịch bảo trì', 404);
+  if (!schedule) throw createError("Không tìm thấy lịch bảo trì", 404);
   return schedule;
 }
 
 export async function create(data, createdBy) {
   const asset = await assetModel.findById(data.assetId);
-  if (!asset) throw createError('Không tìm thấy tài sản', 404);
+  if (!asset) throw createError("Không tìm thấy tài sản", 404);
   const normalized = {
     ...data,
-    scheduleName:    data.scheduleName?.trim() || '',
+    scheduleName: data.scheduleName?.trim() || "",
     maintenanceType: data.maintenanceType?.toUpperCase(),
-    frequencyUnit:   data.frequencyUnit?.toUpperCase(),
-    priority:        data.priority?.toUpperCase(),
-    status:          'DRAFT',   // Phải được phê duyệt trước khi kích hoạt
+    frequencyUnit: data.frequencyUnit?.toUpperCase(),
+    priority: data.priority?.toUpperCase(),
+    status: "DRAFT", // Phải được phê duyệt trước khi kích hoạt
     createdBy,
   };
   // Với lịch theo ngày: NextDueDate = StartDate + 1 chu kỳ (lần bảo trì đầu tiên đến hạn sau 1 kỳ)
-  if (normalized.frequencyUnit !== 'HOURS' && normalized.startDate && normalized.frequencyValue) {
-    normalized.nextDueDate = calcNextDueDate(normalized.startDate, normalized.frequencyValue, normalized.frequencyUnit);
+  if (
+    normalized.frequencyUnit !== "HOURS" &&
+    normalized.startDate &&
+    normalized.frequencyValue
+  ) {
+    normalized.nextDueDate = calcNextDueDate(
+      normalized.startDate,
+      normalized.frequencyValue,
+      normalized.frequencyUnit,
+    );
   }
   const id = await model.create(normalized);
   return model.findById(id);
 }
 
-const EDITABLE_STATUSES = ['DRAFT', 'REJECTED'];
-const DELETABLE_STATUSES = ['DRAFT', 'REJECTED'];
+const EDITABLE_STATUSES = ["DRAFT", "REJECTED"];
+const DELETABLE_STATUSES = ["DRAFT", "REJECTED"];
 
 /**
  * Gửi lịch vào luồng phê duyệt: trạng thái lịch → PENDING_APPROVAL (chờ Trưởng ca).
  */
 export async function submitForApproval(scheduleId, submitterId) {
   const schedule = await getById(scheduleId);
-  if (!['DRAFT', 'REJECTED'].includes(schedule.status)) {
-    throw createError('Chỉ gửi phê duyệt khi lịch ở Bản nháp hoặc Từ chối', 400);
+  if (!["DRAFT", "REJECTED"].includes(schedule.status)) {
+    throw createError(
+      "Chỉ gửi phê duyệt khi lịch ở Bản nháp hoặc Từ chối",
+      400,
+    );
   }
-  if (await approvalLogModel.hasPendingForResource(Number(scheduleId), 'MAINTENANCE_PLAN')) {
-    throw createError('Lịch này đang có yêu cầu phê duyệt chờ xử lý', 400);
+  if (
+    await approvalLogModel.hasPendingForResource(
+      Number(scheduleId),
+      "MAINTENANCE_PLAN",
+    )
+  ) {
+    throw createError("Lịch này đang có yêu cầu phê duyệt chờ xử lý", 400);
   }
-  await approvalSvc.submit({ resourceType: 'MAINTENANCE_PLAN', resourceId: Number(scheduleId), submitterId });
-  await model.updateStatus(scheduleId, 'PENDING_APPROVAL');
+  await approvalSvc.submit({
+    resourceType: "MAINTENANCE_PLAN",
+    resourceId: Number(scheduleId),
+    submitterId,
+  });
+  await model.updateStatus(scheduleId, "PENDING_APPROVAL");
   return model.findById(scheduleId);
 }
 
@@ -111,7 +140,10 @@ export async function update(id, data, opts = {}) {
   const schedule = await getById(id);
   const bypass = (opts.actorLevel ?? 0) >= 4;
   if (!bypass && !EDITABLE_STATUSES.includes(schedule.status)) {
-    throw createError('Chỉ sửa được lịch ở trạng thái Bản nháp hoặc Từ chối', 400);
+    throw createError(
+      "Chỉ sửa được lịch ở trạng thái Bản nháp hoặc Từ chối",
+      400,
+    );
   }
   const payload = { ...data };
   delete payload.status;
@@ -123,14 +155,17 @@ export async function remove(id, opts = {}) {
   const schedule = await getById(id);
   const bypass = (opts.actorLevel ?? 0) >= 4;
   if (!bypass && !DELETABLE_STATUSES.includes(schedule.status)) {
-    throw createError('Chỉ xóa được lịch Bản nháp hoặc Từ chối', 400);
+    throw createError("Chỉ xóa được lịch Bản nháp hoặc Từ chối", 400);
   }
   await model.remove(id);
 }
 
 export async function updateStatus(id, status, opts = {}) {
   if ((opts.actorLevel ?? 0) < 4) {
-    throw createError('Chỉ quản trị viên được đổi trạng thái lịch thủ công', 403);
+    throw createError(
+      "Chỉ quản trị viên được đổi trạng thái lịch thủ công",
+      403,
+    );
   }
   await getById(id);
   await model.updateStatus(id, status);
@@ -143,22 +178,30 @@ export async function updateStatus(id, status, opts = {}) {
  */
 export async function generateWorkOrder(scheduleId, createdBy) {
   const schedule = await getById(scheduleId);
-  if (!['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(schedule.status)) {
-    throw createError('Chỉ tạo WO từ lịch đã phê duyệt (đang chờ thực hiện / đang TH / quá hạn)', 400);
+  if (!["PENDING", "IN_PROGRESS", "OVERDUE"].includes(schedule.status)) {
+    throw createError(
+      "Chỉ tạo WO từ lịch đã phê duyệt (đang chờ thực hiện / đang TH / quá hạn)",
+      400,
+    );
   }
   const woId = await workOrderSvc.createFromApprovedSchedule({
     scheduleId,
-    assetId:     schedule.assetId,
-    priority:    schedule.priority === 'URGENT' ? 'HIGH' : (schedule.priority || 'MEDIUM'),
+    assetId: schedule.assetId,
+    priority:
+      schedule.priority === "URGENT" ? "HIGH" : schedule.priority || "MEDIUM",
     description: `Phiếu từ lịch "${schedule.scheduleName || `#${scheduleId}`}": ${schedule.description}`,
-    plannedDate: new Date().toISOString().split('T')[0],
+    plannedDate: new Date().toISOString().split("T")[0],
     createdBy,
   });
 
   // Với lịch theo ngày: cập nhật LastExecutedDate = hôm nay, tính NextDueDate mới
-  if (schedule.frequencyUnit !== 'HOURS' && schedule.frequencyValue) {
-    const today = new Date().toISOString().split('T')[0];
-    const nextDue = calcNextDueDate(today, schedule.frequencyValue, schedule.frequencyUnit);
+  if (schedule.frequencyUnit !== "HOURS" && schedule.frequencyValue) {
+    const today = new Date().toISOString().split("T")[0];
+    const nextDue = calcNextDueDate(
+      today,
+      schedule.frequencyValue,
+      schedule.frequencyUnit,
+    );
     await model.setExecuted(scheduleId, today, nextDue);
   }
 
@@ -185,25 +228,31 @@ export async function checkCalendarSchedules() {
       // → lần check tiếp theo days > 0 → không tạo trùng
       try {
         const { workOrderId } = await generateWorkOrder(s.scheduleId, null);
-        console.log(`[Scheduler] Auto WO #${workOrderId} ← lịch #${s.scheduleId} "${s.scheduleName}" (${Math.abs(days)} ngày ${days < 0 ? 'quá hạn' : 'đến hạn hôm nay'})`);
+        console.log(
+          `[Scheduler] Auto WO #${workOrderId} ← lịch #${s.scheduleId} "${s.scheduleName}" (${Math.abs(days)} ngày ${days < 0 ? "quá hạn" : "đến hạn hôm nay"})`,
+        );
       } catch (err) {
-        console.error(`[Scheduler] Lỗi tạo WO từ lịch #${s.scheduleId}:`, err.message);
+        console.error(
+          `[Scheduler] Lỗi tạo WO từ lịch #${s.scheduleId}:`,
+          err.message,
+        );
       }
 
       await notifService.create({
-        type:      'MAINTENANCE_DUE',
-        message:   days < 0
-          ? `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — quá hạn ${Math.abs(days)} ngày.`
-          : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
-        assetId:   s.assetId,
+        type: "MAINTENANCE_DUE",
+        message:
+          days < 0
+            ? `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — quá hạn ${Math.abs(days)} ngày.`
+            : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
+        assetId: s.assetId,
         createdBy: null,
       });
     } else if (days <= WARN_DAYS) {
       // Sắp đến hạn → chỉ cảnh báo, chưa tạo WO
       await notifService.create({
-        type:      'MAINTENANCE_DUE',
-        message:   `[SẮP ĐẾN HẠN] Lịch bảo trì "${s.scheduleName}" của tài sản ${s.assetName} đến hạn sau ${days} ngày (${s.nextDueDate}).`,
-        assetId:   s.assetId,
+        type: "MAINTENANCE_DUE",
+        message: `[SẮP ĐẾN HẠN] Lịch bảo trì "${s.scheduleName}" của tài sản ${s.assetName} đến hạn sau ${days} ngày (${s.nextDueDate}).`,
+        assetId: s.assetId,
         createdBy: null,
       });
     }

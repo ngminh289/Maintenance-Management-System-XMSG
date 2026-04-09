@@ -2,13 +2,18 @@
  * workOrder.routes.js — /api/work-orders.
  * Phân quyền nghiêm ngặt theo RBAC.
  * Admin: READ + CREATE (khởi tạo phiếu chờ duyệt — BFD 4.1); không UPDATE/assign trừ khi bổ sung quyền.
+ * PATCH /:id/closure-notes — lưu nháp ghi chú/vật tư (WAITING…PAUSED); POST /:id/counter-reset-baseline — CORRECTIVE reset mốc giờ PM.
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { validate }          from '../middleware/validate.js';
 import {
-  createWOSchema, updateWOSchema, changeStatusSchema, assignSchema,
+  createWOSchema,
+  updateWOSchema,
+  changeStatusSchema,
+  assignSchema,
+  closureNotesDraftSchema,
 } from '../validators/workOrder.validator.js';
 import { uploadWoPhotos } from '../config/upload.js';
 import * as ctrl from '../controllers/workOrder.controller.js';
@@ -18,6 +23,17 @@ export const workOrderRouter = Router();
 workOrderRouter.use(requireAuth);
 
 workOrderRouter.get('/',    ctrl.getAll);
+
+workOrderRouter.patch('/:id/closure-notes',
+  requirePermission('WORK_ORDER', 'UPDATE'),
+  validate(closureNotesDraftSchema),
+  ctrl.saveClosureNotesDraft,
+);
+workOrderRouter.post('/:id/counter-reset-baseline',
+  requirePermission('WORK_ORDER', 'UPDATE'),
+  ctrl.resetRuntimeBaselineForCorrective,
+);
+
 workOrderRouter.get('/:id', ctrl.getById);
 
 workOrderRouter.post('/',

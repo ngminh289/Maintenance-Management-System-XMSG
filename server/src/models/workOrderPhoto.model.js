@@ -1,8 +1,17 @@
 /**
  * workOrderPhoto.model.js — Ảnh hiện trường đính kèm phiếu công việc (nhiều ảnh / WO).
- * Dùng trong: workOrder.service.js.
+ * countByWorkOrder: snapshot lịch sử bảo trì khi đóng WO.
+ * Dùng trong: workOrder.service.js, workOrderMaintenanceSync.service.js.
  */
 import { getPool } from '../config/database.js';
+
+export async function countByWorkOrder(woId) {
+  const [rows] = await getPool().query(
+    "SELECT COUNT(*) AS c FROM WorkOrderPhotos WHERE WO_ID = ?",
+    [woId],
+  );
+  return Number(rows[0]?.c ?? 0);
+}
 
 export async function listByWo(woId) {
   const [rows] = await getPool().query(

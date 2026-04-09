@@ -101,13 +101,13 @@ WHERE TemplateID = 2 AND QuestionText LIKE '%rung%';
 
 -- ----------------------------------------------------------
 -- Mẫu Workflow phê duyệt (WorkflowTemplates + WorkflowSteps)
--- WO khẩn cấp: bước 1 → Position 3 (Trưởng ca), bước 2 → Position 6 (Trưởng phòng)
+-- WO khẩn 2 bước (code: EMERGENCY hoặc CORRECTIVE+HIGH): B1 Position 3 (TC) → B2 Position 6 (Trưởng phòng)
 -- ----------------------------------------------------------
 INSERT IGNORE INTO WorkflowTemplates (WorkflowID, WorkflowName, DocumentType, TotalLevels, Description) VALUES
-    (1, 'Phê duyệt Work Order thông thường', 'WORK_ORDER',       1, 'Trưởng ca duyệt phiếu việc (WO lịch / LOW|MEDIUM)'),
+    (1, 'Phê duyệt Work Order thông thường', 'WORK_ORDER',       1, 'Một bước — Trưởng ca (phiếu không thuộc sự cố nghiêm trọng)'),
     (2, 'Phê duyệt Tài liệu kỹ thuật',       'DIGITAL_ASSET',    1, 'Trưởng ca duyệt tài liệu'),
     (3, 'Phê duyệt Kế hoạch bảo trì',        'MAINTENANCE_PLAN', 1, 'Trưởng ca duyệt lịch bảo trì'),
-    (4, 'Phê duyệt WO khẩn cấp',             'WORK_ORDER',       2, 'WO PREDICTIVE/CORRECTIVE hoặc HIGH|EMERGENCY — 2 cấp duyệt');
+    (4, 'Phê duyệt WO khẩn cấp',             'WORK_ORDER',       2, 'Hai bước — sự cố nghiêm trọng: EMERGENCY hoặc CORRECTIVE+HIGH');
 
 INSERT IGNORE INTO WorkflowSteps (WorkflowID, StepLevel, PositionID) VALUES
     (1, 1, 3),

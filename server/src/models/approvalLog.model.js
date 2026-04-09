@@ -1,10 +1,11 @@
 /**
  * approvalLog.model.js — SQL thuần cho bảng ApprovalLogs.
+ * Kèm tên chức vụ bước duyệt (WorkflowSteps + Positions) cho UI TC / Trưởng phòng.
  * Dùng trong: services/approval.service.js.
  */
-import { getPool } from '../config/database.js';
+import { getPool } from "../config/database.js";
 
-const COLS = `
+const COLS_BASE = `
   al.LogID        AS logId,
   al.ResourceID   AS resourceId,
   al.ResourceType AS resourceType,
@@ -19,11 +20,40 @@ const COLS = `
   wt.TotalLevels  AS totalLevels,
   e.FullName      AS approverName`;
 
-export async function create({ resourceId, resourceType, workflowId, submittedBy, currentLevel, approverId = null, status = 'PENDING', comment = null }) {
+/** Lịch sử / findById: kèm tên chức vụ của đúng bước CurrentLevel */
+const COLS = `${COLS_BASE},
+  pos_st.PositionName AS stepPositionName`;
+
+const LOG_JOINS = `
+     FROM ApprovalLogs al
+     LEFT JOIN WorkflowTemplates wt ON wt.WorkflowID = al.WorkflowID
+     LEFT JOIN Employees e ON e.EmployeeID = al.ApproverID
+     LEFT JOIN WorkflowSteps ws_st ON ws_st.WorkflowID = al.WorkflowID AND ws_st.StepLevel = al.CurrentLevel
+     LEFT JOIN Positions pos_st ON pos_st.PositionID = ws_st.PositionID`;
+
+export async function create({
+  resourceId,
+  resourceType,
+  workflowId,
+  submittedBy,
+  currentLevel,
+  approverId = null,
+  status = "PENDING",
+  comment = null,
+}) {
   const [result] = await getPool().query(
     `INSERT INTO ApprovalLogs (ResourceID, ResourceType, WorkflowID, SubmittedBy, CurrentLevel, ApproverID, Status, Comment)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [resourceId, resourceType, workflowId || null, submittedBy || null, currentLevel, approverId, status, comment],
+    [
+      resourceId,
+      resourceType,
+      workflowId || null,
+      submittedBy || null,
+      currentLevel,
+      approverId,
+      status,
+      comment,
+    ],
   );
   return result.insertId;
 }
@@ -31,9 +61,7 @@ export async function create({ resourceId, resourceType, workflowId, submittedBy
 export async function findById(id) {
   const [rows] = await getPool().query(
     `SELECT ${COLS}
-     FROM ApprovalLogs al
-     LEFT JOIN WorkflowTemplates wt ON wt.WorkflowID = al.WorkflowID
-     LEFT JOIN Employees e ON e.EmployeeID = al.ApproverID
+     ${LOG_JOINS}
      WHERE al.LogID = ?`,
     [id],
   );
@@ -43,9 +71,7 @@ export async function findById(id) {
 export async function findByResource(resourceId, resourceType) {
   const [rows] = await getPool().query(
     `SELECT ${COLS}
-     FROM ApprovalLogs al
-     LEFT JOIN WorkflowTemplates wt ON wt.WorkflowID = al.WorkflowID
-     LEFT JOIN Employees e ON e.EmployeeID = al.ApproverID
+     ${LOG_JOINS}
      WHERE al.ResourceID = ? AND al.ResourceType = ?
      ORDER BY al.CurrentLevel, al.ActionDate`,
     [resourceId, resourceType],
@@ -66,8 +92,9 @@ export async function hasPendingForResource(resourceId, resourceType) {
 /** Lấy tất cả ApprovalLogs đang PENDING mà positionId này cần xử lý, kèm context tài nguyên */
 export async function findPendingForPosition(positionId) {
   const [rows] = await getPool().query(
-    `SELECT ${COLS},
+    `SELECT ${COLS_BASE},
             ws.PositionID  AS requiredPositionId,
+            pos_ws.PositionName AS stepPositionName,
             CASE al.ResourceType
               WHEN 'WORK_ORDER'       THEN wo.Description
               WHEN 'DIGITAL_ASSET'    THEN da.FileName
@@ -111,6 +138,7 @@ export async function findPendingForPosition(positionId) {
      FROM ApprovalLogs al
      JOIN WorkflowTemplates wt  ON wt.WorkflowID  = al.WorkflowID
      JOIN WorkflowSteps     ws  ON ws.WorkflowID  = al.WorkflowID AND ws.StepLevel = al.CurrentLevel
+     LEFT JOIN Positions    pos_ws ON pos_ws.PositionID = ws.PositionID
      LEFT JOIN Employees    e   ON e.EmployeeID   = al.ApproverID
      LEFT JOIN Employees    sub ON sub.EmployeeID = al.SubmittedBy
      LEFT JOIN WorkOrders   wo  ON wo.WO_ID        = al.ResourceID AND al.ResourceType = 'WORK_ORDER'
@@ -131,15 +159,28 @@ export async function findPendingForPosition(positionId) {
 
 export async function getWorkflowStep(workflowId, level) {
   const [rows] = await getPool().query(
-    'SELECT PositionID AS positionId FROM WorkflowSteps WHERE WorkflowID = ? AND StepLevel = ?',
+    "SELECT PositionID AS positionId FROM WorkflowSteps WHERE WorkflowID = ? AND StepLevel = ?",
     [workflowId, level],
   );
   return rows[0] || null;
 }
 
+/** Các bước trong mẫu luồng (để UI vẽ TC → Trưởng phòng) */
+export async function listWorkflowStepRoles(workflowId) {
+  const [rows] = await getPool().query(
+    `SELECT ws.StepLevel AS stepLevel, ws.PositionID AS positionId, p.PositionName AS positionName
+     FROM WorkflowSteps ws
+     INNER JOIN Positions p ON p.PositionID = ws.PositionID
+     WHERE ws.WorkflowID = ?
+     ORDER BY ws.StepLevel ASC`,
+    [workflowId],
+  );
+  return rows;
+}
+
 export async function getDefaultWorkflow(resourceType) {
   const [rows] = await getPool().query(
-    'SELECT WorkflowID AS workflowId, TotalLevels AS totalLevels FROM WorkflowTemplates WHERE DocumentType = ? ORDER BY WorkflowID LIMIT 1',
+    "SELECT WorkflowID AS workflowId, TotalLevels AS totalLevels FROM WorkflowTemplates WHERE DocumentType = ? ORDER BY WorkflowID LIMIT 1",
     [resourceType],
   );
   return rows[0] || null;
@@ -147,7 +188,7 @@ export async function getDefaultWorkflow(resourceType) {
 
 export async function update(id, { approverId, status, comment }) {
   const [result] = await getPool().query(
-    'UPDATE ApprovalLogs SET ApproverID = ?, Status = ?, Comment = ?, ActionDate = NOW() WHERE LogID = ?',
+    "UPDATE ApprovalLogs SET ApproverID = ?, Status = ?, Comment = ?, ActionDate = NOW() WHERE LogID = ?",
     [approverId, status, comment || null, id],
   );
   return result.affectedRows;

@@ -13,9 +13,9 @@
  *
  * Liên quan: middleware/auth.middleware.js (chạy trước), models/Roles_Permissions table.
  */
-import { getPool }     from '../config/database.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
-import { createError }  from '../utils/createError.js';
+import { getPool } from "../config/database.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { createError } from "../utils/createError.js";
 
 /** Kiểm tra một quyền (dùng cho middleware tùy biến, ví dụ POST /approvals/submit). */
 export async function hasPermission(positionId, resource, action) {
@@ -32,7 +32,7 @@ export async function hasPermission(positionId, resource, action) {
 export function requirePermission(resource, action) {
   return asyncHandler(async (req, _res, next) => {
     const positionId = req.user?.positionId;
-    if (!positionId) throw createError('Chưa xác thực', 401);
+    if (!positionId) throw createError("Chưa xác thực", 401);
 
     const ok = await hasPermission(positionId, resource, action);
     if (!ok) {

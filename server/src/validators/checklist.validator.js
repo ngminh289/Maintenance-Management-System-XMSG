@@ -22,6 +22,9 @@ export function submitChecklistSchema(body) {
     return `OverallStatus không hợp lệ. Chấp nhận: ${VALID_STATUS.join(', ')}`;
   }
   if (body.readingValue !== undefined && isNaN(Number(body.readingValue))) return 'ReadingValue phải là số';
+  if (body.partsNotes != null && String(body.partsNotes).length > 8000) {
+    return 'PartsNotes (vật tư/linh kiện) tối đa 8000 ký tự';
+  }
   return null;
 }
 

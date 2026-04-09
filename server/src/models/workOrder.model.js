@@ -1,9 +1,10 @@
 /**
  * workOrder.model.js — SQL thuần cho bảng WorkOrders + WO_Assignments.
  * Đo thời gian làm: WorkStartedAt + PausedAccumulatedSec + PauseStartedAt → tính ActualHours khi COMPLETED (migration 021).
+ * CounterBaselineResetAt/By: reset mốc giờ PM từ phiếu CORRECTIVE (migration 032).
  * Dùng trong: services/workOrder.service.js, checklist.service.js.
  */
-import { getPool } from '../config/database.js';
+import { getPool } from "../config/database.js";
 
 const COLS = `
   wo.WO_ID          AS woId,
@@ -13,6 +14,8 @@ const COLS = `
   at.TypeName       AS assetTypeName,
   l.LocationName    AS locationName,
   wo.Description    AS description,
+  wo.ClosureFieldNotes AS closureFieldNotes,
+  wo.ClosurePartsNotes AS closurePartsNotes,
   wo.PlannedDate    AS plannedDate,
   wo.ActualDate     AS actualDate,
   wo.EstimatedHours AS estimatedHours,
@@ -21,6 +24,9 @@ const COLS = `
   wo.PausedAccumulatedSec AS pausedAccumulatedSec,
   wo.PauseStartedAt       AS pauseStartedAt,
   wo.WorkReportedAt       AS workReportedAt,
+  wo.CounterBaselineResetAt AS counterBaselineResetAt,
+  wo.CounterBaselineResetBy AS counterBaselineResetBy,
+  eReset.FullName     AS counterBaselineResetByName,
   wo.Status         AS status,
   wo.WO_Source      AS woSource,
   wo.Priority       AS priority,
@@ -31,49 +37,93 @@ const BASE_JOIN = `
   FROM WorkOrders wo
   JOIN Assets a      ON a.AssetID       = wo.AssetID
   JOIN AssetTypes at ON at.AssetTypeID  = a.AssetTypeID
-  JOIN Locations l   ON l.LocationID    = a.LocationID`;
+  JOIN Locations l   ON l.LocationID    = a.LocationID
+  LEFT JOIN Employees eReset ON eReset.EmployeeID = wo.CounterBaselineResetBy`;
 
-export async function findAll({ status, assetId, priority, woSource, assignedTo, limit, offset } = {}) {
+export async function findAll({
+  status,
+  assetId,
+  priority,
+  woSource,
+  assignedTo,
+  limit,
+  offset,
+} = {}) {
   const params = [];
   let join = BASE_JOIN;
-  let where = 'WHERE 1=1';
-  if (status)    { where += ' AND wo.Status = ?';    params.push(status); }
-  if (assetId)   { where += ' AND wo.AssetID = ?';   params.push(assetId); }
-  if (priority)  { where += ' AND wo.Priority = ?';  params.push(priority); }
-  if (woSource)  { where += ' AND wo.WO_Source = ?'; params.push(woSource); }
+  let where = "WHERE 1=1";
+  if (status) {
+    where += " AND wo.Status = ?";
+    params.push(status);
+  }
+  if (assetId) {
+    where += " AND wo.AssetID = ?";
+    params.push(assetId);
+  }
+  if (priority) {
+    where += " AND wo.Priority = ?";
+    params.push(priority);
+  }
+  if (woSource) {
+    where += " AND wo.WO_Source = ?";
+    params.push(woSource);
+  }
   if (assignedTo) {
-    join += ' JOIN WO_Assignments wa ON wa.WO_ID = wo.WO_ID';
-    where += ' AND wa.EmployeeID = ?';
+    join += " JOIN WO_Assignments wa ON wa.WO_ID = wo.WO_ID";
+    where += " AND wa.EmployeeID = ?";
     params.push(assignedTo);
   }
-  const pagination = limit != null ? 'LIMIT ? OFFSET ?' : '';
+  const pagination = limit != null ? "LIMIT ? OFFSET ?" : "";
   if (limit != null) params.push(limit, offset);
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${join} ${where} ORDER BY wo.Priority DESC, wo.PlannedDate ${pagination}`, params,
+    `SELECT ${COLS} ${join} ${where} ORDER BY wo.Priority DESC, wo.PlannedDate ${pagination}`,
+    params,
   );
   return rows;
 }
 
-export async function count({ status, assetId, priority, woSource, assignedTo } = {}) {
+export async function count({
+  status,
+  assetId,
+  priority,
+  woSource,
+  assignedTo,
+} = {}) {
   const params = [];
-  let join = 'FROM WorkOrders wo';
-  let where = 'WHERE 1=1';
-  if (status)   { where += ' AND wo.Status = ?';    params.push(status); }
-  if (assetId)  { where += ' AND wo.AssetID = ?';   params.push(assetId); }
-  if (priority) { where += ' AND wo.Priority = ?';  params.push(priority); }
-  if (woSource) { where += ' AND wo.WO_Source = ?'; params.push(woSource); }
+  let join = "FROM WorkOrders wo";
+  let where = "WHERE 1=1";
+  if (status) {
+    where += " AND wo.Status = ?";
+    params.push(status);
+  }
+  if (assetId) {
+    where += " AND wo.AssetID = ?";
+    params.push(assetId);
+  }
+  if (priority) {
+    where += " AND wo.Priority = ?";
+    params.push(priority);
+  }
+  if (woSource) {
+    where += " AND wo.WO_Source = ?";
+    params.push(woSource);
+  }
   if (assignedTo) {
-    join += ' JOIN WO_Assignments wa ON wa.WO_ID = wo.WO_ID';
-    where += ' AND wa.EmployeeID = ?';
+    join += " JOIN WO_Assignments wa ON wa.WO_ID = wo.WO_ID";
+    where += " AND wa.EmployeeID = ?";
     params.push(assignedTo);
   }
-  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt ${join} ${where}`, params);
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt ${join} ${where}`,
+    params,
+  );
   return Number(rows[0].cnt);
 }
 
 export async function findById(id) {
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${BASE_JOIN} WHERE wo.WO_ID = ?`, [id],
+    `SELECT ${COLS} ${BASE_JOIN} WHERE wo.WO_ID = ?`,
+    [id],
   );
   return rows[0] || null;
 }
@@ -93,9 +143,13 @@ export async function findOpenPredictiveIdByAsset(assetId) {
 /** Giờ làm việc thuần (đã trừ pause). Đến WorkReportedAt nếu đã báo hoàn thành chờ nghiệm thu. */
 export function computeSuggestedActualHours(wo) {
   if (!wo?.workStartedAt) return undefined;
-  if (!['IN_PROGRESS', 'PAUSED', 'AWAITING_CLOSURE'].includes(wo.status)) return undefined;
-  const reportedMs = wo.workReportedAt ? new Date(wo.workReportedAt).getTime() : null;
-  const end = reportedMs != null && Number.isFinite(reportedMs) ? reportedMs : Date.now();
+  if (!["IN_PROGRESS", "PAUSED", "AWAITING_CLOSURE"].includes(wo.status))
+    return undefined;
+  const reportedMs = wo.workReportedAt
+    ? new Date(wo.workReportedAt).getTime()
+    : null;
+  const end =
+    reportedMs != null && Number.isFinite(reportedMs) ? reportedMs : Date.now();
   const start = new Date(wo.workStartedAt).getTime();
   if (!Number.isFinite(start)) return undefined;
   let pauseMs = (Number(wo.pausedAccumulatedSec) || 0) * 1000;
@@ -111,22 +165,50 @@ export function computeSuggestedActualHours(wo) {
  * Dùng Date từ Node (bind mysql2) — cùng hệ quy chiếu với khi đọc DATETIME và với Date.now() trong computeSuggestedActualHours.
  * Tránh UTC_TIMESTAMP() trong SQL: giá trị đó là “giờ UTC” ghi vào DATETIME không timezone, driver lại đọc như giờ local → lệch ~7h (VN).
  */
+/** Lưu ghi chú thợ khi chuyển sang AWAITING_CLOSURE (nghiệm thu đọc tại đây). */
+export async function setClosureFieldReport(
+  woId,
+  { closureFieldNotes, closurePartsNotes } = {},
+) {
+  const cf =
+    closureFieldNotes != null && String(closureFieldNotes).trim() !== ""
+      ? String(closureFieldNotes).trim()
+      : null;
+  const cp =
+    closurePartsNotes != null && String(closurePartsNotes).trim() !== ""
+      ? String(closurePartsNotes).trim()
+      : null;
+  await getPool().query(
+    `UPDATE WorkOrders SET ClosureFieldNotes = ?, ClosurePartsNotes = ? WHERE WO_ID = ?`,
+    [cf, cp, woId],
+  );
+}
+
+/** Một lần / phiếu — gọi sau khi đã cập nhật AssetCounters (reset mốc PM). */
+export async function markCounterBaselineReset(woId, employeeId) {
+  const now = new Date();
+  await getPool().query(
+    `UPDATE WorkOrders SET CounterBaselineResetAt = ?, CounterBaselineResetBy = ? WHERE WO_ID = ?`,
+    [now, employeeId, woId],
+  );
+}
+
 export async function applyTimingTransition(woId, fromStatus, toStatus) {
   const pool = getPool();
   const now = new Date();
-  if (toStatus === 'IN_PROGRESS' && fromStatus === 'WAITING') {
+  if (toStatus === "IN_PROGRESS" && fromStatus === "WAITING") {
     await pool.query(
       `UPDATE WorkOrders SET WorkStartedAt = COALESCE(WorkStartedAt, ?) WHERE WO_ID = ?`,
       [now, woId],
     );
   }
-  if (toStatus === 'PAUSED' && fromStatus === 'IN_PROGRESS') {
+  if (toStatus === "PAUSED" && fromStatus === "IN_PROGRESS") {
     await pool.query(
       `UPDATE WorkOrders SET PauseStartedAt = ? WHERE WO_ID = ?`,
       [now, woId],
     );
   }
-  if (toStatus === 'IN_PROGRESS' && fromStatus === 'PAUSED') {
+  if (toStatus === "IN_PROGRESS" && fromStatus === "PAUSED") {
     await pool.query(
       `UPDATE WorkOrders SET
         PausedAccumulatedSec = PausedAccumulatedSec + IFNULL(TIMESTAMPDIFF(SECOND, PauseStartedAt, ?), 0),
@@ -135,15 +217,15 @@ export async function applyTimingTransition(woId, fromStatus, toStatus) {
       [now, woId],
     );
   }
-  if (toStatus === 'AWAITING_CLOSURE' && fromStatus === 'IN_PROGRESS') {
+  if (toStatus === "AWAITING_CLOSURE" && fromStatus === "IN_PROGRESS") {
     await pool.query(
-      'UPDATE WorkOrders SET WorkReportedAt = ? WHERE WO_ID = ?',
+      "UPDATE WorkOrders SET WorkReportedAt = ? WHERE WO_ID = ?",
       [now, woId],
     );
   }
-  if (toStatus === 'IN_PROGRESS' && fromStatus === 'AWAITING_CLOSURE') {
+  if (toStatus === "IN_PROGRESS" && fromStatus === "AWAITING_CLOSURE") {
     await pool.query(
-      'UPDATE WorkOrders SET WorkReportedAt = NULL WHERE WO_ID = ?',
+      "UPDATE WorkOrders SET WorkReportedAt = NULL WHERE WO_ID = ?",
       [woId],
     );
   }
@@ -162,54 +244,101 @@ export async function getAssignments(woId) {
   return rows;
 }
 
-export async function create({ scheduleId, assetId, description, plannedDate, estimatedHours, status, woSource, priority, createdBy }) {
+export async function create({
+  scheduleId,
+  assetId,
+  description,
+  plannedDate,
+  estimatedHours,
+  status,
+  woSource,
+  priority,
+  createdBy,
+}) {
   const [result] = await getPool().query(
     `INSERT INTO WorkOrders (ScheduleID, AssetID, Description, PlannedDate, EstimatedHours, Status, WO_Source, Priority, CreatedBy)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [scheduleId || null, assetId, description || null, plannedDate, estimatedHours || null, status || 'PENDING_APPROVAL', woSource || 'MANUAL', priority || 'MEDIUM', createdBy || null],
+    [
+      scheduleId || null,
+      assetId,
+      description || null,
+      plannedDate,
+      estimatedHours || null,
+      status || "PENDING_APPROVAL",
+      woSource || "MANUAL",
+      priority || "MEDIUM",
+      createdBy || null,
+    ],
   );
   return result.insertId;
 }
 
 export async function update(id, data) {
-  const map = { description: 'Description', plannedDate: 'PlannedDate', actualDate: 'ActualDate', estimatedHours: 'EstimatedHours', actualHours: 'ActualHours', priority: 'Priority' };
+  const map = {
+    description: "Description",
+    plannedDate: "PlannedDate",
+    actualDate: "ActualDate",
+    estimatedHours: "EstimatedHours",
+    actualHours: "ActualHours",
+    priority: "Priority",
+  };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {
-    if (data[key] !== undefined) { setClauses.push(`${col} = ?`); params.push(data[key] ?? null); }
+    if (data[key] !== undefined) {
+      setClauses.push(`${col} = ?`);
+      params.push(data[key] ?? null);
+    }
   }
   if (!setClauses.length) return 0;
   params.push(id);
   const [result] = await getPool().query(
-    `UPDATE WorkOrders SET ${setClauses.join(', ')} WHERE WO_ID = ?`, params,
+    `UPDATE WorkOrders SET ${setClauses.join(", ")} WHERE WO_ID = ?`,
+    params,
   );
   return result.affectedRows;
 }
 
-export async function updateStatus(id, status, { actualDate, actualHours } = {}) {
-  const setClauses = ['Status = ?'];
+export async function updateStatus(
+  id,
+  status,
+  { actualDate, actualHours } = {},
+) {
+  const setClauses = ["Status = ?"];
   const params = [status];
-  if (actualDate)  { setClauses.push('ActualDate = ?');  params.push(actualDate); }
-  if (actualHours !== undefined) { setClauses.push('ActualHours = ?'); params.push(actualHours); }
+  if (actualDate) {
+    setClauses.push("ActualDate = ?");
+    params.push(actualDate);
+  }
+  if (actualHours !== undefined) {
+    setClauses.push("ActualHours = ?");
+    params.push(actualHours);
+  }
   params.push(id);
-  await getPool().query(`UPDATE WorkOrders SET ${setClauses.join(', ')} WHERE WO_ID = ?`, params);
+  await getPool().query(
+    `UPDATE WorkOrders SET ${setClauses.join(", ")} WHERE WO_ID = ?`,
+    params,
+  );
 }
 
 export async function assign(woId, employeeId) {
   await getPool().query(
-    'INSERT IGNORE INTO WO_Assignments (WO_ID, EmployeeID) VALUES (?, ?)',
+    "INSERT IGNORE INTO WO_Assignments (WO_ID, EmployeeID) VALUES (?, ?)",
     [woId, employeeId],
   );
 }
 
 export async function unassign(woId, employeeId) {
   await getPool().query(
-    'DELETE FROM WO_Assignments WHERE WO_ID = ? AND EmployeeID = ?',
+    "DELETE FROM WO_Assignments WHERE WO_ID = ? AND EmployeeID = ?",
     [woId, employeeId],
   );
 }
 
 export async function remove(id) {
-  const [result] = await getPool().query('DELETE FROM WorkOrders WHERE WO_ID = ?', [id]);
+  const [result] = await getPool().query(
+    "DELETE FROM WorkOrders WHERE WO_ID = ?",
+    [id],
+  );
   return result.affectedRows;
 }

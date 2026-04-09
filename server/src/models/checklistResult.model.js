@@ -5,11 +5,31 @@
  */
 import { getPool } from '../config/database.js';
 
-export async function create({ assetId, woId, checkerId, overallStatus, evidencePhoto, notes, readingValue }) {
+export async function create({
+  assetId,
+  woId,
+  checkerId,
+  overallStatus,
+  evidencePhoto,
+  notes,
+  partsNotes,
+  readingValue,
+}) {
   const [result] = await getPool().query(
-    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, ReadingValue, ReviewStatus)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
-    [assetId, woId || null, checkerId, overallStatus, evidencePhoto || null, notes || null, readingValue ?? null],
+    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, PartsNotes, ReadingValue, ReviewStatus)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    [
+      assetId,
+      woId || null,
+      checkerId,
+      overallStatus,
+      evidencePhoto || null,
+      notes || null,
+      partsNotes != null && String(partsNotes).trim() !== ""
+        ? String(partsNotes).trim()
+        : null,
+      readingValue ?? null,
+    ],
   );
   return result.insertId;
 }
@@ -29,7 +49,7 @@ export async function findById(id) {
       `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
               cr.WO_ID AS woId, cr.CheckerID AS checkerId, e.FullName AS checkerName,
               cr.OverallStatus AS overallStatus, cr.EvidencePhoto AS evidencePhoto,
-              cr.Notes AS notes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime,
+              cr.Notes AS notes, cr.PartsNotes AS partsNotes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime,
               cr.ReviewStatus AS reviewStatus, cr.ReviewedBy AS reviewedBy,
               er.FullName AS reviewerName, cr.ReviewedAt AS reviewedAt,
               cr.SupervisorNotes AS supervisorNotes
@@ -54,7 +74,7 @@ export async function findById(id) {
 export async function findByAsset(assetId, limit = 20) {
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
-            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.CheckTime AS checkTime, cr.Notes AS notes, cr.PartsNotes AS partsNotes, e.FullName AS checkerName,
             cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus
      FROM ChecklistResults cr
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
@@ -78,7 +98,7 @@ export async function findPendingReview(limit = 50) {
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
             cr.OverallStatus AS overallStatus, cr.CheckTime AS checkTime,
-            cr.Notes AS notes, cr.ReadingValue AS readingValue,
+            cr.Notes AS notes, cr.PartsNotes AS partsNotes, cr.ReadingValue AS readingValue,
             cr.CheckerID AS checkerId, e.FullName AS checkerName
      FROM ChecklistResults cr
      JOIN Assets a ON a.AssetID = cr.AssetID
