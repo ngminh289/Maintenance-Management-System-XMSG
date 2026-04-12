@@ -1,10 +1,12 @@
 /**
  * workOrder.service.js — Nghiệp vụ Phiếu công việc: tạo, phân công, chuyển trạng thái.
  * Luồng thực hiện: WAITING → IN_PROGRESS → AWAITING_CLOSURE (thợ báo xong + ảnh) → COMPLETED (TC/TP nghiệm thu đóng).
+ * Công nhân/NV KT: chặn IN_PROGRESS (bắt đầu / tiếp tục từ PAUSED) khi đang nghỉ phép có lịch.
  * WO từ lịch đã phê duyệt: createFromApprovedSchedule → WAITING.
  * WO hoàn thành → workOrderMaintenanceSync; checklist/ hệ thống có thể gọi updateStatus COMPLETED trực tiếp.
  * Liên quan: workOrderPhoto.model.js, workOrderMaintenanceSync, approval, notification.
  * saveClosureNotesDraft / resetRuntimeBaselineForCorrective: thợ được giao hoặc TC+ (không cần ASSET:UPDATE cho reset mốc giờ).
+ * getById(+viewer): recentChecklists — 3 checklist APPROVED gần nhất cùng tài sản (NVKT/TC+ hoặc thợ được phân công).
  */
 import { createError } from "../utils/createError.js";
 import { getPagination, paginatedResult } from "../utils/paginate.js";
@@ -20,6 +22,8 @@ import * as assetModel from "../models/asset.model.js";
 import * as assetCounterModel from "../models/assetCounter.model.js";
 import * as assetCounterForecast from "./assetCounterForecast.service.js";
 import { assignFieldTechnicianToWorkOrder } from "./workOrderFieldAssign.service.js";
+import * as employeeModel from "../models/employee.model.js";
+import * as checklistResultModel from "../models/checklistResult.model.js";
 
 /** Thư mục gốc server (…/server) — resolve đường dẫn file ảnh WO */
 const SERVER_ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -38,6 +42,15 @@ const TRANSITIONS = {
   CANCELLED: [],
 };
 
+/** Tham khảo checklist trên WO: NVKT+ hoặc thợ được phân công (công nhân không giao việc → không lộ ghi chú). */
+function userMaySeeAssetChecklistDigest(assignments, employeeId, positionLevel) {
+  const lvl = Number(positionLevel) || 0;
+  if (lvl >= 2) return true;
+  return (assignments ?? []).some(
+    (a) => Number(a.employeeId) === Number(employeeId),
+  );
+}
+
 export async function getAll(query) {
   const { page, limit, offset } = getPagination(query);
   const filters = {
@@ -54,7 +67,7 @@ export async function getAll(query) {
   return paginatedResult(items, total, page, limit);
 }
 
-export async function getById(id) {
+export async function getById(id, viewer = null) {
   const wo = await model.findById(id);
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
   const [assignments, photos] = await Promise.all([
@@ -68,7 +81,27 @@ export async function getById(id) {
   ].includes(wo.status)
     ? (model.computeSuggestedActualHours(wo) ?? null)
     : null;
-  return { ...wo, assignments, photos, suggestedActualHours };
+  const base = { ...wo, assignments, photos, suggestedActualHours };
+  let recentChecklists = [];
+  let recentChecklistsEligible = false;
+  if (viewer?.employeeId != null) {
+    recentChecklistsEligible = userMaySeeAssetChecklistDigest(
+      assignments,
+      viewer.employeeId,
+      viewer.positionLevel,
+    );
+    if (recentChecklistsEligible) {
+      recentChecklists = await checklistResultModel.findRecentApprovedByAsset(
+        wo.assetId,
+        3,
+      );
+    }
+  }
+  return {
+    ...base,
+    recentChecklists,
+    recentChecklistsEligible,
+  };
 }
 
 /** Tạo WorkOrder thủ công (Level >= 2) + tự động submit approval */
@@ -305,6 +338,22 @@ export async function changeStatus(
       "Chỉ giám sát mới cho phép làm tiếp sau chờ nghiệm thu",
       403,
     );
+  }
+
+  if (newStatus === "IN_PROGRESS") {
+    const fieldActorStarting =
+      assigned &&
+      !isSupervisor &&
+      (wo.status === "WAITING" || wo.status === "PAUSED");
+    if (fieldActorStarting) {
+      const starter = await employeeModel.findById(employeeId);
+      if (starter?.onScheduledLeave) {
+        throw createError(
+          "Bạn đang trong thời gian nghỉ phép có lịch — không thể bắt đầu hoặc tiếp tục thực hiện phiếu.",
+          400,
+        );
+      }
+    }
   }
 
   let precomputedAwaitingHours;

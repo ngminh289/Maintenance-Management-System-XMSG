@@ -1,6 +1,8 @@
 /**
  * App.jsx — Định tuyến toàn bộ ứng dụng với phân quyền theo role.
  * RoleGuard bảo vệ từng nhóm route theo RBAC (utils/rbac.js).
+ * /checklists/history — danh sách + modal chi tiết kết quả checklist.
+ * /documents/feedback-inbox — hàng đợi phản hồi tài liệu (chỉ NV Kỹ thuật).
  */
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster }          from 'react-hot-toast';
@@ -21,10 +23,12 @@ import { WorkOrderDetailPage }  from './pages/workorders/WorkOrderDetailPage.jsx
 import { ChecklistPage }        from './pages/checklists/ChecklistPage.jsx';
 import { ChecklistReviewPage }  from './pages/checklists/ChecklistReviewPage.jsx';
 import { ChecklistTemplatesPage } from './pages/checklists/ChecklistTemplatesPage.jsx';
+import { ChecklistHistoryPage }   from './pages/checklists/ChecklistHistoryPage.jsx';
 import { ApprovalsPage }        from './pages/approvals/ApprovalsPage.jsx';
 import { EmployeesPage }        from './pages/employees/EmployeesPage.jsx';
 import { SchedulesPage }        from './pages/schedules/SchedulesPage.jsx';
 import { DocumentsPage }        from './pages/documents/DocumentsPage.jsx';
+import { DocumentFeedbackInboxPage } from './pages/documents/DocumentFeedbackInboxPage.jsx';
 import { ReportsPage }          from './pages/reports/ReportsPage.jsx';
 import { WorkflowsPage }        from './pages/workflows/WorkflowsPage.jsx';
 import { ProfilePage }          from './pages/ProfilePage.jsx';
@@ -74,6 +78,7 @@ export default function App() {
             {/* Checklist / QR — nhân viên + giám sát (trừ Admin, BGĐ) */}
             <Route element={<RoleGuard routeKey="checklists" />}>
               <Route path="/checklists"                element={<ChecklistPage />} />
+              <Route path="/checklists/history"        element={<ChecklistHistoryPage />} />
               <Route path="/checklists/review"         element={<ChecklistReviewPage />} />
               <Route path="/checklists/scan/:assetId"  element={<ChecklistPage />} />
             </Route>
@@ -85,6 +90,10 @@ export default function App() {
             {/* Kho tài liệu — nhân viên + giám sát (trừ Admin, BGĐ) */}
             <Route element={<RoleGuard routeKey="documents" />}>
               <Route path="/documents" element={<DocumentsPage />} />
+            </Route>
+
+            <Route element={<RoleGuard routeKey="document-feedback-inbox" />}>
+              <Route path="/documents/feedback-inbox" element={<DocumentFeedbackInboxPage />} />
             </Route>
 
             {/* Phê duyệt — Trưởng ca (NV KT / Ban GĐ không vào đây; BGD xem KPI qua Dashboard + Báo cáo) */}

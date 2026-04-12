@@ -1,6 +1,6 @@
 /**
  * ChecklistReviewPage.jsx — Duyệt checklist chờ (APPROVE/REJECT); hiển thị ngưỡng mẫu để đối chiếu.
- * Nghiệm thu: đủ ghi chú hiện trường, vật tư/linh kiện, giờ chạy, ảnh minh chứng, từng câu checklist.
+ * Nghiệm thu: ghi chú hiện trường, giờ chạy, ảnh minh chứng, từng câu checklist (vật tư ghi trên phiếu việc, không trên checklist).
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navigate, Link } from 'react-router-dom';
@@ -283,13 +283,6 @@ export function ChecklistReviewPage() {
                       <div className="rounded-xl border border-blue-200 bg-blue-50/85 px-4 py-3 text-sm text-slate-900">
                         <span className="text-xs font-bold text-blue-900 uppercase tracking-wide">Ghi chú hiện trường</span>
                         <p className="mt-1 whitespace-pre-wrap leading-relaxed">{detail.notes}</p>
-                      </div>
-                    )}
-
-                    {detail.partsNotes && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
-                        <span className="text-xs font-bold text-amber-900 uppercase tracking-wide">Linh kiện / vật tư (đã thay, cần thay)</span>
-                        <p className="mt-1 whitespace-pre-wrap leading-relaxed">{detail.partsNotes}</p>
                       </div>
                     )}
 

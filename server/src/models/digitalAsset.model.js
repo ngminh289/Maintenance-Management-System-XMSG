@@ -1,5 +1,7 @@
 /**
  * digitalAsset.model.js — SQL thuần cho DigitalAssets + AssetVersions.
+ * DAM: mỗi tài liệu — v1 ghi vào AssetVersions ngay khi create; addVersion tăng số + lưu file mới.
+ * UNIQUE (DigitalAssetID, VersionNumber); migration 036 backfill + ràng buộc.
  * Dùng trong: services/digitalAsset.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -10,6 +12,8 @@ const COLS = `
   da.FileType       AS fileType,
   da.AssetID        AS assetId,
   a.AssetName       AS assetName,
+  da.DocumentCategoryID AS documentCategoryId,
+  dc.CategoryName   AS documentCategoryName,
   da.Description    AS description,
   da.UploadDate     AS uploadDate,
   da.UploadedBy     AS uploadedBy,
@@ -22,66 +26,154 @@ const COLS = `
 const BASE_JOIN = `
   FROM DigitalAssets da
   JOIN Employees e ON e.EmployeeID = da.UploadedBy
-  LEFT JOIN Assets a ON a.AssetID = da.AssetID`;
+  LEFT JOIN Assets a ON a.AssetID = da.AssetID
+  LEFT JOIN DocumentCategories dc ON dc.DocumentCategoryID = da.DocumentCategoryID`;
 
-export async function findAll({ status, assetId, tagId, uploadedBy, limit, offset } = {}) {
+function buildListQuery(filters) {
+  const {
+    status,
+    assetId,
+    tagId,
+    uploadedBy,
+    documentCategoryId,
+    q,
+  } = filters;
   const params = [];
   let join = BASE_JOIN;
   let where = 'WHERE 1=1';
-  if (status)     { where += ' AND da.Status = ?';      params.push(status); }
-  if (assetId)    { where += ' AND da.AssetID = ?';     params.push(assetId); }
-  if (uploadedBy) { where += ' AND da.UploadedBy = ?';  params.push(uploadedBy); }
+  if (status) {
+    where += ' AND da.Status = ?';
+    params.push(status);
+  }
+  if (assetId) {
+    where += ' AND da.AssetID = ?';
+    params.push(assetId);
+  }
+  if (uploadedBy) {
+    where += ' AND da.UploadedBy = ?';
+    params.push(uploadedBy);
+  }
+  if (documentCategoryId != null && documentCategoryId !== '') {
+    where += ' AND da.DocumentCategoryID = ?';
+    params.push(Number(documentCategoryId));
+  }
   if (tagId) {
     join += ' JOIN AssetTags at2 ON at2.DigitalAssetID = da.DigitalAssetID';
     where += ' AND at2.TagID = ?';
     params.push(tagId);
   }
+  const qTrim = q != null ? String(q).trim() : '';
+  if (qTrim) {
+    const like = `%${qTrim}%`;
+    where += ` AND (
+      da.FileName LIKE ? OR da.Description LIKE ? OR IFNULL(a.AssetName,'') LIKE ? OR e.FullName LIKE ?
+      OR IFNULL(dc.CategoryName,'') LIKE ?
+      OR EXISTS (
+        SELECT 1 FROM AssetTags atq
+        JOIN Tags tq ON tq.TagID = atq.TagID
+        WHERE atq.DigitalAssetID = da.DigitalAssetID AND tq.TagName LIKE ?
+      )
+    )`;
+    params.push(like, like, like, like, like, like);
+  }
+  return { join, where, params };
+}
+
+export async function findAll(filters = {}) {
+  const { limit, offset } = filters;
+  const { join, where, params } = buildListQuery(filters);
   const pagination = limit != null ? 'LIMIT ? OFFSET ?' : '';
-  if (limit != null) params.push(limit, offset);
+  const listParams = [...params];
+  if (limit != null) listParams.push(limit, offset);
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${join} ${where} ORDER BY da.UploadDate DESC ${pagination}`, params,
+    `SELECT ${COLS} ${join} ${where} ORDER BY da.UploadDate DESC ${pagination}`,
+    listParams,
   );
   return rows;
 }
 
-export async function count({ status, assetId, tagId, uploadedBy } = {}) {
-  const params = [];
-  let join = 'FROM DigitalAssets da';
-  let where = 'WHERE 1=1';
-  if (status)     { where += ' AND da.Status = ?';     params.push(status); }
-  if (assetId)    { where += ' AND da.AssetID = ?';    params.push(assetId); }
-  if (uploadedBy) { where += ' AND da.UploadedBy = ?'; params.push(uploadedBy); }
-  if (tagId) {
-    join += ' JOIN AssetTags at2 ON at2.DigitalAssetID = da.DigitalAssetID';
-    where += ' AND at2.TagID = ?';
-    params.push(tagId);
-  }
-  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt ${join} ${where}`, params);
+export async function count(filters = {}) {
+  const { join, where, params } = buildListQuery(filters);
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt ${join} ${where}`,
+    params,
+  );
   return Number(rows[0].cnt);
 }
 
 export async function findById(id) {
-  const [rows] = await getPool().query(`SELECT ${COLS} ${BASE_JOIN} WHERE da.DigitalAssetID = ?`, [id]);
+  const [rows] = await getPool().query(
+    `SELECT ${COLS} ${BASE_JOIN} WHERE da.DigitalAssetID = ?`,
+    [id],
+  );
   return rows[0] || null;
 }
 
-export async function create({ fileName, fileType, assetId, description, uploadedBy, filePath, fileSizeKB }) {
-  const [result] = await getPool().query(
-    `INSERT INTO DigitalAssets (FileName, FileType, AssetID, Description, UploadedBy, FilePath, FileSizeKB)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [fileName, fileType, assetId || null, description || null, uploadedBy, filePath, fileSizeKB || null],
-  );
-  return result.insertId;
+export async function create({
+  fileName,
+  fileType,
+  assetId,
+  documentCategoryId,
+  description,
+  uploadedBy,
+  filePath,
+  fileSizeKB,
+}) {
+  const conn = await getPool().getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      `INSERT INTO DigitalAssets (FileName, FileType, AssetID, DocumentCategoryID, Description, UploadedBy, FilePath, FileSizeKB)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fileName,
+        fileType,
+        assetId || null,
+        documentCategoryId != null && documentCategoryId !== '' ? Number(documentCategoryId) : null,
+        description || null,
+        uploadedBy,
+        filePath,
+        fileSizeKB || null,
+      ],
+    );
+    const id = result.insertId;
+    await conn.query(
+      `INSERT INTO AssetVersions (DigitalAssetID, VersionNumber, FilePath, ChangedBy, ChangeNote)
+       VALUES (?, 1, ?, ?, NULL)`,
+      [id, filePath, uploadedBy],
+    );
+    await conn.commit();
+    return id;
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
 }
 
-export async function update(id, { description, assetId }) {
+export async function update(id, { description, assetId, documentCategoryId }) {
   const sets = [];
   const params = [];
-  if (description !== undefined) { sets.push('Description = ?'); params.push(description ?? null); }
-  if (assetId !== undefined)     { sets.push('AssetID = ?');     params.push(assetId ?? null); }
+  if (description !== undefined) {
+    sets.push('Description = ?');
+    params.push(description ?? null);
+  }
+  if (assetId !== undefined) {
+    sets.push('AssetID = ?');
+    params.push(assetId ?? null);
+  }
+  if (documentCategoryId !== undefined) {
+    sets.push('DocumentCategoryID = ?');
+    const v = documentCategoryId;
+    params.push(v === null || v === '' ? null : Number(v));
+  }
   if (!sets.length) return 0;
   params.push(id);
-  const [result] = await getPool().query(`UPDATE DigitalAssets SET ${sets.join(', ')} WHERE DigitalAssetID = ?`, params);
+  const [result] = await getPool().query(
+    `UPDATE DigitalAssets SET ${sets.join(', ')} WHERE DigitalAssetID = ?`,
+    params,
+  );
   return result.affectedRows;
 }
 
@@ -109,8 +201,12 @@ export async function addVersion({ digitalAssetId, filePath, fileSizeKB, changed
     );
     await conn.commit();
     return newVer;
-  } catch (e) { await conn.rollback(); throw e; }
-  finally { conn.release(); }
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
 }
 
 export async function getVersions(digitalAssetId) {

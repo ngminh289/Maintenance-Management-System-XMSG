@@ -1,6 +1,7 @@
 /**
  * MainLayout.jsx — Layout chính: Sidebar + Topbar + nội dung trang.
  * Responsive: sidebar ẩn trên mobile, hiện qua hamburger.
+ * PAGE_TITLES: ưu tiên /checklists/history trước prefix /checklists để tiêu đề Topbar đúng.
  */
 import { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
@@ -13,6 +14,7 @@ const PAGE_TITLES = {
   '/schedules':   'Lịch bảo trì',
   '/work-orders': 'Phiếu việc (Work Orders)',
   '/checklists':  'Checklist & QR Scan',
+  '/checklists/history': 'Danh sách checklist',
   '/documents':   'Kho tài liệu số',
   '/approvals':   'Phê duyệt',
   '/workflows':   'Luồng phê duyệt',
@@ -26,7 +28,16 @@ export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { pathname } = useLocation();
 
-  const title = PAGE_TITLES[pathname] ?? PAGE_TITLES[Object.keys(PAGE_TITLES).find(k => pathname.startsWith(k) && k !== '/') ?? '/'] ?? '';
+  const title =
+    PAGE_TITLES[pathname] ??
+    (pathname.startsWith('/checklists/history')
+      ? PAGE_TITLES['/checklists/history']
+      : PAGE_TITLES[
+          Object.keys(PAGE_TITLES).find(
+            (k) => pathname.startsWith(k) && k !== '/',
+          ) ?? '/'
+        ]) ??
+    '';
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

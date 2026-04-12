@@ -10,7 +10,8 @@
  *   5 — bGD          : Ban Giám đốc
  *
  * Liên quan: Sidebar.jsx, DashboardPage.jsx, App.jsx; migration 019 (tách TC / Trưởng phòng).
- * ACTION_ACCESS + migration 017 (SUBMIT BFD 4.1).
+ * ACTION_ACCESS DAM: DOCUMENT:SUBMIT chỉ NV KT (BFD 4); migration 034 dọn SUBMIT Admin.
+ * Phản hồi tài liệu: DOCUMENT_FEEDBACK:CREATE mọi vai trừ NV KT; DOCUMENT_FEEDBACK:REVIEW chỉ NV KT (038).
  */
 
 // ── 1. Chuyển user thành role key ────────────────────────────────────────────
@@ -52,20 +53,12 @@ export const ROLE_COLORS = {
 /** Level DB cho tầng giám sát (Trưởng ca Position 3, Trưởng phòng Position 6 — cùng Level 3). */
 export const LEVEL_TRUONG_CA = 3;
 
-/**
- * Mô tả ngắn tầng giám sát — dùng banner/tooltip UI.
- * Quyền chi tiết: rule/truongca.rule + Roles_Permissions (PositionID 3 và 6 sau migration 019).
- */
+/** Banner Dashboard — Trưởng ca / Trưởng phòng. */
 export const TRUONG_CA_SUMMARY = {
   title: "Trưởng ca & Trưởng phòng",
   tagline:
-    "Phê duyệt lịch, phiếu việc, tài liệu; WO khẩn: Trưởng ca bước 1 → Trưởng phòng bước 2. Điều phối, giám sát checklist & tài sản.",
-  flows: [
-    "Lịch: duyệt bản nháp → chính thức, tạo WO khi cần.",
-    "Phiếu việc: duyệt, phân công, theo dõi trạng thái.",
-    "Tài liệu: duyệt file NV Kỹ thuật gửi lên.",
-    "Mẫu checklist: NV KT + TC/TP soạn; quét QR: mọi role xem thiết bị; nộp checklist: CN + Trưởng phòng; tiếp nhận: TC/TP.",
-  ],
+    "Phê duyệt lịch, phiếu việc và tài liệu; điều phối WO. WO khẩn: hai bước TC → Trưởng phòng.",
+  flows: [],
 };
 
 // ── 2. Quyền truy cập route (menu visibility) ────────────────────────────────
@@ -79,7 +72,10 @@ const ROUTE_ACCESS = {
   checklists: [true, true, true, true, true],
   /** §5.1 — chỉ NV KT + Trưởng ca/Trưởng phòng quản lý mẫu theo loại */
   "checklist-manage": [false, true, true, false, false],
-  documents: [true, true, true, true, false], // Admin xem + gửi duyệt / phiên bản (4.1)
+  /** DAM: CN/KT/TC/Admin/BGD đọc kho; upload/SUBMIT/phiên bản chỉ KT (ACTION_ACCESS). */
+  documents: [true, true, true, true, true],
+  /** Hàng đợi phản hồi / góp ý tài liệu — chỉ NV KT (xem xét). */
+  'document-feedback-inbox': [false, true, false, false, false],
   workflows: [false, false, false, true, false], // mẫu luồng phê duyệt — Admin C/U (4.1)
   approvals: [false, false, true, false, false], // chỉ Trưởng ca xử lý hàng chờ duyệt; Ban GĐ chỉ R (báo cáo)
   reports: [false, true, true, true, true], // báo cáo từ KT trở lên
@@ -125,10 +121,20 @@ const ACTION_ACCESS = {
   "WORK_ORDER:APPROVE": [false, false, true, false, false], // TC (3) + Trưởng phòng (6): server kiểm tra đúng bước workflow
   "WORK_ORDER:DELETE": [false, false, false, false, false],
   "DOCUMENT:CREATE": [false, true, false, false, false],
-  /** Gửi bản nháp vào phê duyệt — SUBMIT API (4.1). */
-  "DOCUMENT:SUBMIT": [false, true, false, true, false],
-  "DOCUMENT:UPDATE": [false, true, false, true, false],
+  /** Gửi bản nháp vào phê duyệt — SUBMIT API (BFD 4; chỉ Chuyên viên / NV KT). */
+  "DOCUMENT:SUBMIT": [false, true, false, false, false],
+  /** Phiên bản mới sau duyệt — UPDATE API (chỉ NV KT; Admin DAM chỉ READ). */
+  "DOCUMENT:UPDATE": [false, true, false, false, false],
   "DOCUMENT:APPROVE": [false, false, true, false, false],
+  /** Danh mục tag (CRUD): chỉ NV KT (migration 035: DELETE TAG). */
+  "TAG:CREATE": [false, true, false, false, false],
+  "TAG:UPDATE": [false, true, false, false, false],
+  "TAG:DELETE": [false, true, false, false, false],
+  /** Phân loại tài liệu DAM — đọc danh mục: mọi role vào trang tài liệu; C/U/D: NV KT. */
+  "DOCUMENT_CATEGORY:READ": [true, true, true, true, true],
+  "DOCUMENT_CATEGORY:CREATE": [false, true, false, false, false],
+  "DOCUMENT_CATEGORY:UPDATE": [false, true, false, false, false],
+  "DOCUMENT_CATEGORY:DELETE": [false, true, false, false, false],
   "CHECKLIST_TEMPLATE:CREATE": [false, true, true, false, false],
   "CHECKLIST_TEMPLATE:UPDATE": [false, true, true, false, false],
   /** §5.1 (A) — phê duyệt mẫu trong DB; UI mở rộng luồng sau */
@@ -146,6 +152,10 @@ const ACTION_ACCESS = {
   "WORKFLOW:CREATE": [false, false, false, true, false],
   "WORKFLOW:UPDATE": [false, false, false, true, false],
   "WORKFLOW:DELETE": [false, false, false, true, false],
+  /** Góp ý tài liệu: CN/TC/TP/Admin/BGD gửi; NV KT không gửi (server chặn CREATE). */
+  "DOCUMENT_FEEDBACK:CREATE": [true, false, true, true, true],
+  /** NV KT cập nhật trạng thái / ghi chú xử lý. */
+  "DOCUMENT_FEEDBACK:REVIEW": [false, true, false, false, false],
 };
 
 export function canDo(user, action) {

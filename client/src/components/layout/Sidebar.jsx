@@ -1,12 +1,15 @@
 /**
  * Sidebar.jsx — Dark sidebar, lọc menu theo role người dùng.
  * Dùng canAccess() từ utils/rbac.js để chỉ hiện item có quyền.
+ * Danh sách checklist: /checklists/history (mọi role có route checklists).
+ * /documents cần end:true — nếu không /documents/feedback-inbox làm cả hai NavLink active (đúp xanh).
  */
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, ClipboardCheck, Layers, Users, ShieldCheck, ChevronRight,
-  Factory, BarChart2, GitBranch,
+  ListChecks,
+  Factory, BarChart2, GitBranch, MessageSquare,
 } from 'lucide-react';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
 import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
@@ -36,6 +39,7 @@ const MENU_GROUPS = [
       { to: '/schedules',   routeKey: 'schedules',   icon: ClipboardList, label: 'Lịch bảo trì' },
       { to: '/work-orders', routeKey: 'work-orders', icon: Wrench,        label: 'Phiếu việc' },
       { to: '/checklists',  routeKey: 'checklists',  icon: CheckSquare,   label: 'Checklist / QR', end: true },
+      { to: '/checklists/history', routeKey: 'checklists', icon: ListChecks, label: 'Danh sách checklist' },
       { to: '/checklists/review', routeKey: 'checklists', icon: ClipboardCheck, label: 'Tiếp nhận checklist', action: 'CHECKLIST_RESULT:APPROVE' },
       { to: '/checklists/templates', routeKey: 'checklist-manage', icon: Layers, label: 'Mẫu checklist (theo loại)' },
     ],
@@ -43,7 +47,8 @@ const MENU_GROUPS = [
   {
     label: 'Tài liệu & Phê duyệt',
     items: [
-      { to: '/documents',   routeKey: 'documents',   icon: FileText,    label: 'Kho tài liệu số' },
+      { to: '/documents',   routeKey: 'documents',   icon: FileText,    label: 'Kho tài liệu số', end: true },
+      { to: '/documents/feedback-inbox', routeKey: 'document-feedback-inbox', icon: MessageSquare, label: 'Phản hồi tài liệu (KT)' },
       { to: '/approvals',   routeKey: 'approvals',   icon: ShieldCheck, label: 'Phê duyệt' },
     ],
   },
@@ -119,7 +124,7 @@ export function Sidebar({ open, onClose }) {
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
           {visibleGroups.map((group) => (
             <div key={group.label}>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">
                 {group.label}
               </p>
               <div className="space-y-0.5">

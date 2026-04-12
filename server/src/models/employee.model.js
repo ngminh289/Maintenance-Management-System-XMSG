@@ -2,7 +2,7 @@
  * employee.model.js — SQL thuần cho bảng Employees.
  * Chú ý: findByUsernameOrEmail trả về PasswordHash — chỉ dùng trong auth.service.
  * Lịch nghỉ: LeaveStartAt / LeaveEndAt; onScheduledLeave = NOW() trong [start,end] (migration 030).
- * Dùng trong: auth.service, employee.service, workOrderFieldAssign.
+ * Dùng trong: auth.service, employee.service, workOrderFieldAssign, documentFeedback (notify NV KT).
  */
 import { getPool } from "../config/database.js";
 
@@ -205,6 +205,16 @@ export async function updatePassword(id, passwordHash) {
     "UPDATE Employees SET PasswordHash = ? WHERE EmployeeID = ?",
     [passwordHash, id],
   );
+}
+
+/** Danh sách EmployeeID đang hoạt động theo PositionID (VD: 2 = NV Kỹ thuật — thông báo phản hồi tài liệu). */
+export async function findActiveEmployeeIdsByPositionId(positionId) {
+  const [rows] = await getPool().query(
+    `SELECT EmployeeID AS employeeId FROM Employees
+     WHERE PositionID = ? AND IsActive = TRUE`,
+    [positionId],
+  );
+  return rows.map((r) => Number(r.employeeId));
 }
 
 /** Tìm nhân viên theo Level chức vụ (dùng để gửi notification cho quản lý) */

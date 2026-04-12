@@ -1,12 +1,13 @@
 /**
  * maintenanceGroup.service.js — Nghiệp vụ nhóm bảo trì.
- * Gán nhóm lên WO: chặn thành viên đang onScheduledLeave (lịch nghỉ).
+ * Gán nhóm lên WO: chặn thành viên nếu PlannedDate trùng kỳ nghỉ (scheduledLeaveWo.js).
  * Liên quan: maintenanceGroup.model, workOrder.model, employee.model.
  */
 import { createError } from "../utils/createError.js";
 import * as model from "../models/maintenanceGroup.model.js";
 import * as employeeModel from "../models/employee.model.js";
 import * as woModel from "../models/workOrder.model.js";
+import { messageIfAssignmentConflictsWithScheduledLeave } from "../utils/scheduledLeaveWo.js";
 
 export async function getAll() {
   return model.findAll();
@@ -76,12 +77,11 @@ export async function assignGroupToWO(groupId, woId) {
   const members = await model.getMembers(groupId);
   for (const m of members) {
     const emp = await employeeModel.findById(m.employeeId);
-    if (emp?.onScheduledLeave) {
-      throw createError(
-        `${emp.fullName} đang trong khung nghỉ phép có lịch — không gán nhóm lên phiếu.`,
-        400,
-      );
-    }
+    const leaveMsg = messageIfAssignmentConflictsWithScheduledLeave(
+      emp,
+      wo.plannedDate,
+    );
+    if (leaveMsg) throw createError(leaveMsg, 400);
   }
   await Promise.all(members.map((m) => woModel.assign(woId, m.employeeId)));
   return woModel.getAssignments(woId);

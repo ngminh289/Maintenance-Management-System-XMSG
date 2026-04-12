@@ -1,7 +1,5 @@
 /**
- * AssetDetailPage.jsx — Chi tiết tài sản: thông tin, bộ đếm giờ, QR, lịch sử Reading + sự kiện dự báo PM.
- * Luồng 1.1/2.1: RuntimeLogs, predictive-events, maintenance-history (WO hoàn thành + đồng bộ PM).
- * RBAC: chỉnh sửa (ASSET:UPDATE), nhập giờ chạy (RUNTIME_LOG:CREATE) — ẩn nút khi không có quyền.
+ * AssetDetailPage.jsx — Chi tiết tài sản: thông tin, đồng hồ giờ chạy, QR, lịch sử ghi nhận & bảo trì.
  */
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
@@ -96,7 +94,7 @@ export function AssetDetailPage() {
     ? fDate(c.estimatedNextPMDate)
     : hasHourlySchedule
       ? 'Chưa đủ dữ liệu giờ chạy'
-      : 'Chưa có lịch theo giờ (HOURS)';
+      : 'Chưa có lịch theo giờ chạy';
 
   const canEditAsset = canDo(user, 'ASSET:UPDATE');
   const canLogHours = canDo(user, 'RUNTIME_LOG:CREATE');
@@ -174,7 +172,6 @@ export function AssetDetailPage() {
                   <span className="font-bold text-gray-900">{v}</span>
                 </div>
               ))}
-              {/* PM date: hiển thị khác nhau tùy có lịch HOURS hay không */}
               <div className="flex justify-between items-start py-1">
                 <span className="font-medium text-gray-600">Ngày PM dự báo</span>
                 <span className={`font-bold text-right text-xs max-w-[55%] ${
@@ -184,8 +181,8 @@ export function AssetDetailPage() {
                 </span>
               </div>
               {!hasHourlySchedule && (
-                <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5 leading-relaxed">
-                  Tạo lịch bảo trì với đơn vị <strong>HOURS</strong> để hệ thống tự dự báo ngày PM.
+                <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5">
+                  Thêm lịch đơn vị <strong>giờ chạy</strong> để dự báo ngày PM.
                 </p>
               )}
             </div>
@@ -195,14 +192,12 @@ export function AssetDetailPage() {
         </Card>
       </div>
 
-      <Card title={<span className="flex items-center gap-2"><Wrench size={16} /> Lịch sử bảo trì (WO đã hoàn thành)</span>}>
-        <p className="text-xs text-gray-600 leading-relaxed mb-4">
-          Cùng một tài sản có thể có <strong>lịch theo giờ chạy (HOURS)</strong> và <strong>lịch theo ngày/tuần/tháng</strong> — hai trục độc lập, không xung đột.
-          Khi đóng phiếu <strong>theo lịch / dự báo / thủ công</strong>, hệ thống <strong>đồng bộ</strong>: reset mốc chu kỳ <strong>giờ</strong> (PM dự báo) và cập nhật <strong>lịch ngày</strong> (ngày TH cuối; lùi <strong>NextDueDate</strong> nếu kỳ đó đã đến hoặc quá hạn).
-          Phiếu <strong>sự cố (CORRECTIVE)</strong> chỉ ghi nhận lịch sử, <em>không</em> reset chu kỳ định kỳ.
+      <Card title={<span className="flex items-center gap-2"><Wrench size={16} /> Lịch sử bảo trì</span>}>
+        <p className="text-xs text-gray-500 mb-3">
+          Phiếu định kỳ / dự báo / thủ công hoàn thành sẽ cập nhật lịch và mốc giờ; phiếu sự cố chỉ lưu lịch sử.
         </p>
         {maintHistory.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-6">Chưa có bản ghi — sẽ xuất hiện sau mỗi lần hoàn thành WO (trừ khi migration chưa chạy).</p>
+          <p className="text-sm text-gray-400 text-center py-6">Chưa có bản ghi sau khi hoàn thành phiếu.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

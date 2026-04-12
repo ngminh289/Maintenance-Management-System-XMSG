@@ -61,7 +61,7 @@ checklistRouter.get('/results/pending-review',
   ctrl.getPendingReviewResults,
 );
 
-// GET danh sách kết quả checklist (tất cả user được auth đều xem được)
+// GET danh sách kết quả — CN: APPROVED (mọi người) + phiếu của mình (mọi trạng thái); NVKT+ xem hết
 checklistRouter.get('/results', ctrl.getResults);
 
 // QUAN TRỌNG: /results/asset/:assetId phải đứng TRƯỚC /results/:id

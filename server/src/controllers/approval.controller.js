@@ -16,10 +16,17 @@ export const getHistory = asyncHandler(async (req, res) => {
   return ok(res, await service.getHistory(resourceType, resourceId));
 });
 
-/** Gửi duyệt thủ công (DigitalAsset/MaintenancePlan — WO tự động gửi khi tạo) */
+/** Gửi duyệt thủ công; WO: có thể gửi lại sau REQUEST_CHANGES (body tuỳ chọn woSource, woPriority). */
 export const submit = asyncHandler(async (req, res) => {
-  const { resourceType, resourceId, workflowId } = req.body;
-  const logId = await service.submit({ resourceType, resourceId, submitterId: req.user.sub, workflowId });
+  const { resourceType, resourceId, workflowId, woSource, woPriority } = req.body;
+  const logId = await service.submit({
+    resourceType,
+    resourceId: Number(resourceId),
+    submitterId: req.user.sub,
+    workflowId,
+    woSource,
+    woPriority,
+  });
   return ok(res, { logId }, 201);
 });
 

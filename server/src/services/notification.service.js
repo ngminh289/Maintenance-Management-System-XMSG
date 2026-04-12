@@ -1,6 +1,7 @@
 /**
  * notification.service.js — Gửi thông báo in-app.
- * Dùng trong: approval.service.js, workOrder.service.js, checklist.service.js, assetCounter.service.js.
+ * Dùng trong: approval, workOrder, checklist, assetCounter, documentFeedback.
+ * Loại DOCUMENT_FEEDBACK_* — migration 039.
  * Liên quan: models/notification.model.js, models/employee.model.js.
  */
 import * as model from "../models/notification.model.js";
@@ -9,6 +10,12 @@ import { getPagination } from "../utils/paginate.js";
 
 export async function send(recipientId, message, type = "SYSTEM_ALERT") {
   await model.create({ recipientId, message, type });
+}
+
+/** Gửi cùng nội dung tới nhiều người (VD: mọi NV Kỹ thuật khi có phản hồi tài liệu). */
+export async function sendBulk(recipientIds, message, type = "SYSTEM_ALERT") {
+  const ids = [...new Set(recipientIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))];
+  await Promise.all(ids.map((id) => model.create({ recipientId: id, message, type })));
 }
 
 /** Gửi cho tất cả nhân viên có Level >= minLevel */

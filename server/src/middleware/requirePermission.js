@@ -8,7 +8,7 @@
  *
  * ResourceType: ASSET | WORK_ORDER | DIGITAL_ASSET | MAINTENANCE_PLAN
  *               CHECKLIST_TEMPLATE | CHECKLIST_RESULT | RUNTIME_LOG
- *               EMPLOYEE | TAG | WORKFLOW | REPORT
+ *               EMPLOYEE | TAG | WORKFLOW | REPORT | DOCUMENT_CATEGORY | DOCUMENT_FEEDBACK
  * PermissionName: CREATE | READ | UPDATE | DELETE | APPROVE | EXPORT | SUBMIT
  *
  * Liên quan: middleware/auth.middleware.js (chạy trước), models/Roles_Permissions table.

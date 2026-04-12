@@ -1,8 +1,4 @@
-/**
- * WorkflowsPage.jsx — Quản lý mẫu luồng phê duyệt (WorkflowTemplates).
- * BFD 4.1: Admin C/U mẫu luồng; NV vận hành khởi tạo phiếu qua trang Lịch/WO/Tài liệu.
- * Liên quan: api/workflow.api.js, utils/rbac.js (route workflows, WORKFLOW:*).
- */
+/** WorkflowsPage.jsx — Mẫu luồng phê duyệt (Admin). */
 import { useEffect, useState, useCallback } from 'react';
 import { GitBranch, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { workflowApi } from '../../api/workflow.api.js';
@@ -114,8 +110,8 @@ export function WorkflowsPage() {
             <GitBranch size={20} className="text-blue-600" />
             Mẫu luồng phê duyệt
           </h2>
-          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Cấu hình tên/mô tả mẫu (BFD 4.1 — Admin). Bước duyệt gắn chức vụ trong DB; chỉnh sửa bước nâng cao qua API hoặc SQL khi cần.
+          <p className="text-sm text-gray-500 mt-1 max-w-xl">
+            Mẫu luồng phê duyệt — quản trị hệ thống.
           </p>
         </div>
         <Button type="button" variant="secondary" size="sm" onClick={loadList}>
@@ -193,7 +189,7 @@ export function WorkflowsPage() {
                   <p className="text-xs font-semibold text-gray-500 mb-2">Bước duyệt</p>
                   <div className="space-y-2">
                     {(detail.steps ?? []).length === 0 ? (
-                      <p className="text-sm text-amber-600">Chưa có bước (kiểm tra WorkflowSteps)</p>
+                      <p className="text-sm text-amber-600">Chưa có bước duyệt</p>
                     ) : (
                       detail.steps.map((s) => (
                         <div key={s.stepId} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
@@ -212,7 +208,7 @@ export function WorkflowsPage() {
       </div>
 
       {!canCreate && (
-        <p className="text-xs text-gray-400">Tạo mẫu workflow mới: dùng API POST /workflows hoặc seed/migration khi triển khai.</p>
+        <p className="text-xs text-gray-400">Liên hệ quản trị để thêm mẫu mới.</p>
       )}
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Sửa mẫu luồng" size="md">

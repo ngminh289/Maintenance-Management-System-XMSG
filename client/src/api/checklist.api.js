@@ -1,5 +1,5 @@
 /**
- * checklist.api.js — /api/checklists: QR, kết quả, tiếp nhận TC, mẫu theo loại (BFD §5).
+ * checklist.api.js — /api/checklists: QR, kết quả (phân quyền xem theo level), tiếp nhận TC, mẫu (BFD §5).
  */
 import { api } from './index.js';
 export const checklistApi = {

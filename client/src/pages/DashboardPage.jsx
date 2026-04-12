@@ -60,14 +60,16 @@ function OperationalDashboard() {
       {/* Trưởng ca: nhiệm vụ + lối tắt luồng phê duyệt / điều phối (rule/truongca.rule) */}
       <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50/60 p-4 sm:p-5 shadow-sm">
         <p className="text-sm font-bold text-blue-950">{TRUONG_CA_SUMMARY.title}</p>
-        <p className="text-xs text-blue-900/85 mt-1.5 leading-relaxed max-w-3xl">
+        <p className="text-xs text-blue-900/85 mt-1.5 max-w-2xl">
           {TRUONG_CA_SUMMARY.tagline}
         </p>
-        <ul className="mt-3 text-xs text-blue-900/80 space-y-1 list-disc list-inside border-t border-blue-100/80 pt-3">
-          {TRUONG_CA_SUMMARY.flows.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
+        {TRUONG_CA_SUMMARY.flows?.length > 0 && (
+          <ul className="mt-3 text-xs text-blue-900/80 space-y-1 list-disc list-inside border-t border-blue-100/80 pt-3">
+            {TRUONG_CA_SUMMARY.flows.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
         <div className="flex flex-wrap gap-2 mt-4">
           {[
             { to: '/approvals', label: 'Phê duyệt', icon: ShieldCheck, className: 'bg-amber-100 text-amber-900 border-amber-200 hover:bg-amber-200/80' },
@@ -227,8 +229,8 @@ function DirectorDashboard() {
         <p className="text-sm font-semibold text-purple-800">
           Bảng tổng hợp KPI — Hệ thống bảo trì thiết bị Xi măng Sông Gianh
         </p>
-        <p className="text-xs text-purple-700/90 mt-2 leading-relaxed">
-          Chế độ xem tổng hợp: chi tiết phê duyệt phiếu việc / tài liệu do <strong>Trưởng ca</strong> xử lý. Ban Giám đốc dùng báo cáo và chỉ số bên dưới để giám sát.
+        <p className="text-xs text-purple-700/90 mt-2">
+          Tổng quan KPI và báo cáo giám sát.
         </p>
       </div>
 

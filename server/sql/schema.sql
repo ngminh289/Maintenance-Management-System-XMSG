@@ -135,6 +135,16 @@ CREATE TABLE IF NOT EXISTS Tags (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
+-- 9b. DocumentCategories — Phân loại tài liệu DAM (mỗi tài liệu tối đa 1 loại)
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS DocumentCategories (
+    DocumentCategoryID INT          AUTO_INCREMENT PRIMARY KEY,
+    CategoryName       VARCHAR(120) NOT NULL UNIQUE,
+    Description        VARCHAR(255) NULL,
+    CreatedAt          DATETIME     DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
 -- 10. DigitalAssets — Kho tài liệu kỹ thuật số
 -- ----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS DigitalAssets (
@@ -142,6 +152,7 @@ CREATE TABLE IF NOT EXISTS DigitalAssets (
     FileName       VARCHAR(255) NOT NULL,
     FileType       VARCHAR(50)  NOT NULL,
     AssetID        INT,
+    DocumentCategoryID INT,
     Description    TEXT,
     UploadDate     DATETIME     DEFAULT CURRENT_TIMESTAMP,
     UploadedBy     INT          NOT NULL,
@@ -151,9 +162,11 @@ CREATE TABLE IF NOT EXISTS DigitalAssets (
     Status         ENUM('DRAFT','PENDING','APPROVED','REJECTED','ARCHIVED')
                                 NOT NULL DEFAULT 'DRAFT',
     INDEX idx_asset      (AssetID),
+    INDEX idx_doc_category (DocumentCategoryID),
     INDEX idx_uploader   (UploadedBy),
     INDEX idx_status     (Status),
     FOREIGN KEY (AssetID)    REFERENCES Assets(AssetID)    ON DELETE SET NULL,
+    FOREIGN KEY (DocumentCategoryID) REFERENCES DocumentCategories (DocumentCategoryID) ON DELETE SET NULL,
     FOREIGN KEY (UploadedBy) REFERENCES Employees(EmployeeID)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -169,6 +182,7 @@ CREATE TABLE IF NOT EXISTS AssetVersions (
     ChangedBy      INT          NOT NULL,
     ChangeNote     TEXT,
     INDEX idx_digital (DigitalAssetID),
+    UNIQUE KEY uq_da_vernum (DigitalAssetID, VersionNumber),
     FOREIGN KEY (DigitalAssetID) REFERENCES DigitalAssets(DigitalAssetID) ON DELETE CASCADE,
     FOREIGN KEY (ChangedBy)      REFERENCES Employees(EmployeeID)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -435,7 +449,7 @@ CREATE TABLE IF NOT EXISTS Roles_Permissions (
     ResourceType   ENUM(
         'ASSET','DIGITAL_ASSET','WORK_ORDER','MAINTENANCE_PLAN',
         'CHECKLIST_TEMPLATE','CHECKLIST_RESULT','RUNTIME_LOG',
-        'EMPLOYEE','TAG','WORKFLOW','REPORT','INVENTORY'
+        'EMPLOYEE','TAG','WORKFLOW','REPORT','INVENTORY','DOCUMENT_CATEGORY'
     ) NOT NULL,
     UNIQUE KEY uq_perm (PositionID, PermissionName, ResourceType),
     FOREIGN KEY (PositionID) REFERENCES Positions(PositionID) ON DELETE CASCADE
@@ -448,7 +462,7 @@ CREATE TABLE IF NOT EXISTS Notifications (
     NotiID      INT          AUTO_INCREMENT PRIMARY KEY,
     RecipientID INT          NOT NULL,
     Message     TEXT         NOT NULL,
-    Type        ENUM('MAINTENANCE_DUE','APPROVAL_REQUEST','WORK_ORDER_ASSIGNED','SYSTEM_ALERT','TASK_OVERDUE')
+    Type        ENUM('MAINTENANCE_DUE','APPROVAL_REQUEST','WORK_ORDER_ASSIGNED','WORK_ORDER_COMPLETED','SYSTEM_ALERT','TASK_OVERDUE','DOCUMENT_FEEDBACK_NEW','DOCUMENT_FEEDBACK_STATUS')
                              NOT NULL DEFAULT 'SYSTEM_ALERT',
     IsRead      BOOLEAN      DEFAULT FALSE,
     CreatedAt   DATETIME     DEFAULT CURRENT_TIMESTAMP,

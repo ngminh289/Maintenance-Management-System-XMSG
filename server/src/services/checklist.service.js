@@ -15,6 +15,9 @@
  *
  * getResultById: bổ sung checklistTemplateName, assetTypeName, locationName và threshold từng câu (màn duyệt).
  * getQRInfo: kèm runtimeCounter (LastReadingValue…) để form checklist hiển thị và chặn nhập < lần trước ngay khi gửi.
+ *
+ * Xem kết quả (positionLevel ≤ 1 = công nhân): chỉ phiếu APPROVED (mọi người) + mọi phiếu do mình nộp (mọi trạng thái).
+ * NVKT+ xem toàn bộ; GET /results không cho CN lọc theo checkerId người khác.
  */
 import { createError } from "../utils/createError.js";
 import * as templateModel from "../models/checklistTemplate.model.js";
@@ -26,6 +29,13 @@ import * as workOrderSvc from "./workOrder.service.js";
 import * as counterSvc from "./assetCounter.service.js";
 import * as counterModel from "../models/assetCounter.model.js";
 import * as notifService from "./notification.service.js";
+
+/** Level ≤ 1: công nhân — giới hạn xem checklist như mô tả file header. */
+const CHECKLIST_VIEW_WORKER_MAX_LEVEL = 1;
+
+function isChecklistViewRestrictedWorker(positionLevel) {
+  return (Number(positionLevel) || 0) <= CHECKLIST_VIEW_WORKER_MAX_LEVEL;
+}
 
 const INPUT_TYPE_TO_DB = {
   PassFail: "PASS_FAIL",
@@ -219,7 +229,7 @@ export async function removeItem(itemId) {
 
 // ─── QR Scan Info ────────────────────────────────────────────────────────────
 
-export async function getQRInfo(assetId) {
+export async function getQRInfo(assetId, viewer = {}) {
   const asset = await assetModel.findById(assetId);
   if (!asset) throw createError("Không tìm thấy tài sản", 404);
 
@@ -258,7 +268,10 @@ export async function getQRInfo(assetId) {
     tagIds: undefined,
   }));
 
-  const recentResults = await resultModel.findByAsset(assetId, 5);
+  const recentResults = await resultModel.findByAssetVisibleTo(assetId, 5, {
+    employeeId: viewer.employeeId,
+    positionLevel: viewer.positionLevel,
+  });
 
   const counterRow = await counterModel.findByAsset(assetId);
   const runtimeCounter = {
@@ -358,7 +371,6 @@ export async function submitResult({
   overallStatus,
   evidencePhoto,
   notes,
-  partsNotes,
   details,
   checkerId,
 }) {
@@ -389,7 +401,6 @@ export async function submitResult({
     overallStatus,
     evidencePhoto,
     notes,
-    partsNotes: partsNotes?.trim?.() || null,
     readingValue,
   });
   if (enriched?.length) {
@@ -467,9 +478,20 @@ export async function reviewChecklistResult(
   return { checklistId, reviewStatus: "APPROVED", newWorkOrderId };
 }
 
-export async function getResultById(id) {
+export async function getResultById(id, viewer = {}) {
   const r = await resultModel.findById(id);
   if (!r) throw createError("Không tìm thấy kết quả checklist", 404);
+
+  if (
+    isChecklistViewRestrictedWorker(viewer.positionLevel) &&
+    viewer.employeeId != null
+  ) {
+    const mine = Number(r.checkerId) === Number(viewer.employeeId);
+    const approved = String(r.reviewStatus).toUpperCase() === "APPROVED";
+    if (!mine && !approved) {
+      throw createError("Không có quyền xem phiếu checklist này", 403);
+    }
+  }
 
   const asset = await assetModel.findById(r.assetId);
   let checklistTemplateName = null;
@@ -503,18 +525,23 @@ export async function getResultById(id) {
   };
 }
 
-export async function getResults({
-  page = 1,
-  limit = 20,
-  checkerId,
-  assetId,
-  reviewStatus,
-} = {}) {
+export async function getResults(
+  {
+    page = 1,
+    limit = 20,
+    checkerId,
+    assetId,
+    reviewStatus,
+  } = {},
+  viewer = {},
+) {
   const offset = (page - 1) * limit;
   const { getPool } = await import("../config/database.js");
   const conditions = [];
   const params = [];
-  if (checkerId) {
+  const restrict = isChecklistViewRestrictedWorker(viewer.positionLevel);
+
+  if (!restrict && checkerId) {
     conditions.push("cr.CheckerID = ?");
     params.push(checkerId);
   }
@@ -526,6 +553,11 @@ export async function getResults({
     conditions.push("cr.ReviewStatus = ?");
     params.push(reviewStatus);
   }
+  if (restrict && viewer.employeeId != null) {
+    conditions.push("(cr.ReviewStatus = 'APPROVED' OR cr.CheckerID = ?)");
+    params.push(Number(viewer.employeeId));
+  }
+
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const [[{ total }]] = await getPool().query(
@@ -537,6 +569,7 @@ export async function getResults({
             a.AssetName AS assetName, cr.OverallStatus AS overallStatus,
             cr.CheckTime AS checkTime, cr.Notes AS notes,
             cr.ReviewStatus AS reviewStatus, cr.ReviewedAt AS reviewedAt,
+            cr.CheckerID AS checkerId,
             e.FullName AS checkerName
      FROM ChecklistResults cr
      LEFT JOIN Assets a    ON a.AssetID   = cr.AssetID
@@ -549,8 +582,11 @@ export async function getResults({
   return { items: rows, total, page: Number(page), limit: Number(limit) };
 }
 
-export async function getResultsByAsset(assetId, limit = 20) {
+export async function getResultsByAsset(assetId, limit = 20, viewer = {}) {
   const asset = await assetModel.findById(assetId);
   if (!asset) throw createError("Không tìm thấy tài sản", 404);
-  return resultModel.findByAsset(assetId, limit);
+  return resultModel.findByAssetVisibleTo(assetId, limit, {
+    employeeId: viewer.employeeId,
+    positionLevel: viewer.positionLevel,
+  });
 }

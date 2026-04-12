@@ -4,8 +4,10 @@
  * Trưởng ca / Trưởng phòng: nghiệm thu đóng (COMPLETED), hoặc trả về làm tiếp (IN_PROGRESS).
  * Thợ báo AWAITING_CLOSURE: ghi chú hiện trường + linh kiện/vật tư (lưu lịch sử bảo trì snapshot); TC xem trước ảnh.
  * Phê duyệt: WO nghiêm trọng (EMERGENCY hoặc CORRECTIVE+HIGH) = 2 bước TC → Trưởng phòng; UI hiển thị tiến trình + phân công tại bước cuối.
+ * Sau «Yêu cầu chỉnh sửa» (không còn log PENDING): Sửa phiếu + «Gửi lại phê duyệt» (submit) — lại từ bước 1 TC, WO 2 cấp thì vẫn qua TP.
  * Phân công: ẩn nhân viên đang trong lịch nghỉ (onScheduledLeave).
- * Ghi chú/vật tư: nhập sớm (WAITING…PAUSED) + Lưu nháp; phiếu CORRECTIVE có reset mốc giờ PM (một lần/phiếu, hiển thị thời điểm + người làm).
+ * Ghi chú/vật tư (WO): nhập sớm (WAITING…PAUSED) + Lưu nháp; 3 checklist APPROVED gần nhất cùng tài sản (NVKT+ hoặc thợ được giao).
+ * Phiếu CORRECTIVE: reset mốc giờ PM (một lần/phiếu, hiển thị thời điểm + người làm).
  */
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -21,10 +23,15 @@ import {
   ExternalLink,
   ChevronRight,
   TimerReset,
+  ClipboardList,
+  Send,
+  Pencil,
 } from "lucide-react";
 import { workOrderApi } from "../../api/workOrder.api.js";
 import { employeeApi } from "../../api/employee.api.js";
+import { assetApi } from "../../api/asset.api.js";
 import { approvalApi } from "../../api/approval.api.js";
+import { WorkOrderForm } from "./WorkOrderForm.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Card } from "../../components/ui/Card.jsx";
@@ -38,6 +45,8 @@ import {
   WO_PRIORITY_COLOR,
   fDate,
   fDateTime,
+  fNumber,
+  CHECKLIST_STATUS_COLOR,
 } from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo, LEVEL_TRUONG_CA } from "../../utils/rbac.js";
@@ -79,6 +88,8 @@ export function WorkOrderDetailPage() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeHours, setCloseHours] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [editWoOpen, setEditWoOpen] = useState(false);
+  const [woEditAssets, setWoEditAssets] = useState([]);
 
   const load = async () => {
     try {
@@ -129,6 +140,12 @@ export function WorkOrderDetailPage() {
   }, [wo?.woId, wo?.closureFieldNotes, wo?.closurePartsNotes]);
 
   const pendingApprovalLog = approvals.find((a) => a.status === "PENDING");
+  const needsResubmitApproval =
+    wo?.status === "PENDING_APPROVAL" && !pendingApprovalLog;
+  const canResubmitApproval =
+    needsResubmitApproval && canDo(user, "WORK_ORDER:CREATE");
+  const canEditPendingResubmit =
+    needsResubmitApproval && canDo(user, "WORK_ORDER:UPDATE");
   const isWoFinalApprovalStep =
     wo?.status === "PENDING_APPROVAL" &&
     pendingApprovalLog &&
@@ -154,6 +171,42 @@ export function WorkOrderDetailPage() {
       })
       .catch(() => setApproveFieldEmployees([]));
   }, [approveOpen, isWoFinalApprovalStep, id]);
+
+  useEffect(() => {
+    if (!editWoOpen) return;
+    assetApi
+      .getAll({ limit: 200 })
+      .then((r) => setWoEditAssets(r.data.data?.items ?? []))
+      .catch(() => setWoEditAssets([]));
+  }, [editWoOpen]);
+
+  const handleResubmitApproval = async () => {
+    if (!wo) return;
+    if (
+      !window.confirm(
+        "Gửi lại phê duyệt từ bước 1 (Trưởng ca)? Phiếu 2 cấp sẽ lần lượt qua Trưởng ca rồi Trưởng phòng.",
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await approvalApi.submit({
+        resourceType: "WORK_ORDER",
+        resourceId: Number(wo.woId),
+        woSource: wo.woSource,
+        woPriority: wo.priority,
+      });
+      toast.success(
+        "Đã gửi lại phê duyệt — Trưởng ca xử lý trước; phiếu khẩn 2 cấp sau đó tới Trưởng phòng.",
+      );
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không gửi lại được phê duyệt");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const changeStatus = async (status) => {
     if (!confirm(`Chuyển sang «${WO_STATUS_LABEL[status] ?? status}»?`)) return;
@@ -488,6 +541,24 @@ export function WorkOrderDetailPage() {
               <CheckCircle size={13} /> Phê duyệt
             </Button>
           )}
+          {canEditPendingResubmit && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setEditWoOpen(true)}
+            >
+              <Pencil size={13} /> Sửa phiếu
+            </Button>
+          )}
+          {canResubmitApproval && (
+            <Button
+              size="sm"
+              onClick={handleResubmitApproval}
+              loading={saving}
+            >
+              <Send size={13} /> Gửi lại phê duyệt
+            </Button>
+          )}
           {canAssign && (
             <Button
               size="sm"
@@ -537,7 +608,29 @@ export function WorkOrderDetailPage() {
         </div>
       )}
 
-      {wo.status === "PENDING_APPROVAL" && stepsForApprovalUi.length > 0 && (
+      {needsResubmitApproval && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+          <p className="font-bold text-amber-950 mb-1">
+            Chờ gửi lại phê duyệt
+          </p>
+          <p className="leading-relaxed text-amber-900/95">
+            Giám sát đã yêu cầu chỉnh sửa hoặc luồng duyệt tạm dừng — phiếu vẫn ở trạng thái «Chờ duyệt» nhưng
+            không còn bước đang chờ. Hãy{" "}
+            <strong>sửa nội dung phiếu</strong> (nếu cần) rồi{" "}
+            <strong>gửi lại phê duyệt</strong>: hệ thống tạo yêu cầu mới từ{" "}
+            <strong>bước 1 — Trưởng ca</strong>; phiếu <strong>hai cấp</strong>{" "}
+            (khẩn) sau đó vẫn qua <strong>Trưởng phòng</strong> như lần đầu.
+          </p>
+          {!canResubmitApproval && !canEditPendingResubmit && (
+            <p className="mt-2 text-xs text-amber-800/90">
+              Cần quyền cập nhật phiếu / tạo &amp; gửi duyệt (NV KT…) để thao tác tại đây.
+            </p>
+          )}
+        </div>
+      )}
+
+      {wo.status === "PENDING_APPROVAL" &&
+        (stepsForApprovalUi.length > 0 || !!pendingApprovalLog) && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-4 text-sm text-indigo-950">
           <p className="font-bold text-indigo-950 mb-3">Tiến trình phê duyệt</p>
           <div className="flex flex-wrap items-center gap-y-2 gap-x-1">
@@ -680,6 +773,77 @@ export function WorkOrderDetailPage() {
         </div>
       )}
 
+      {wo.recentChecklistsEligible && wo.recentChecklists?.length > 0 && (
+        <Card title="Checklist đã duyệt gần đây (tham khảo)">
+          <p className="text-xs text-gray-500 mb-3">
+            Ba lần kiểm tra đã duyệt gần nhất; vật tư ghi trên phiếu việc.
+          </p>
+          <ul className="space-y-4">
+            {wo.recentChecklists.map((c) => (
+              <li
+                key={c.checklistId}
+                className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm"
+              >
+                <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                  <Badge color={CHECKLIST_STATUS_COLOR[c.overallStatus] ?? "gray"}>
+                    {c.overallStatus}
+                  </Badge>
+                  <span className="text-xs font-semibold text-slate-600">
+                    #{c.checklistId}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {fDateTime(c.checkTime)}
+                  </span>
+                  {c.checkerName ? (
+                    <span className="text-xs text-slate-600">
+                      · {c.checkerName}
+                    </span>
+                  ) : null}
+                  {c.readingValue != null && c.readingValue !== "" ? (
+                    <span className="text-xs tabular-nums text-slate-700">
+                      · Đồng hồ: {fNumber(c.readingValue)} h
+                    </span>
+                  ) : null}
+                </div>
+                {c.notes ? (
+                  <p className="mt-2 text-slate-800 whitespace-pre-wrap leading-relaxed border-t border-slate-200/80 pt-2">
+                    {c.notes}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-400 italic">
+                    Không có ghi chú hiện trường.
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 flex justify-end">
+            <Link
+              to={`/checklists?assetId=${wo.assetId}`}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-900"
+            >
+              <ClipboardList size={16} aria-hidden />
+              Mở trang checklist / QR thiết bị
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {wo.recentChecklistsEligible &&
+        (!wo.recentChecklists || wo.recentChecklists.length === 0) &&
+        ["WAITING", "IN_PROGRESS", "PAUSED", "AWAITING_CLOSURE"].includes(
+          wo.status,
+        ) && (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-xs text-slate-600 flex gap-2 items-start">
+            <ClipboardList
+              size={16}
+              className="shrink-0 text-slate-400 mt-0.5"
+              aria-hidden
+            />
+            <p>Chưa có checklist đã duyệt gần đây cho thiết bị này.</p>
+          </div>
+        )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card title="Thông tin phiếu" className="lg:col-span-2">
           <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
@@ -761,10 +925,8 @@ export function WorkOrderDetailPage() {
 
       {canEditClosureDraft && (
         <Card title="Ghi chú hiện trường & vật tư (lưu nháp)">
-          <p className="text-xs text-gray-600 leading-relaxed mb-4">
-            Nhập trong lúc chờ hoặc đang làm; bấm <strong>Lưu nháp</strong> để
-            không mất dữ liệu. Khi <strong>Báo hoàn thành</strong>, nội dung này
-            được gửi kèm (có thể chỉnh trong form trước khi gửi).
+          <p className="text-xs text-gray-500 mb-3">
+            Lưu nháp khi làm; khi báo hoàn thành nội dung gửi kèm phiếu.
           </p>
           <div className="space-y-4">
             <Textarea
@@ -974,10 +1136,8 @@ export function WorkOrderDetailPage() {
         size="lg"
       >
         <div className="space-y-4">
-          <p className="text-xs text-gray-600 leading-relaxed">
-            Trưởng ca / Trưởng phòng sẽ đọc <strong>ghi chú và vật tư</strong> bên
-            dưới, xem <strong>ảnh hiện trường</strong> trên phiếu, rồi nghiệm
-            thu. Giờ làm gợi ý đến thời điểm báo cáo (đã trừ tạm dừng).
+          <p className="text-xs text-gray-500">
+            Gửi ghi chú, vật tư và ảnh để Trưởng ca/TP nghiệm thu.
           </p>
           <Textarea
             label="Ghi chú hiện trường / việc đã làm *"
@@ -1023,10 +1183,7 @@ export function WorkOrderDetailPage() {
         size="sm"
       >
         <div className="space-y-4">
-          <p className="text-xs text-gray-600">
-            Xác nhận đã kiểm tra (ảnh / hiện trường). Có thể chỉnh lại giờ thực
-            tế trước khi đóng.
-          </p>
+          <p className="text-xs text-gray-500">Xác nhận nghiệm thu; có thể chỉnh giờ thực tế.</p>
           <Input
             label="Giờ thực tế (tuỳ chọn)"
             type="text"
@@ -1061,13 +1218,10 @@ export function WorkOrderDetailPage() {
       >
         <div className="space-y-4">
           {twoStepApproval && pendingApprovalLog && (
-            <p className="text-xs text-gray-600 leading-relaxed rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
+            <p className="text-xs text-gray-600 rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
               Bước {pendingApprovalLog.currentLevel}/{pendingApprovalLog.totalLevels}
-              {pendingApprovalLog.stepPositionName
-                ? ` — ${pendingApprovalLog.stepPositionName}`
-                : ""}
-              {Number(pendingApprovalLog.currentLevel) === 2 &&
-                ` · ${tpStepName} có thể chọn lại người phân công khi duyệt.`}
+              {pendingApprovalLog.stepPositionName ? ` — ${pendingApprovalLog.stepPositionName}` : ""}
+              {Number(pendingApprovalLog.currentLevel) === 2 ? ` · ${tpStepName} có thể đổi người phân công khi duyệt.` : ""}
             </p>
           )}
           <Select
@@ -1139,6 +1293,26 @@ export function WorkOrderDetailPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={editWoOpen}
+        onClose={() => setEditWoOpen(false)}
+        title="Chỉnh sửa phiếu (trước khi gửi lại phê duyệt)"
+        size="lg"
+      >
+        {wo && (
+          <WorkOrderForm
+            wo={wo}
+            assets={woEditAssets}
+            onSuccess={() => {
+              setEditWoOpen(false);
+              toast.success("Đã cập nhật phiếu — bấm «Gửi lại phê duyệt» khi sẵn sàng.");
+              load();
+            }}
+            onCancel={() => setEditWoOpen(false)}
+          />
+        )}
       </Modal>
     </div>
   );

@@ -21,6 +21,24 @@ mkdirSync(UPLOAD_DIR,       { recursive: true });
 mkdirSync(UPLOAD_PHOTO_DIR, { recursive: true });
 mkdirSync(UPLOAD_WO_DIR,    { recursive: true });
 
+/**
+ * Chuẩn hoá giá trị FilePath trong DB: chỉ tên file trong uploads/documents/.
+ * Hỗ trợ bản ghi cũ lưu full path (Windows/Linux).
+ */
+export function documentStoredBasename(stored) {
+  if (stored == null || stored === '') return '';
+  const norm = String(stored).replace(/\\/g, '/');
+  const parts = norm.split('/').filter((p) => p.length > 0);
+  return parts[parts.length - 1] ?? '';
+}
+
+/** Đường dẫn tuyệt đối tới file trên đĩa (xoá file, job nội bộ). */
+export function resolveDocumentAbsolutePath(stored) {
+  const name = documentStoredBasename(stored);
+  if (!name) return null;
+  return join(UPLOAD_DIR, name);
+}
+
 // ── Helper tên file ────────────────────────────────────────────────────────
 const uniqueName = (file) => {
   const uid = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;

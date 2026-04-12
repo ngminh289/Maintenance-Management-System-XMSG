@@ -1,7 +1,9 @@
 /**
  * checklistResult.model.js — SQL thuần cho ChecklistResults + ChecklistDetails.
  * BFD mục 3: ReviewStatus (PENDING → APPROVED/REJECTED) sau khi Trưởng ca xử lý.
- * Dùng trong: services/checklist.service.js.
+ * Không còn cột PartsNotes (đã bỏ — migration 033); vật tư ghi trên WO / AssetMaintenanceHistory.
+ * findRecentApprovedByAsset: 3 bản ghi gần nhất cho tham khảo trên phiếu việc.
+ * Dùng trong: services/checklist.service.js, workOrder.service.js.
  */
 import { getPool } from '../config/database.js';
 
@@ -12,12 +14,11 @@ export async function create({
   overallStatus,
   evidencePhoto,
   notes,
-  partsNotes,
   readingValue,
 }) {
   const [result] = await getPool().query(
-    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, PartsNotes, ReadingValue, ReviewStatus)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, ReadingValue, ReviewStatus)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
     [
       assetId,
       woId || null,
@@ -25,9 +26,6 @@ export async function create({
       overallStatus,
       evidencePhoto || null,
       notes || null,
-      partsNotes != null && String(partsNotes).trim() !== ""
-        ? String(partsNotes).trim()
-        : null,
       readingValue ?? null,
     ],
   );
@@ -49,7 +47,7 @@ export async function findById(id) {
       `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
               cr.WO_ID AS woId, cr.CheckerID AS checkerId, e.FullName AS checkerName,
               cr.OverallStatus AS overallStatus, cr.EvidencePhoto AS evidencePhoto,
-              cr.Notes AS notes, cr.PartsNotes AS partsNotes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime,
+              cr.Notes AS notes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime,
               cr.ReviewStatus AS reviewStatus, cr.ReviewedBy AS reviewedBy,
               er.FullName AS reviewerName, cr.ReviewedAt AS reviewedAt,
               cr.SupervisorNotes AS supervisorNotes
@@ -74,12 +72,60 @@ export async function findById(id) {
 export async function findByAsset(assetId, limit = 20) {
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
-            cr.CheckTime AS checkTime, cr.Notes AS notes, cr.PartsNotes AS partsNotes, e.FullName AS checkerName,
-            cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus
+            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus,
+            cr.CheckerID AS checkerId
      FROM ChecklistResults cr
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
      WHERE cr.AssetID = ? ORDER BY cr.CheckTime DESC LIMIT ?`,
     [assetId, limit],
+  );
+  return rows;
+}
+
+/**
+ * Công nhân (level ≤1): chỉ APPROVED (mọi người) + toàn bộ phiếu của mình (mọi ReviewStatus).
+ * NVKT+ (level ≥2): giống findByAsset — xem tất cả.
+ */
+export async function findByAssetVisibleTo(
+  assetId,
+  limit = 20,
+  { employeeId, positionLevel } = {},
+) {
+  const n = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const lvl = Number(positionLevel) || 0;
+  if (lvl >= 2) {
+    return findByAsset(assetId, n);
+  }
+  const [rows] = await getPool().query(
+    `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
+            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus,
+            cr.CheckerID AS checkerId
+     FROM ChecklistResults cr
+     JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     WHERE cr.AssetID = ?
+       AND (cr.ReviewStatus = 'APPROVED' OR cr.CheckerID = ?)
+     ORDER BY cr.CheckTime DESC
+     LIMIT ?`,
+    [assetId, Number(employeeId), n],
+  );
+  return rows;
+}
+
+/** Chỉ APPROVED — dùng làm tài liệu tham khảo an toàn cho thợ trên phiếu việc. */
+export async function findRecentApprovedByAsset(assetId, limit = 3) {
+  const n = Math.min(Math.max(Number(limit) || 3, 1), 10);
+  const [rows] = await getPool().query(
+    `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
+            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.ReadingValue AS readingValue
+     FROM ChecklistResults cr
+     JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     WHERE cr.AssetID = ? AND cr.ReviewStatus = 'APPROVED'
+     ORDER BY cr.CheckTime DESC
+     LIMIT ?`,
+    [assetId, n],
   );
   return rows;
 }
@@ -98,7 +144,7 @@ export async function findPendingReview(limit = 50) {
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
             cr.OverallStatus AS overallStatus, cr.CheckTime AS checkTime,
-            cr.Notes AS notes, cr.PartsNotes AS partsNotes, cr.ReadingValue AS readingValue,
+            cr.Notes AS notes, cr.ReadingValue AS readingValue,
             cr.CheckerID AS checkerId, e.FullName AS checkerName
      FROM ChecklistResults cr
      JOIN Assets a ON a.AssetID = cr.AssetID

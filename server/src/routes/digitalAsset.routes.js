@@ -1,19 +1,34 @@
 /**
  * digitalAsset.routes.js — /api/digital-assets.
  * Phân quyền nghiêm ngặt theo RBAC.
- * Gửi duyệt: SUBMIT (NV KT + Admin — BFD 4.1). Upload/phiên bản: CREATE/UPDATE.
+ * Gửi duyệt: SUBMIT (NV Kỹ thuật — BFD 4). Upload/phiên bản: CREATE/UPDATE (không áp dụng khi PENDING — service).
+ * GET|POST /:id/feedback — phản hồi tài liệu (CREATE trừ NV KT — migration 038).
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { uploadDocument }    from '../config/upload.js';
 import * as ctrl from '../controllers/digitalAsset.controller.js';
+import * as fbCtrl from '../controllers/documentFeedback.controller.js';
 
 export const digitalAssetRouter = Router();
 
 digitalAssetRouter.use(requireAuth);
 
 digitalAssetRouter.get('/',    ctrl.getAll);
+
+// Phản hồi / góp ý tài liệu (READ mọi vai có quyền; CREATE trừ NV KT — migration 038)
+digitalAssetRouter.get(
+  '/:id/feedback',
+  requirePermission('DOCUMENT_FEEDBACK', 'READ'),
+  fbCtrl.listForAsset,
+);
+digitalAssetRouter.post(
+  '/:id/feedback',
+  requirePermission('DOCUMENT_FEEDBACK', 'CREATE'),
+  fbCtrl.createForAsset,
+);
+
 digitalAssetRouter.get('/:id', ctrl.getById);
 
 // Upload tài liệu mới — Kỹ thuật viên trở lên

@@ -1,6 +1,7 @@
 /**
  * Topbar.jsx — Thanh tiêu đề top với chuông thông báo + user menu.
  * RBAC: không có link admin riêng (điều hướng theo Sidebar + canAccess); không cần ẩn thêm.
+ * Nhãn loại thông báo: DOCUMENT_FEEDBACK_* (migration 039) + các loại hệ thống.
  */
 import { useState, useEffect, useRef } from 'react';
 import { Menu, Bell, LogOut, User } from 'lucide-react';
@@ -8,6 +9,17 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { notificationApi } from '../../api/notification.api.js';
 import { fFromNow } from '../../utils/format.js';
+
+const NOTIFICATION_TYPE_LABEL = {
+  MAINTENANCE_DUE: 'Lịch bảo trì',
+  APPROVAL_REQUEST: 'Phê duyệt',
+  WORK_ORDER_ASSIGNED: 'Phiếu việc',
+  WORK_ORDER_COMPLETED: 'Phiếu việc',
+  SYSTEM_ALERT: 'Hệ thống',
+  TASK_OVERDUE: 'Quá hạn',
+  DOCUMENT_FEEDBACK_NEW: 'Góp ý tài liệu (mới)',
+  DOCUMENT_FEEDBACK_STATUS: 'Góp ý tài liệu (cập nhật)',
+};
 
 function NotificationDropdown({ onClose }) {
   const [items, setItems]   = useState([]);
@@ -35,12 +47,20 @@ function NotificationDropdown({ onClose }) {
         {items.length === 0 && (
           <p className="text-sm text-gray-500 text-center py-8">Không có thông báo</p>
         )}
-        {items.map(n => (
-          <div key={n.notificationId} className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${!n.isRead ? 'bg-blue-50' : ''}`}>
-            <p className="text-sm font-semibold text-gray-900 leading-snug">{n.message}</p>
-            <p className="text-xs font-medium text-gray-600 mt-1">{fFromNow(n.createdAt)}</p>
-          </div>
-        ))}
+        {items.map(n => {
+          const id = n.notiId ?? n.notificationId;
+          const typeLabel = NOTIFICATION_TYPE_LABEL[n.type] ?? n.type ?? 'Thông báo';
+          return (
+            <div
+              key={id}
+              className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${!n.isRead ? 'bg-blue-50' : ''}`}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 mb-1">{typeLabel}</p>
+              <p className="text-sm font-semibold text-gray-900 leading-snug">{n.message}</p>
+              <p className="text-xs font-medium text-gray-600 mt-1">{fFromNow(n.createdAt)}</p>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -53,12 +73,18 @@ export function Topbar({ onMenuClick, title }) {
   const [showUser,  setShowUser]  = useState(false);
   const [unread,    setUnread]    = useState(0);
 
+  const refreshUnread = () =>
+    notificationApi.getUnread().then(r => setUnread(r.data.data?.count ?? 0)).catch(() => {});
+
   useEffect(() => {
-    const fetch = () => notificationApi.getUnread().then(r => setUnread(r.data.data?.count ?? 0)).catch(() => {});
-    fetch();
-    const iv = setInterval(fetch, 30000);
+    refreshUnread();
+    const iv = setInterval(refreshUnread, 30000);
     return () => clearInterval(iv);
   }, []);
+
+  useEffect(() => {
+    if (showNotif) refreshUnread();
+  }, [showNotif]);
 
   const handleLogout = async () => {
     await logout();

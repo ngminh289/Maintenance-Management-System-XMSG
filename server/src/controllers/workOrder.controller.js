@@ -17,7 +17,13 @@ export const getAll = asyncHandler(async (req, res) => {
 });
 
 export const getById = asyncHandler(async (req, res) =>
-  ok(res, await service.getById(req.params.id)),
+  ok(
+    res,
+    await service.getById(req.params.id, {
+      employeeId: req.user.sub,
+      positionLevel: req.user.positionLevel,
+    }),
+  ),
 );
 
 export const create = asyncHandler(async (req, res) =>

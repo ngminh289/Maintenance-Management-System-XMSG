@@ -3,6 +3,7 @@
  * Đo thời gian làm: WorkStartedAt + PausedAccumulatedSec + PauseStartedAt → tính ActualHours khi COMPLETED (migration 021).
  * CounterBaselineResetAt/By: reset mốc giờ PM từ phiếu CORRECTIVE (migration 032).
  * Dùng trong: services/workOrder.service.js, checklist.service.js.
+ * findAll: thêm approvalHasPending, needsApprovalResubmit (JOIN logic ApprovalLogs).
  */
 import { getPool } from "../config/database.js";
 
@@ -40,6 +41,23 @@ const BASE_JOIN = `
   JOIN Locations l   ON l.LocationID    = a.LocationID
   LEFT JOIN Employees eReset ON eReset.EmployeeID = wo.CounterBaselineResetBy`;
 
+/** Cờ phê duyệt cho danh sách WO (UI): PENDING vs chờ gửi lại sau REQUEST_CHANGES. */
+const APPROVAL_LIST_FLAGS = `
+  , (EXISTS (
+      SELECT 1 FROM ApprovalLogs al_p
+      WHERE al_p.ResourceID = wo.WO_ID AND al_p.ResourceType = 'WORK_ORDER' AND al_p.Status = 'PENDING'
+    )) AS approvalHasPending
+  , (wo.Status = 'PENDING_APPROVAL'
+     AND NOT EXISTS (
+       SELECT 1 FROM ApprovalLogs al_np
+       WHERE al_np.ResourceID = wo.WO_ID AND al_np.ResourceType = 'WORK_ORDER' AND al_np.Status = 'PENDING'
+     )
+     AND EXISTS (
+       SELECT 1 FROM ApprovalLogs al_rc
+       WHERE al_rc.ResourceID = wo.WO_ID AND al_rc.ResourceType = 'WORK_ORDER' AND al_rc.Status = 'REQUEST_CHANGES'
+     )
+    ) AS needsApprovalResubmit`;
+
 export async function findAll({
   status,
   assetId,
@@ -76,7 +94,7 @@ export async function findAll({
   const pagination = limit != null ? "LIMIT ? OFFSET ?" : "";
   if (limit != null) params.push(limit, offset);
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${join} ${where} ORDER BY wo.Priority DESC, wo.PlannedDate ${pagination}`,
+    `SELECT ${COLS} ${APPROVAL_LIST_FLAGS} ${join} ${where} ORDER BY wo.Priority DESC, wo.PlannedDate ${pagination}`,
     params,
   );
   return rows;

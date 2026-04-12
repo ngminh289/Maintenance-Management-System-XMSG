@@ -12,6 +12,8 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { env } from './config/env.js';
+import { setUploadStaticHeaders } from './config/uploadsStaticHeaders.js';
+import { registerUploadsDocumentsGet } from './routes/uploadsDocuments.route.js';
 import { apiRouter } from './routes/index.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -46,8 +48,14 @@ export function createApp() {
   });
   app.use('/api', limiter);
 
-  // Serve uploaded files (e.g. /uploads/documents/file.pdf)
-  app.use('/uploads', express.static(join(__dirname, '..', 'uploads')));
+  // Tài liệu: sendFile + headers (inline PDF/ảnh) — phải trước express.static để không bị ghi đè header
+  registerUploadsDocumentsGet(app);
+  app.use(
+    '/uploads',
+    express.static(join(__dirname, '..', 'uploads'), {
+      setHeaders: (res, filePath) => setUploadStaticHeaders(res, filePath),
+    }),
+  );
 
   app.use('/api', apiRouter);
 

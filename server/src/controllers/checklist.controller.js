@@ -1,6 +1,7 @@
 /**
  * checklist.controller.js — HTTP handler: /api/checklists.
  * BFD mục 3: getPendingReviewResults + reviewChecklistResult (Trưởng ca APPROVE/REJECT).
+ * getQRInfo / getResults / getResultById / getResultsByAsset: truyền viewer — CN chỉ xem APPROVED + phiếu của mình.
  * Liên quan: services/checklist.service.js, routes/checklist.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -40,7 +41,13 @@ export const removeItem = asyncHandler(async (req, res) => {
 
 // ── QR Scan Info ───────────────────────────────────────────────────────────────
 export const getQRInfo = asyncHandler(async (req, res) =>
-  ok(res, await service.getQRInfo(req.params.assetId)));
+  ok(
+    res,
+    await service.getQRInfo(req.params.assetId, {
+      employeeId: req.user.sub,
+      positionLevel: req.user.positionLevel,
+    }),
+  ));
 
 // ── Results ───────────────────────────────────────────────────────────────────
 export const submitResult = asyncHandler(async (req, res) => {
@@ -57,13 +64,31 @@ export const submitResult = asyncHandler(async (req, res) => {
 });
 
 export const getResults = asyncHandler(async (req, res) =>
-  ok(res, await service.getResults(req.query)));
+  ok(
+    res,
+    await service.getResults(req.query, {
+      employeeId: req.user.sub,
+      positionLevel: req.user.positionLevel,
+    }),
+  ));
 
 export const getResultById = asyncHandler(async (req, res) =>
-  ok(res, await service.getResultById(req.params.id)));
+  ok(
+    res,
+    await service.getResultById(req.params.id, {
+      employeeId: req.user.sub,
+      positionLevel: req.user.positionLevel,
+    }),
+  ));
 
 export const getResultsByAsset = asyncHandler(async (req, res) =>
-  ok(res, await service.getResultsByAsset(req.params.assetId, req.query.limit)));
+  ok(
+    res,
+    await service.getResultsByAsset(req.params.assetId, req.query.limit, {
+      employeeId: req.user.sub,
+      positionLevel: req.user.positionLevel,
+    }),
+  ));
 
 export const getPendingReviewResults = asyncHandler(async (req, res) =>
   ok(res, await service.getPendingReviewResults(Number(req.query.limit) || 50)));

@@ -1,6 +1,6 @@
 /**
  * index.js — Gom tất cả route API /api/*.
- * Liên quan: app.js, mọi *.routes.js.
+ * Liên quan: app.js, mọi *.routes.js; /document-feedback (NV KT xử lý phản hồi tài liệu).
  */
 import { Router } from 'express';
 import { healthRouter }              from './health.routes.js';
@@ -17,7 +17,9 @@ import { approvalRouter }            from './approval.routes.js';
 import { checklistRouter }           from './checklist.routes.js';
 import { notificationRouter }        from './notification.routes.js';
 import { digitalAssetRouter }        from './digitalAsset.routes.js';
+import { documentFeedbackRouter }    from './documentFeedback.routes.js';
 import { tagRouter }                 from './tag.routes.js';
+import { documentCategoryRouter }    from './documentCategory.routes.js';
 import { maintenanceGroupRouter }    from './maintenanceGroup.routes.js';
 import { auditLogRouter }            from './auditLog.routes.js';
 import { workflowRouter }            from './workflow.routes.js';
@@ -38,6 +40,7 @@ apiRouter.use('/employees',            employeeRouter);
 apiRouter.use('/asset-types',          assetTypeRouter);
 apiRouter.use('/locations',            locationRouter);
 apiRouter.use('/tags',                 tagRouter);
+apiRouter.use('/document-categories',  documentCategoryRouter);
 
 // Operations
 apiRouter.use('/assets',               assetRouter);
@@ -46,6 +49,7 @@ apiRouter.use('/maintenance-groups',   maintenanceGroupRouter);
 apiRouter.use('/work-orders',          workOrderRouter);
 apiRouter.use('/checklists',           checklistRouter);
 apiRouter.use('/digital-assets',       digitalAssetRouter);
+apiRouter.use('/document-feedback',    documentFeedbackRouter);
 
 // Workflows & Approvals
 apiRouter.use('/workflows',            workflowRouter);

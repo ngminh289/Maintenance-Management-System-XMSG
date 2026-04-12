@@ -1,6 +1,6 @@
 /**
  * digitalAsset.controller.js — HTTP handler: /api/digital-assets.
- * Upload dùng multer (multipart/form-data).
+ * Upload dùng multer (multipart/form-data). FilePath trong DB = chỉ tên file (không lưu path tuyệt đối Windows).
  * Liên quan: services/digitalAsset.service.js, routes/digitalAsset.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -18,15 +18,18 @@ export const getById = asyncHandler(async (req, res) =>
 /** POST /api/digital-assets — multipart/form-data */
 export const upload = asyncHandler(async (req, res) => {
   if (!req.file) return fail(res, 'Chưa chọn file để upload', 400);
-  const { assetId, description, tagIds } = req.body;
+  const { assetId, description, tagIds, documentCategoryId } = req.body;
   const parsedTagIds = tagIds ? JSON.parse(tagIds) : [];
   const da = await service.create({
     fileName:   req.file.originalname,
     fileType:   extname(req.file.originalname).replace('.', '').toUpperCase(),
     assetId:    assetId ? Number(assetId) : null,
+    documentCategoryId: documentCategoryId != null && documentCategoryId !== ''
+      ? Number(documentCategoryId)
+      : null,
     description,
     uploadedBy: req.user.sub,
-    filePath:   req.file.path,
+    filePath:   req.file.filename,
     fileSizeKB: Math.ceil(req.file.size / 1024),
     tagIds:     parsedTagIds,
   });
@@ -50,7 +53,7 @@ export const getVersions = asyncHandler(async (req, res) => {
 export const newVersion = asyncHandler(async (req, res) => {
   if (!req.file) return fail(res, 'Chưa chọn file để upload', 400);
   const result = await service.addVersion(req.params.id, {
-    filePath:   req.file.path,
+    filePath:   req.file.filename,
     fileSizeKB: Math.ceil(req.file.size / 1024),
     changedBy:  req.user.sub,
     changeNote: req.body.changeNote,
