@@ -17,11 +17,11 @@ import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
 // roleKey → badge label hiển thị cạnh tên (TC / Trưởng phòng tách PositionID — rbac.js)
 const ROLE_BADGE = {
   admin:       { label: 'Admin',         color: 'bg-red-500' },
-  bGD:         { label: 'Ban GĐ',        color: 'bg-purple-500' },
+  bGD:         { label: 'GĐ',            color: 'bg-purple-500' },
   truongCa:    { label: 'Trưởng ca',     color: 'bg-blue-500' },
   truongPhong: { label: 'Trưởng phòng', color: 'bg-indigo-500' },
-  kyThuat:     { label: 'KT',            color: 'bg-teal-500' },
-  congNhan:    { label: 'CN',            color: 'bg-gray-500' },
+  kyThuat:     { label: 'CV KTS',        color: 'bg-teal-500' },
+  congNhan:    { label: 'KTV HT',        color: 'bg-gray-500' },
 };
 
 // Định nghĩa menu — routeKey phải khớp với key trong ROUTE_ACCESS (rbac.js)

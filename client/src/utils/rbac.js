@@ -1,17 +1,17 @@
 /**
  * rbac.js — Frontend RBAC theo Positions (DB) + level.
  *
- * Vai trò UI:
- *   1 — congNhan     : Công nhân
- *   2 — kyThuat      : Nhân viên Kỹ thuật (rule/nv_kythuat.rule)
+ * Vai trò UI (key code giữ congNhan/kyThuat; nhãn hiển thị: KTV hiện trường / Chuyên viên KTS):
+ *   1 — congNhan     : KTV hiện trường
+ *   2 — kyThuat      : Chuyên viên kỹ thuật số (rule/nv_kythuat.rule)
  *   truongCa    : Trưởng ca (PositionID 3; rule/truongca.rule)
  *   truongPhong : Trưởng phòng (PositionID 6, Level 3; duyệt bước 2 WO khẩn — migration 019)
  *   4 — admin        : Quản trị viên
  *   5 — bGD          : Ban Giám đốc
  *
  * Liên quan: Sidebar.jsx, DashboardPage.jsx, App.jsx; migration 019 (tách TC / Trưởng phòng).
- * ACTION_ACCESS DAM: DOCUMENT:SUBMIT chỉ NV KT (BFD 4); migration 034 dọn SUBMIT Admin.
- * Phản hồi tài liệu: DOCUMENT_FEEDBACK:CREATE mọi vai trừ NV KT; DOCUMENT_FEEDBACK:REVIEW chỉ NV KT (038).
+ * ACTION_ACCESS DAM: DOCUMENT:SUBMIT chỉ Chuyên viên KTS (BFD 4); migration 034 dọn SUBMIT Admin.
+ * Phản hồi tài liệu: DOCUMENT_FEEDBACK:CREATE mọi vai trừ CV KTS; DOCUMENT_FEEDBACK:REVIEW chỉ CV KTS (038).
  */
 
 // ── 1. Chuyển user thành role key ────────────────────────────────────────────
@@ -33,12 +33,12 @@ export function getRoleKey(user) {
 }
 
 export const ROLE_LABELS = {
-  congNhan: "Công nhân",
-  kyThuat: "Nhân viên KT",
+  congNhan: "KTV hiện trường",
+  kyThuat: "Chuyên viên KTS",
   truongCa: "Trưởng ca",
   truongPhong: "Trưởng phòng",
   admin: "Admin",
-  bGD: "Ban GĐ",
+  bGD: "Giám đốc",
 };
 
 export const ROLE_COLORS = {
@@ -64,17 +64,17 @@ export const TRUONG_CA_SUMMARY = {
 // ── 2. Quyền truy cập route (menu visibility) ────────────────────────────────
 // Thứ tự cột: [ congNhan, kyThuat, truongCa, admin, bGD ]
 const ROUTE_ACCESS = {
-  //              CN      KT     TC     AD     BGD
+  //              KTV HT  CV KTS TC     AD     BGD
   assets: [true, true, true, true, true], // tất cả xem tài sản
   schedules: [false, true, true, true, false], // KT + TC + Admin: lập lịch; TC gửi duyệt + duyệt (Approvals)
   "work-orders": [true, true, true, true, false], // Admin tạo WO chờ duyệt (4.1)
   /** QR / xem tài sản: mọi vai (kể cả Admin, Ban GĐ) — nộp checklist tách quyền CHECKLIST_RESULT:CREATE */
   checklists: [true, true, true, true, true],
-  /** §5.1 — chỉ NV KT + Trưởng ca/Trưởng phòng quản lý mẫu theo loại */
+  /** §5.1 — chỉ Chuyên viên KTS + Trưởng ca/Trưởng phòng quản lý mẫu theo loại */
   "checklist-manage": [false, true, true, false, false],
   /** DAM: CN/KT/TC/Admin/BGD đọc kho; upload/SUBMIT/phiên bản chỉ KT (ACTION_ACCESS). */
   documents: [true, true, true, true, true],
-  /** Hàng đợi phản hồi / góp ý tài liệu — chỉ NV KT (xem xét). */
+  /** Hàng đợi phản hồi / góp ý tài liệu — chỉ Chuyên viên KTS (xem xét). */
   'document-feedback-inbox': [false, true, false, false, false],
   workflows: [false, false, false, true, false], // mẫu luồng phê duyệt — Admin C/U (4.1)
   approvals: [false, false, true, false, false], // chỉ Trưởng ca xử lý hàng chờ duyệt; Ban GĐ chỉ R (báo cáo)
@@ -102,14 +102,14 @@ export function canAccess(user, routeKey) {
 // ── 3. Quyền hành động (UI button visibility) ────────────────────────────────
 // Thứ tự cột: [ congNhan, kyThuat, truongCa, admin, bGD ]
 const ACTION_ACCESS = {
-  //                              CN      KT     TC     AD     BGD
+  //                              KTV HT  CV KTS TC     AD     BGD
   "ASSET:CREATE": [false, false, true, false, false],
   "ASSET:UPDATE": [false, true, true, false, false],
   "ASSET:DELETE": [false, false, true, false, false],
   "RUNTIME_LOG:CREATE": [true, false, false, false, false],
   "SCHEDULE:CREATE": [false, true, true, false, false],
   "SCHEDULE:UPDATE": [false, true, true, false, false],
-  /** Gửi lịch vào duyệt: NV KT + Trưởng ca/Trưởng phòng (cùng cột TC) + Admin. */
+  /** Gửi lịch vào duyệt: Chuyên viên KTS + Trưởng ca/Trưởng phòng (cùng cột TC) + Admin. */
   "SCHEDULE:SUBMIT": [false, true, true, true, false],
   "SCHEDULE:APPROVE": [false, false, true, false, false],
   /** DB chưa gán DELETE MAINTENANCE_PLAN cho role nào — ẩn nút xóa lịch. */
@@ -121,16 +121,16 @@ const ACTION_ACCESS = {
   "WORK_ORDER:APPROVE": [false, false, true, false, false], // TC (3) + Trưởng phòng (6): server kiểm tra đúng bước workflow
   "WORK_ORDER:DELETE": [false, false, false, false, false],
   "DOCUMENT:CREATE": [false, true, false, false, false],
-  /** Gửi bản nháp vào phê duyệt — SUBMIT API (BFD 4; chỉ Chuyên viên / NV KT). */
+  /** Gửi bản nháp vào phê duyệt — SUBMIT API (BFD 4; chỉ Chuyên viên KTS). */
   "DOCUMENT:SUBMIT": [false, true, false, false, false],
-  /** Phiên bản mới sau duyệt — UPDATE API (chỉ NV KT; Admin DAM chỉ READ). */
+  /** Phiên bản mới sau duyệt — UPDATE API (chỉ Chuyên viên KTS; Admin DAM chỉ READ). */
   "DOCUMENT:UPDATE": [false, true, false, false, false],
   "DOCUMENT:APPROVE": [false, false, true, false, false],
-  /** Danh mục tag (CRUD): chỉ NV KT (migration 035: DELETE TAG). */
+  /** Danh mục tag (CRUD): chỉ Chuyên viên KTS (migration 035: DELETE TAG). */
   "TAG:CREATE": [false, true, false, false, false],
   "TAG:UPDATE": [false, true, false, false, false],
   "TAG:DELETE": [false, true, false, false, false],
-  /** Phân loại tài liệu DAM — đọc danh mục: mọi role vào trang tài liệu; C/U/D: NV KT. */
+  /** Phân loại tài liệu DAM — đọc danh mục: mọi role vào trang tài liệu; C/U/D: Chuyên viên KTS. */
   "DOCUMENT_CATEGORY:READ": [true, true, true, true, true],
   "DOCUMENT_CATEGORY:CREATE": [false, true, false, false, false],
   "DOCUMENT_CATEGORY:UPDATE": [false, true, false, false, false],
@@ -152,14 +152,14 @@ const ACTION_ACCESS = {
   "WORKFLOW:CREATE": [false, false, false, true, false],
   "WORKFLOW:UPDATE": [false, false, false, true, false],
   "WORKFLOW:DELETE": [false, false, false, true, false],
-  /** Góp ý tài liệu: CN/TC/TP/Admin/BGD gửi; NV KT không gửi (server chặn CREATE). */
+  /** Góp ý tài liệu: KTV HT/TC/TP/Admin/BGD gửi; Chuyên viên KTS không gửi (server chặn CREATE). */
   "DOCUMENT_FEEDBACK:CREATE": [true, false, true, true, true],
-  /** NV KT cập nhật trạng thái / ghi chú xử lý. */
+  /** Chuyên viên KTS cập nhật trạng thái / ghi chú xử lý. */
   "DOCUMENT_FEEDBACK:REVIEW": [false, true, false, false, false],
 };
 
 export function canDo(user, action) {
-  /** Nộp checklist quét QR: chỉ Công nhân + Trưởng phòng (Trưởng ca / NV KT / Admin / BGD chỉ xem). */
+  /** Nộp checklist quét QR: chỉ KTV hiện trường + Trưởng phòng (Trưởng ca / CV KTS / Admin / BGD chỉ xem). */
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);
     return k === "congNhan" || k === "truongPhong";

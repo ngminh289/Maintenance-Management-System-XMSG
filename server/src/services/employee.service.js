@@ -9,6 +9,7 @@ import { createError } from "../utils/createError.js";
 import { getPagination, paginatedResult } from "../utils/paginate.js";
 import * as model from "../models/employee.model.js";
 import { MIN_ADMIN_POSITION_LEVEL } from "../constants/positions.js";
+import { departmentIdForPosition } from "../constants/orgUnits.js";
 import { normalizeLocalDateTimeForMysql } from "../utils/dateTimeMysql.js";
 
 const BCRYPT_ROUNDS = 12;
@@ -48,6 +49,14 @@ export async function create({
   const existing = await model.findByUsernameOrEmail(username, email);
   if (existing) throw createError("Username hoặc email đã tồn tại", 409);
 
+  const resolvedDept = departmentIdForPosition(Number(positionId));
+  if (resolvedDept == null) {
+    throw createError("Chức vụ không hợp lệ.", 400);
+  }
+  if (departmentId != null && Number(departmentId) !== resolvedDept) {
+    throw createError("Phòng ban không khớp với chức vụ đã chọn.", 400);
+  }
+
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const id = await model.create({
     fullName,
@@ -56,7 +65,7 @@ export async function create({
     email,
     phone: phone || null,
     positionId,
-    departmentId,
+    departmentId: resolvedDept,
     emailVerified: true,
     isActive: true,
     wasEverActivated: true,
@@ -96,7 +105,7 @@ export async function updateLeaveSchedule(
 }
 
 export async function update(id, fields) {
-  await getById(id);
+  const emp = await getById(id);
   if (fields.email) {
     const existing = await model.findByUsernameOrEmail(
       "__none__",
@@ -105,7 +114,27 @@ export async function update(id, fields) {
     if (existing && existing.employeeId !== Number(id))
       throw createError("Email đã được dùng", 409);
   }
-  await model.update(id, fields);
+
+  const nextPos =
+    fields.positionId !== undefined
+      ? Number(fields.positionId)
+      : Number(emp.positionId);
+  const expectedDept = departmentIdForPosition(nextPos);
+  if (expectedDept == null) {
+    throw createError("Chức vụ không hợp lệ.", 400);
+  }
+  const payload = { ...fields };
+  if (fields.positionId !== undefined) {
+    payload.departmentId = expectedDept;
+  }
+  if (
+    fields.departmentId !== undefined &&
+    Number(fields.departmentId) !== expectedDept
+  ) {
+    throw createError("Phòng ban không khớp với chức vụ đã chọn.", 400);
+  }
+
+  await model.update(id, payload);
   return model.findById(id);
 }
 

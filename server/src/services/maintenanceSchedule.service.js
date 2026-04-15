@@ -1,8 +1,8 @@
 /**
  * maintenanceSchedule.service.js — Nghiệp vụ lập lịch bảo trì + tạo WorkOrder từ lịch.
- * Hỗ trợ 2 loại tần suất:
- *   - HOURS   : tích hợp với AssetCounters (assetCounter.service.js)
- *   - DAYS/WEEKS/MONTHS/YEARS : lịch theo ngày — tự tính NextDueDate, cảnh báo trước N ngày
+ * Hai kiểu nghiệp vụ:
+ *   - Định kỳ: DAYS/WEEKS/MONTHS/YEARS — NextDueDate, scheduler + nút tạo WO từ lịch.
+ *   - Dự báo: HOURS — ngưỡng giờ chạy; WO do assetCounter.recordReading khi vượt ngưỡng (không generateWorkOrder từ lịch).
  * Luồng phê duyệt lịch (quy trình đề tài):
  *   DRAFT | REJECTED → gửi SUBMIT → PENDING_APPROVAL → Trưởng ca duyệt → PENDING (chờ TH) | REJECTED | DRAFT (yêu cầu sửa)
  * Liên quan: models/maintenanceSchedule.model.js, services/notification.service.js.
@@ -178,6 +178,12 @@ export async function updateStatus(id, status, opts = {}) {
  */
 export async function generateWorkOrder(scheduleId, createdBy) {
   const schedule = await getById(scheduleId);
+  if (schedule.frequencyUnit === "HOURS") {
+    throw createError(
+      "Lịch dự báo theo giờ không tạo phiếu từ lịch — phiếu PM tự sinh khi vượt ngưỡng giờ chạy (bộ đếm tài sản).",
+      400,
+    );
+  }
   if (!["PENDING", "IN_PROGRESS", "OVERDUE"].includes(schedule.status)) {
     throw createError(
       "Chỉ tạo WO từ lịch đã phê duyệt (đang chờ thực hiện / đang TH / quá hạn)",

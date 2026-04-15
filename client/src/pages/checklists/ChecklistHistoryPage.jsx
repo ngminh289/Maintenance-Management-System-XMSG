@@ -1,6 +1,6 @@
 /**
  * ChecklistHistoryPage.jsx — Danh sách kết quả checklist (mọi role đăng nhập có menu Checklist).
- * Công nhân: chỉ thấy phiếu APPROVED (mọi người) + toàn bộ phiếu do mình nộp (mọi trạng thái) — khớp backend.
+ * KTV hiện trường: chỉ thấy phiếu APPROVED (mọi người) + toàn bộ phiếu do mình nộp (mọi trạng thái) — khớp backend.
  * NVKT+: xem toàn bộ. Xem chi tiết trong modal (đọc, không duyệt).
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -170,7 +170,7 @@ export function ChecklistHistoryPage() {
 
       {isWorker && (
         <div className="rounded-xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-950">
-          <p className="font-semibold text-blue-900">Quyền xem (công nhân)</p>
+          <p className="font-semibold text-blue-900">Quyền xem (KTV hiện trường)</p>
           <p className="mt-1 leading-relaxed">
             Bạn thấy các phiếu <strong>đã được duyệt (APPROVED)</strong> của mọi
             người (để tham khảo) và <strong>mọi phiếu do bạn nộp</strong> — kể cả
@@ -196,7 +196,7 @@ export function ChecklistHistoryPage() {
 
       {!isWorker && (
         <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-700">
-          <p className="font-semibold text-slate-800">NV Kỹ thuật / Giám sát</p>
+          <p className="font-semibold text-slate-800">Chuyên viên KTS / Giám sát</p>
           <p className="mt-1">
             Bạn xem <strong>toàn bộ</strong> kết quả checklist trong hệ thống
             (theo phân trang). Duyệt phiếu chờ tại{" "}

@@ -2,6 +2,7 @@
  * auth.controller.js — HTTP handler: /api/auth/*.
  * Chỉ xử lý request/response + cookie. Logic trong auth.service.js.
  * function.rule: JWT + refreshToken httpOnly cookie, verify Gmail, quên mật khẩu.
+ * Không endpoint đăng ký công khai — tạo user qua employee (Admin).
  * Liên quan: services/auth.service.js, utils/cookie.js, routes/auth.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -10,11 +11,6 @@ import { setTokenCookies, clearTokenCookies, REFRESH_COOKIE } from '../utils/coo
 import { logAction } from '../utils/audit.js';
 import * as authService     from '../services/auth.service.js';
 import * as employeeService from '../services/employee.service.js';
-
-export const register = asyncHandler(async (req, res) => {
-  const data = await authService.register(req.body);
-  return ok(res, { ...data, message: 'Đăng ký thành công. Kiểm tra email để xác thực tài khoản.' }, 201);
-});
 
 export const login = asyncHandler(async (req, res) => {
   // Normalize: chấp nhận identifier | email | username
@@ -75,7 +71,6 @@ export const changePassword = asyncHandler(async (req, res) => {
 });
 
 // Giữ để không break routes cũ (đã thay thế hết)
-export const postRegister = register;
 export const postLogin = login;
 export const postVerifyEmail = verifyEmail;
 export const postForgotPassword = forgotPassword;

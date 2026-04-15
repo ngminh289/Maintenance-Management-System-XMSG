@@ -1,7 +1,7 @@
 /**
  * ChecklistPage.jsx — QR: mọi user đăng nhập xem thông tin tài sản + SOP + lịch sử.
- * Nộp checklist: chỉ Công nhân + Trưởng phòng (CHECKLIST_RESULT:CREATE).
- * Đồng hồ chạy: hiển thị rõ LastReadingValue từ API; nhập mới phải ≥ giá trị đó (client + server submitResult).
+ * Nộp checklist: chỉ KTV hiện trường + Trưởng phòng (CHECKLIST_RESULT:CREATE).
+ * Đồng hồ: chỉ số máy (LastReading) ≠ tổng delta (TotalAccumulated) ≠ mốc sau PM (LastMaintenanceTotal); nhập mới ≥ LastReading.
  * Vật tư/linh kiện không nhập trên checklist — ghi trên phiếu việc (WO) khi bảo trì.
  * Gợi ý đánh giá tổng thể (WARNING/NG) theo ngưỡng mẫu: Numeric/Range ngoài min-max; PassFail «Không đạt».
  * BFD mục 3: sau khi gửi → TC/TP tiếp nhận tại /checklists/review.
@@ -269,7 +269,7 @@ export function ChecklistPage() {
         <p className="leading-relaxed text-indigo-900/90">
           <strong>Mọi người</strong> có thể nhập mã / quét QR để xem{" "}
           <strong>thông tin tài sản</strong>, tài liệu SOP và lịch sử. Chỉ{" "}
-          <strong>công nhân</strong> và <strong>trưởng phòng</strong> mới{" "}
+          <strong>KTV hiện trường</strong> và <strong>trưởng phòng</strong> mới{" "}
           <strong>gửi checklist</strong> kiểm tra từ đây. Sau khi gửi,{" "}
           <strong>trưởng ca hoặc trưởng phòng</strong> xử lý tại &quot;Tiếp nhận
           checklist&quot; rồi hệ thống mới cập nhật trạng thái / phiếu việc.
@@ -281,7 +281,7 @@ export function ChecklistPage() {
           >
             Danh sách checklist (phân trang, xem chi tiết)
           </Link>{" "}
-          — công nhân chỉ thấy phiếu đã duyệt + phiếu của mình.
+          — KTV hiện trường chỉ thấy phiếu đã duyệt + phiếu của mình.
         </p>
       </div>
 
@@ -481,8 +481,16 @@ export function ChecklistPage() {
                       const rc = qrData.runtimeCounter ?? {
                         lastReadingValue: 0,
                         totalAccumulatedHours: 0,
+                        lastMaintenanceTotal: 0,
+                        averageHoursPerDay: 0,
+                        estimatedNextPMDate: null,
                         lastUpdated: null,
                       };
+                      const hoursSincePm = Math.max(
+                        0,
+                        Number(rc.totalAccumulatedHours) -
+                          Number(rc.lastMaintenanceTotal),
+                      );
                       return (
                         <div className="sm:col-span-2 flex gap-3 rounded-xl border-2 border-sky-300/80 bg-gradient-to-br from-sky-50 to-white p-4 shadow-sm">
                           <Gauge
@@ -490,27 +498,67 @@ export function ChecklistPage() {
                             className="text-sky-600 shrink-0 mt-0.5"
                             aria-hidden
                           />
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 space-y-2">
                             <p className="text-xs font-semibold text-sky-900 uppercase tracking-wide">
-                              Đồng hồ giờ chạy — chỉ số đang lưu
+                              Bộ đếm giờ chạy
                             </p>
-                            <p className="text-2xl font-bold text-sky-950 tabular-nums mt-1 leading-tight">
-                              {fNumber(rc.lastReadingValue)}{" "}
-                              <span className="text-base font-semibold">
-                                giờ
-                              </span>
-                            </p>
-                            <p className="text-xs text-sky-900/85 mt-2 leading-relaxed">
-                              {rc.lastUpdated
-                                ? `Cập nhật lần cuối: ${fDateTime(rc.lastUpdated)}. Khi nộp checklist, nhập chỉ số trên máy phải ≥ ${fNumber(rc.lastReadingValue)} giờ.`
-                                : "Chưa có lần ghi trước — có thể nhập chỉ số ≥ 0 ở tab Checklist."}
-                            </p>
-                            {Number(rc.totalAccumulatedHours) > 0 ? (
-                              <p className="text-xs text-sky-800/70 mt-1">
-                                Tích lũy hệ thống (delta):{" "}
-                                {fNumber(rc.totalAccumulatedHours)} giờ
+                            <div>
+                              <p className="text-[11px] font-medium text-sky-800/90">
+                                Chỉ số đồng hồ máy (lần ghi cuối)
+                              </p>
+                              <p className="text-2xl font-bold text-sky-950 tabular-nums leading-tight">
+                                {fNumber(rc.lastReadingValue)}{" "}
+                                <span className="text-base font-semibold">
+                                  giờ
+                                </span>
+                              </p>
+                            </div>
+                            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-sky-950">
+                              <div className="rounded-lg bg-white/70 border border-sky-100/80 px-2 py-1.5">
+                                <dt className="text-[10px] font-semibold text-sky-700 uppercase">
+                                  Tổng tích lũy (delta)
+                                </dt>
+                                <dd className="font-bold tabular-nums">
+                                  {fNumber(rc.totalAccumulatedHours)} h
+                                </dd>
+                                <dd className="text-[10px] text-sky-800/80 mt-0.5 leading-snug">
+                                  Cộng dồn mỗi lần nhập chỉ số mới
+                                </dd>
+                              </div>
+                              <div className="rounded-lg bg-white/70 border border-sky-100/80 px-2 py-1.5">
+                                <dt className="text-[10px] font-semibold text-sky-700 uppercase">
+                                  Mốc sau PM (theo giờ)
+                                </dt>
+                                <dd className="font-bold tabular-nums">
+                                  {fNumber(rc.lastMaintenanceTotal)} h
+                                </dd>
+                                <dd className="text-[10px] text-sky-800/80 mt-0.5 leading-snug">
+                                  Reset khi hoàn thành PM định kỳ/dự báo
+                                </dd>
+                              </div>
+                              <div className="sm:col-span-2 rounded-lg bg-sky-100/50 border border-sky-200/80 px-2 py-1.5">
+                                <dt className="text-[10px] font-semibold text-sky-800 uppercase">
+                                  Giờ chạy kể từ mốc PM (dùng so ngưỡng lịch giờ)
+                                </dt>
+                                <dd className="font-bold tabular-nums text-sky-950">
+                                  {fNumber(hoursSincePm)} h
+                                </dd>
+                              </div>
+                            </dl>
+                            {rc.estimatedNextPMDate ? (
+                              <p className="text-[11px] text-sky-900/90">
+                                PM dự báo:{" "}
+                                <strong>{fDate(rc.estimatedNextPMDate)}</strong>
+                                {Number(rc.averageHoursPerDay) > 0
+                                  ? ` · TB ${fNumber(rc.averageHoursPerDay)} h/ngày`
+                                  : ""}
                               </p>
                             ) : null}
+                            <p className="text-xs text-sky-900/85 leading-relaxed">
+                              {rc.lastUpdated
+                                ? `Cập nhật lần cuối: ${fDateTime(rc.lastUpdated)}. Khi nộp checklist, chỉ số máy phải ≥ ${fNumber(rc.lastReadingValue)} h.`
+                                : "Chưa có lần ghi trước — có thể nhập chỉ số ≥ 0 ở tab Checklist."}
+                            </p>
                           </div>
                         </div>
                       );
@@ -552,16 +600,18 @@ export function ChecklistPage() {
                     {/* Đồng hồ giờ chạy */}
                     <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 space-y-3">
                       <p className="text-sm font-semibold text-sky-950">
-                        Chỉ số đồng hồ trên máy (tuỳ chọn)
+                        Nhập chỉ số đồng hồ máy (tuỳ chọn)
                       </p>
                       <p className="text-xs text-sky-900/90 leading-relaxed">
-                        Trong hệ thống đang lưu:{" "}
+                        Đây là <strong>chỉ số tổng trên màn hình máy</strong>, khác với{" "}
+                        <strong>tổng tích lũy (delta)</strong> và{" "}
+                        <strong>mốc sau PM</strong> ở tab Tài sản phía trên. Trong hệ thống
+                        đang lưu chỉ số cuối:{" "}
                         <strong className="tabular-nums text-sky-950">
-                          {fNumber(runtimeMinReading)} giờ
+                          {fNumber(runtimeMinReading)} h
                         </strong>
                         . Nếu nhập, giá trị mới{" "}
-                        <strong>không được nhỏ hơn</strong> số này (đồng bộ với
-                        lần ghi trước).
+                        <strong>không được nhỏ hơn</strong> số này.
                       </p>
                       <Input
                         label={`Nhập chỉ số hiện tại trên màn hình máy (tối thiểu ${fNumber(runtimeMinReading)})`}
@@ -789,7 +839,7 @@ export function ChecklistPage() {
                         mẫu checklist: trang{" "}
                         <strong>Mẫu checklist (theo loại)</strong>.
                         <strong> Gửi kết quả kiểm tra</strong> chỉ dành cho{" "}
-                        <strong>công nhân</strong> hoặc{" "}
+                        <strong>KTV hiện trường</strong> hoặc{" "}
                         <strong>trưởng phòng</strong>.
                       </p>
                     )}
@@ -973,7 +1023,7 @@ export function ChecklistPage() {
                     <p className="text-xs text-gray-600 mb-4 -mt-1 leading-relaxed">
                       {isWorker ? (
                         <>
-                          <strong>Công nhân:</strong> danh sách gồm phiếu{" "}
+                          <strong>KTV hiện trường:</strong> danh sách gồm phiếu{" "}
                           <strong>đã duyệt (APPROVED)</strong> của mọi người và{" "}
                           <strong>mọi phiếu do bạn nộp</strong> (kể cả chờ / từ
                           chối).{" "}

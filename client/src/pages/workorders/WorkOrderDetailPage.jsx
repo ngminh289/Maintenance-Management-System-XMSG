@@ -623,7 +623,7 @@ export function WorkOrderDetailPage() {
           </p>
           {!canResubmitApproval && !canEditPendingResubmit && (
             <p className="mt-2 text-xs text-amber-800/90">
-              Cần quyền cập nhật phiếu / tạo &amp; gửi duyệt (NV KT…) để thao tác tại đây.
+              Cần quyền cập nhật phiếu / tạo &amp; gửi duyệt (Chuyên viên KTS…) để thao tác tại đây.
             </p>
           )}
         </div>
@@ -748,8 +748,8 @@ export function WorkOrderDetailPage() {
               Chưa phân công người hiện trường
             </p>
             <p className="mt-1 leading-relaxed">
-              Bấm <strong>Phân công</strong> và chọn <strong>Công nhân</strong>{" "}
-              hoặc <strong>Nhân viên Kỹ thuật</strong>.
+              Bấm <strong>Phân công</strong> và chọn <strong>KTV hiện trường</strong>{" "}
+              hoặc <strong>Chuyên viên kỹ thuật số</strong>.
             </p>
             <Link
               to={`/checklists?assetId=${wo.assetId}`}
@@ -1096,7 +1096,7 @@ export function WorkOrderDetailPage() {
       >
         <div className="space-y-4">
           <p className="text-xs text-gray-600 leading-relaxed">
-            Công nhân / NV Kỹ thuật thực hiện tại hiện trường.
+            KTV hiện trường / Chuyên viên KTS thực hiện tại hiện trường.
           </p>
           <Select
             label="Nhân viên thực hiện"

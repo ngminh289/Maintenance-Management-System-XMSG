@@ -207,7 +207,7 @@ export async function updatePassword(id, passwordHash) {
   );
 }
 
-/** Danh sách EmployeeID đang hoạt động theo PositionID (VD: 2 = NV Kỹ thuật — thông báo phản hồi tài liệu). */
+/** Danh sách EmployeeID đang hoạt động theo PositionID (VD: 2 = Chuyên viên KTS — thông báo phản hồi tài liệu). */
 export async function findActiveEmployeeIdsByPositionId(positionId) {
   const [rows] = await getPool().query(
     `SELECT EmployeeID AS employeeId FROM Employees

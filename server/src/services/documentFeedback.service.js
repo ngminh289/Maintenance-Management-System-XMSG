@@ -1,6 +1,6 @@
 /**
- * documentFeedback.service.js — Nghiệp vụ phản hồi tài liệu: tạo, danh sách, NV KT cập nhật trạng thái.
- * Thông báo: DOCUMENT_FEEDBACK_NEW → mọi NV KT; DOCUMENT_FEEDBACK_STATUS → người góp ý (migration 039).
+ * documentFeedback.service.js — Nghiệp vụ phản hồi tài liệu: tạo, danh sách, Chuyên viên KTS cập nhật trạng thái.
+ * Thông báo: DOCUMENT_FEEDBACK_NEW → mọi Chuyên viên KTS; DOCUMENT_FEEDBACK_STATUS → người góp ý (migration 039).
  * Liên quan: models/documentFeedback.model.js, digitalAsset.model.js, notification.service.js.
  */
 import * as model from '../models/documentFeedback.model.js';
@@ -10,7 +10,7 @@ import * as notifService from './notification.service.js';
 import { createError } from '../utils/createError.js';
 import { hasPermission } from '../middleware/requirePermission.js';
 
-/** PositionID «Nhân viên Kỹ thuật» — seed.sql / migration 012. */
+/** PositionID Chuyên viên kỹ thuật số (2) — seed / migration 012+040. */
 const POSITION_NV_KY_THUAT = 2;
 
 const STATUSES = new Set(['OPEN', 'IN_REVIEW', 'RESOLVED', 'DISMISSED']);
@@ -33,7 +33,7 @@ function assertStatus(s) {
 export async function createForAsset(digitalAssetId, { employeeId, positionId, body }) {
   const okCreate = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'CREATE');
   if (!okCreate) {
-    throw createError('Chức vụ của bạn không được gửi phản hồi tài liệu (NV Kỹ thuật xử lý hàng đợi).', 403);
+    throw createError('Chức vụ của bạn không được gửi phản hồi tài liệu (Chuyên viên KTS xử lý hàng đợi).', 403);
   }
   const text = String(body ?? '').trim();
   if (!text) throw createError('Nội dung phản hồi không được để trống', 400);
@@ -75,7 +75,7 @@ export async function listForAsset(digitalAssetId, { employeeId, positionId }) {
 
 export async function listInbox({ positionId, status, page = 1, limit = 20 }) {
   const can = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'UPDATE');
-  if (!can) throw createError('Chỉ nhân viên Kỹ thuật được xem hàng đợi phản hồi', 403);
+  if (!can) throw createError('Chỉ Chuyên viên kỹ thuật số được xem hàng đợi phản hồi', 403);
   if (status) assertStatus(status);
   const lim = Math.min(100, Math.max(1, Number(limit) || 20));
   const p = Math.max(1, Number(page) || 1);
@@ -89,7 +89,7 @@ export async function listInbox({ positionId, status, page = 1, limit = 20 }) {
 
 export async function reviewUpdate(feedbackId, { employeeId, positionId, status, reviewNote }) {
   const can = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'UPDATE');
-  if (!can) throw createError('Chỉ nhân viên Kỹ thuật được cập nhật phản hồi', 403);
+  if (!can) throw createError('Chỉ Chuyên viên kỹ thuật số được cập nhật phản hồi', 403);
   assertStatus(status);
   const note = reviewNote != null ? String(reviewNote).trim() : '';
   if (note.length > MAX_NOTE) throw createError(`Ghi chú xử lý tối đa ${MAX_NOTE} ký tự`, 400);
@@ -109,7 +109,7 @@ export async function reviewUpdate(feedbackId, { employeeId, positionId, status,
     const da = await digitalAssetModel.findById(row.digitalAssetId);
     const fileName = da?.fileName ?? `Tài liệu #${row.digitalAssetId}`;
     const reviewer = await employeeModel.findById(Number(employeeId));
-    const reviewerName = reviewer?.fullName ?? 'NV Kỹ thuật';
+    const reviewerName = reviewer?.fullName ?? 'Chuyên viên KTS';
     const stLabel = STATUS_LABEL_VI[status] ?? status;
     let msg =
       `[Phản hồi tài liệu — đã xử lý] ${reviewerName} cập nhật trạng thái «${stLabel}» cho góp ý của bạn về «${fileName}» (#${row.feedbackId}).`;

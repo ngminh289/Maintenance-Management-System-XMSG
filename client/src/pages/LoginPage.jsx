@@ -1,6 +1,7 @@
 /**
  * LoginPage.jsx — Trang đăng nhập.
  * Chấp nhận email, username hoặc identifier.
+ * Tài khoản mới: chỉ Admin tạo tại mục Nhân viên (không đăng ký công khai).
  */
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -116,10 +117,7 @@ export function LoginPage() {
         </div>
 
         <p className="text-center text-sm text-gray-500 mt-4">
-          Chưa có tài khoản?{' '}
-          <Link to="/register" className="text-blue-600 font-semibold hover:underline">
-            Đăng ký ngay
-          </Link>
+          Cần tài khoản? Liên hệ <strong>Admin</strong> để được cấp quyền truy cập.
         </p>
 
         <p className="text-center text-xs text-gray-400 mt-5">

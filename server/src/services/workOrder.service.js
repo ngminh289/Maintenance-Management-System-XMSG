@@ -1,7 +1,7 @@
 /**
  * workOrder.service.js — Nghiệp vụ Phiếu công việc: tạo, phân công, chuyển trạng thái.
  * Luồng thực hiện: WAITING → IN_PROGRESS → AWAITING_CLOSURE (thợ báo xong + ảnh) → COMPLETED (TC/TP nghiệm thu đóng).
- * Công nhân/NV KT: chặn IN_PROGRESS (bắt đầu / tiếp tục từ PAUSED) khi đang nghỉ phép có lịch.
+ * KTV hiện trường / Chuyên viên KTS: chặn IN_PROGRESS (bắt đầu / tiếp tục từ PAUSED) khi đang nghỉ phép có lịch.
  * WO từ lịch đã phê duyệt: createFromApprovedSchedule → WAITING.
  * WO hoàn thành → workOrderMaintenanceSync; checklist/ hệ thống có thể gọi updateStatus COMPLETED trực tiếp.
  * Liên quan: workOrderPhoto.model.js, workOrderMaintenanceSync, approval, notification.
@@ -42,7 +42,7 @@ const TRANSITIONS = {
   CANCELLED: [],
 };
 
-/** Tham khảo checklist trên WO: NVKT+ hoặc thợ được phân công (công nhân không giao việc → không lộ ghi chú). */
+/** Tham khảo checklist trên WO: Chuyên viên KTS+ hoặc thợ được phân công (KTV HT không giao việc → không lộ ghi chú). */
 function userMaySeeAssetChecklistDigest(assignments, employeeId, positionLevel) {
   const lvl = Number(positionLevel) || 0;
   if (lvl >= 2) return true;
@@ -156,7 +156,7 @@ export async function createAutomatic({
 
 /**
  * Phiếu từ lịch bảo trì đã được duyệt (kế hoạch OK) — không gửi phê duyệt phiếu lần nữa.
- * Vào WAITING: Trưởng ca/Trưởng phòng phân công → công nhân/NVKT nhận việc trên phiếu.
+ * Vào WAITING: Trưởng ca/Trưởng phòng phân công → KTV HT / Chuyên viên KTS nhận việc trên phiếu.
  */
 export async function createFromApprovedSchedule({
   scheduleId,

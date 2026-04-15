@@ -1,5 +1,6 @@
 /**
  * AssetDetailPage.jsx — Chi tiết tài sản: thông tin, đồng hồ giờ chạy, QR, lịch sử ghi nhận & bảo trì.
+ * Bộ đếm: chỉ số máy (LastReading) ≠ tổng delta (TotalAccumulated) ≠ mốc sau PM (LastMaintenanceTotal — reset khi PM theo giờ xong).
  */
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
@@ -162,27 +163,79 @@ export function AssetDetailPage() {
         >
           {c ? (
             <div className="space-y-3 text-sm">
+              <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-lg px-2.5 py-2 border border-gray-100">
+                <strong>Chỉ số trên máy</strong> là số đồng hồ ghi nhận lần cuối.
+                <strong> Tổng tích lũy</strong> là tổng các bước nhảy (delta) trong hệ thống.
+                <strong> Mốc sau PM</strong> dùng tính ngưỡng bảo trì theo giờ — được cập nhật khi hoàn thành phiếu PM (không phải sự cố).
+              </p>
               {[
-                ['Tổng giờ tích lũy',    `${fNumber(c.totalAccumulatedHours)} h`],
-                ['Giá trị đồng hồ cuối', `${fNumber(c.lastReadingValue)} h`],
-                ['Trung bình/ngày',      `${c.averageHoursPerDay ?? 0} h/ngày`],
-              ].map(([l, v]) => (
-                <div key={l} className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0">
-                  <span className="font-medium text-gray-600">{l}</span>
-                  <span className="font-bold text-gray-900">{v}</span>
+                [
+                  "Chỉ số đồng hồ máy (lần ghi cuối)",
+                  `${fNumber(c.lastReadingValue)} h`,
+                  "Trùng với giá trị nhập từ màn hình máy",
+                ],
+                [
+                  "Tổng giờ chạy tích lũy (delta)",
+                  `${fNumber(c.totalAccumulatedHours)} h`,
+                  "Cộng dồn mỗi lần nhập chỉ số mới",
+                ],
+                [
+                  "Mốc sau bảo trì theo giờ",
+                  `${fNumber(c.lastMaintenanceTotal ?? 0)} h`,
+                  "Reset về tổng tích lũy hiện tại sau PM định kỳ/dự báo",
+                ],
+              ].map(([label, val, hint]) => (
+                <div
+                  key={label}
+                  className="py-2 border-b border-gray-100 last:border-0"
+                >
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="font-medium text-gray-700 text-xs leading-snug max-w-[58%]">
+                      {label}
+                    </span>
+                    <span className="font-bold text-gray-900 tabular-nums shrink-0">
+                      {val}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
                 </div>
               ))}
+              {hasHourlySchedule && (
+                <div className="flex justify-between items-center py-1.5 rounded-lg bg-sky-50/80 px-2 border border-sky-100">
+                  <span className="font-medium text-sky-900 text-xs">
+                    Giờ chạy kể từ mốc PM (tính ngưỡng)
+                  </span>
+                  <span className="font-bold text-sky-950 tabular-nums">
+                    {fNumber(
+                      Math.max(
+                        0,
+                        Number(c.totalAccumulatedHours ?? 0) -
+                          Number(c.lastMaintenanceTotal ?? 0),
+                      ),
+                    )}{" "}
+                    h
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between items-center py-1 border-b border-gray-100">
+                <span className="font-medium text-gray-600">Trung bình/ngày</span>
+                <span className="font-bold text-gray-900">
+                  {fNumber(c.averageHoursPerDay ?? 0)} h/ngày
+                </span>
+              </div>
               <div className="flex justify-between items-start py-1">
                 <span className="font-medium text-gray-600">Ngày PM dự báo</span>
-                <span className={`font-bold text-right text-xs max-w-[55%] ${
-                  c.estimatedNextPMDate ? 'text-gray-900' : 'text-amber-600'
-                }`}>
+                <span
+                  className={`font-bold text-right text-xs max-w-[55%] ${
+                    c.estimatedNextPMDate ? "text-gray-900" : "text-amber-600"
+                  }`}
+                >
                   {pmDateDisplay}
                 </span>
               </div>
               {!hasHourlySchedule && (
                 <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5">
-                  Thêm lịch đơn vị <strong>giờ chạy</strong> để dự báo ngày PM.
+                  Thêm lịch <strong>dự báo (theo giờ)</strong> để dùng ngưỡng PM và dự báo ngày.
                 </p>
               )}
             </div>
@@ -328,13 +381,15 @@ export function AssetDetailPage() {
       </Modal>
 
       {/* Record reading modal */}
-      <Modal open={readingOpen} onClose={() => setReadingOpen(false)} title="Nhập giờ chạy đồng hồ" size="sm">
+      <Modal open={readingOpen} onClose={() => setReadingOpen(false)} title="Nhập chỉ số đồng hồ máy" size="sm">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Nhập giá trị đồng hồ hiện tại trên màn hình máy (số giờ tích lũy).
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Nhập <strong>chỉ số hiện tại</strong> đang hiển thị trên màn hình máy (tổng giờ chạy theo đồng hồ máy),
+            không phải “số giờ thêm trong ngày”. Hệ thống sẽ tính bước nhảy so với lần ghi trước để cộng vào{" "}
+            <strong>tổng tích lũy (delta)</strong>.
           </p>
           <Input
-            label="Giá trị đồng hồ (giờ)"
+            label="Chỉ số đồng hồ máy (giờ)"
             type="number" min={counter?.lastReadingValue ?? 0}
             placeholder={`Tối thiểu ${counter?.lastReadingValue ?? 0}`}
             value={reading}

@@ -1,5 +1,5 @@
 /**
- * DocumentsPage.jsx — Kho tài liệu số: upload, phân loại, tag, tìm kiếm, phê duyệt, phản hồi/góp ý (trừ NV KT gửi).
+ * DocumentsPage.jsx — Kho tài liệu số: upload, phân loại, tag, tìm kiếm, phê duyệt, phản hồi/góp ý (trừ Chuyên viên KTS gửi).
  */
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -337,7 +337,7 @@ export function DocumentsPage() {
           <div>
             <p className="text-xs font-semibold text-blue-900">
               Tài liệu: upload → gửi duyệt → Trưởng ca/TP phê duyệt → dùng qua QR tài sản.
-              {canSubmitDocFeedback && ' Mọi vai trừ NV Kỹ thuật có thể góp ý qua biểu tượng phản hồi trên từng dòng.'}
+              {canSubmitDocFeedback && ' Mọi vai trừ Chuyên viên KTS có thể góp ý qua biểu tượng phản hồi trên từng dòng.'}
               {canReviewDocFeedback && (
                 <>
                   {' '}
@@ -745,7 +745,7 @@ export function DocumentsPage() {
             {canReviewDocFeedback && (
               <p className="text-sm bg-teal-50 border border-teal-200 text-teal-900 rounded-lg px-3 py-2">
                 Bạn đang xem toàn bộ phản hồi cho tài liệu này. Cập nhật trạng thái tại{' '}
-                <Link to="/documents/feedback-inbox" className="font-bold underline">hàng đợi NV Kỹ thuật</Link>.
+                <Link to="/documents/feedback-inbox" className="font-bold underline">hàng đợi Chuyên viên KTS</Link>.
               </p>
             )}
             {canSubmitDocFeedback && (

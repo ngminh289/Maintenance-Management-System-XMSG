@@ -1,8 +1,8 @@
 /**
  * ChecklistTemplatesPage.jsx — BFD §5.1: Quản lý mẫu checklist theo loại tài sản (AssetType).
- * NV Kỹ thuật số + Trưởng ca/Trưởng phòng: tạo/sửa mẫu và câu hỏi (một loại — tối đa một mẫu).
+ * Chuyên viên KTS + Trưởng ca/Trưởng phòng: tạo/sửa mẫu và câu hỏi (một loại — tối đa một mẫu).
  * Ngưỡng an toàn (Numeric/Range) + gợi ý OK/WARNING/NG khi vi phạm; PassFail: gợi ý khi «Không đạt».
- * Công nhân không vào trang này; kiểm tra hiện trường tại Checklist / QR.
+ * KTV hiện trường không vào trang này; kiểm tra hiện trường tại Checklist / QR.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
@@ -243,8 +243,8 @@ export function ChecklistTemplatesPage() {
           <Layers size={18} /> Quản lý mẫu checklist theo loại tài sản (§5.1)
         </p>
         <p className="leading-relaxed text-slate-700">
-          Mỗi <strong>loại tài sản</strong> chỉ nên có <strong>một</strong> mẫu checklist. NV Kỹ thuật số và Trưởng ca/Trưởng phòng soạn nội dung;
-          tại <strong>Checklist / QR</strong> mọi người xem thiết bị; <strong>công nhân</strong> hoặc <strong>trưởng phòng</strong> mới gửi phiếu kiểm tra.
+          Mỗi <strong>loại tài sản</strong> chỉ nên có <strong>một</strong> mẫu checklist. Chuyên viên KTS và Trưởng ca/Trưởng phòng soạn nội dung;
+          tại <strong>Checklist / QR</strong> mọi người xem thiết bị; <strong>KTV hiện trường</strong> hoặc <strong>trưởng phòng</strong> mới gửi phiếu kiểm tra.
         </p>
       </div>
 
@@ -449,7 +449,7 @@ export function ChecklistTemplatesPage() {
                         {(item.inputType === 'Numeric' || item.inputType === 'Range') && (
                           <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3 space-y-2">
                             <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                              <Sliders size={14} /> Ngưỡng an toàn (so với giá trị công nhân nhập)
+                              <Sliders size={14} /> Ngưỡng an toàn (so với giá trị KTV hiện trường nhập)
                             </p>
                             <div className="flex flex-wrap gap-2 items-end">
                               <Input
@@ -556,7 +556,7 @@ export function ChecklistTemplatesPage() {
                   <AlertTriangle size={14} className="shrink-0 mt-0.5" />
                   <span>
                     Quyền <strong>Phê duyệt</strong> mẫu (A) gán trong hệ thống cho Trưởng ca/phòng — có thể mở rộng luồng duyệt riêng sau.
-                    Hiện mẫu sau khi lưu đã dùng được khi quét QR. <strong>Ngưỡng an toàn</strong> và gợi ý WARNING/NG hiển thị cho công nhân tại tab Checklist khi điền phiếu.
+                    Hiện mẫu sau khi lưu đã dùng được khi quét QR. <strong>Ngưỡng an toàn</strong> và gợi ý WARNING/NG hiển thị cho KTV hiện trường tại tab Checklist khi điền phiếu.
                   </span>
                 </div>
               </div>

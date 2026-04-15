@@ -3,7 +3,7 @@
  *   - operational (Trưởng ca / Trưởng phòng): tổng quan vận hành đầy đủ
  *   - director  (Ban Giám đốc)              : KPI cấp cao + báo cáo (không menu Phê duyệt — chỉ R)
  *   - admin     (Quản trị hệ thống)         : quản lý hệ thống + nhân sự
- *   - field     (KTV / Công nhân / CVKTS)   : công việc được giao + checklist
+ *   - field     (KTV hiện trường / Chuyên viên KTS)   : công việc được giao + checklist
  * Dùng getDashboardType() từ utils/rbac.js.
  */
 import { useEffect, useState } from 'react';
@@ -385,7 +385,7 @@ function AdminDashboard() {
   );
 }
 
-// ─── FIELD DASHBOARD (KTV / Công nhân / CVKTS) ───────────────────────────────
+// ─── FIELD DASHBOARD (KTV hiện trường / Chuyên viên KTS) ───────────────────────────────
 function FieldDashboard() {
   const { user }          = useAuth();
   const [myWOs, setMyWOs] = useState([]);
@@ -405,7 +405,7 @@ function FieldDashboard() {
   if (loading) return <PageLoader />;
 
   const positionName = user?.positionName ?? '';
-  // Nhân viên Kỹ thuật (Level 2) có thêm quyền tạo tài liệu và lịch bảo trì
+  // Chuyên viên KTS (Level 2) có thêm quyền tạo tài liệu và lịch bảo trì
   const isKyThuat = (user?.positionLevel ?? 0) >= 2 && (user?.positionLevel ?? 0) < 3;
 
   return (

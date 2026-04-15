@@ -14,7 +14,7 @@
  *            models/checklistResult.model.js.
  *
  * getResultById: bổ sung checklistTemplateName, assetTypeName, locationName và threshold từng câu (màn duyệt).
- * getQRInfo: kèm runtimeCounter (LastReadingValue…) để form checklist hiển thị và chặn nhập < lần trước ngay khi gửi.
+ * getQRInfo: kèm runtimeCounter (đồng hồ máy, tích lũy delta, mốc LastMaintenanceTotal…) để form checklist hiển thị rõ và chặn nhập < lần trước.
  *
  * Xem kết quả (positionLevel ≤ 1 = công nhân): chỉ phiếu APPROVED (mọi người) + mọi phiếu do mình nộp (mọi trạng thái).
  * NVKT+ xem toàn bộ; GET /results không cho CN lọc theo checkerId người khác.
@@ -277,6 +277,9 @@ export async function getQRInfo(assetId, viewer = {}) {
   const runtimeCounter = {
     lastReadingValue: Number(counterRow?.lastReadingValue ?? 0),
     totalAccumulatedHours: Number(counterRow?.totalAccumulatedHours ?? 0),
+    lastMaintenanceTotal: Number(counterRow?.lastMaintenanceTotal ?? 0),
+    averageHoursPerDay: Number(counterRow?.averageHoursPerDay ?? 0),
+    estimatedNextPMDate: counterRow?.estimatedNextPMDate ?? null,
     lastUpdated: counterRow?.lastUpdated ?? null,
   };
 

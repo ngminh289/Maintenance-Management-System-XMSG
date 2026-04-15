@@ -2,6 +2,7 @@
 -- seed.sql — Dữ liệu khởi tạo cho hệ thống bảo trì kho.
 -- Tất cả dùng INSERT IGNORE → chạy lại an toàn (không trùng lặp).
 -- Admin account được tạo bởi scripts/setup-db.js (cần bcrypt).
+-- 3 phòng ban cố định + tên chức vụ nghiệp vụ: migration 040 (DB đã tồn tại).
 -- ============================================================
 
 USE warehouse_maintenance;
@@ -10,24 +11,23 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 -- ----------------------------------------------------------
 -- Chức vụ (Positions) — 6 dòng: TC (3) và Trưởng phòng (6) tách bạch cho duyệt 2 cấp WO khẩn
--- Quyền chi tiết: migrations (sau 019, Position 6 có bản sao quyền từ 3). PositionID tường minh.
+-- Tên hiển thị nghiệp vụ: KTV hiện trường, Chuyên viên KTS, Admin, Giám đốc (migration 040 đồng bộ DB cũ).
 -- ----------------------------------------------------------
 INSERT IGNORE INTO Positions (PositionID, PositionName, Level) VALUES
-    (1, 'Công nhân',                  1),
-    (2, 'Nhân viên Kỹ thuật',        2),
+    (1, 'KTV hiện trường',            1),
+    (2, 'Chuyên viên kỹ thuật số',    2),
     (3, 'Trưởng ca',                  3),
-    (4, 'Quản trị viên',              4),
-    (5, 'Ban Giám đốc',               5),
+    (4, 'Admin',                      4),
+    (5, 'Giám đốc',                   5),
     (6, 'Trưởng phòng',               3);
 
 -- ----------------------------------------------------------
--- Phòng ban (Departments)
+-- Phòng ban (Departments) — đúng 3 phòng; DepartmentID 1–3 gắn với chức vụ (orgUnits.js)
 -- ----------------------------------------------------------
-INSERT IGNORE INTO Departments (DepartmentName, Description) VALUES
-    ('Phòng Cơ Điện',   'Quản lý bảo trì thiết bị cơ điện'),
-    ('Phòng Sản Xuất',  'Vận hành dây chuyền sản xuất'),
-    ('Phòng Kỹ Thuật',  'Giám sát kỹ thuật và an toàn'),
-    ('Ban Giám Đốc',    'Lãnh đạo nhà máy');
+INSERT IGNORE INTO Departments (DepartmentID, DepartmentName, Description) VALUES
+    (1, 'Phòng bảo trì',               'KTV hiện trường, Trưởng ca, Trưởng phòng'),
+    (2, 'Phòng kỹ thuật - công nghệ', 'Chuyên viên kỹ thuật số, Admin'),
+    (3, 'Ban giám đốc',               'Giám đốc');
 
 -- ----------------------------------------------------------
 -- Loại tài sản (AssetTypes)

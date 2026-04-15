@@ -411,7 +411,7 @@ export function ApprovalsPage() {
         <p className="text-sm text-gray-700 mt-3 pt-3 border-t border-amber-100/80 leading-relaxed">
           <strong>Duyệt</strong> và <strong>phân công</strong> là hai việc khác
           nhau: duyệt chuyển phiếu sang <em>Chờ thực hiện</em> (hoặc bước tiếp
-          theo nếu đa cấp). Phân công = gán Công nhân / NV Kỹ thuật — có thể{" "}
+          theo nếu đa cấp). Phân công = gán KTV hiện trường / Chuyên viên KTS — có thể{" "}
           <strong>làm ngay khi duyệt bước cuối</strong> (ô bên dưới) hoặc{" "}
           <strong>để sau</strong> tại Chi tiết phiếu.{" "}
           <strong>Phiếu WO khẩn 2 bước</strong> (ưu tiên Khẩn cấp, hoặc sự cố

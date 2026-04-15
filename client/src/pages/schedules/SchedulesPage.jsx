@@ -1,6 +1,7 @@
 /**
- * SchedulesPage.jsx — Lịch bảo trì: DRAFT/REJECTED → nút Gửi → PENDING_APPROVAL → (Trưởng ca duyệt tại Phê duyệt) → PENDING.
- * HOURS / ngày; WO chỉ từ lịch đã duyệt (PENDING…). Sửa/xóa: nháp & từ chối; Admin (level≥4) được vượt quy tắc.
+ * SchedulesPage.jsx — Lịch bảo trì: DRAFT/REJECTED → Gửi → PENDING_APPROVAL → (Phê duyệt) → PENDING.
+ * Hai kiểu: Định kỳ (ngày/tuần/tháng/năm) — có nút WO + scheduler; Dự báo (giờ) — WO tự sinh khi vượt ngưỡng, không tạo từ lịch.
+ * Sửa/xóa: nháp & từ chối; Admin (level≥4) được vượt quy tắc.
  */
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -28,16 +29,14 @@ import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo } from "../../utils/rbac.js";
 import toast from "react-hot-toast";
 
-const TYPE_COLOR = {
-  PREVENTIVE: "blue",
-  PREDICTIVE: "yellow",
-  CORRECTIVE: "red",
+/** Hiển thị theo đơn vị tần suất (khớp nghiệp vụ 2 loại). */
+const SCHEDULE_KIND_BADGE = {
+  periodic: { label: "Định kỳ", color: "blue" },
+  predictive: { label: "Dự báo (giờ)", color: "yellow" },
 };
-const TYPE_LABEL = {
-  PREVENTIVE: "Định kỳ",
-  PREDICTIVE: "Dự đoán",
-  CORRECTIVE: "Khắc phục",
-};
+function scheduleKindKey(s) {
+  return s?.frequencyUnit === "HOURS" ? "predictive" : "periodic";
+}
 const UNIT_LABEL = {
   HOURS: "giờ",
   DAYS: "ngày",
@@ -67,6 +66,7 @@ const STATUS_LABEL = {
 };
 
 const EMPTY_FORM = {
+  scheduleKind: "periodic",
   maintenanceType: "PREVENTIVE",
   frequencyValue: 30,
   frequencyUnit: "DAYS",
@@ -127,7 +127,9 @@ function DueDateChip({ nextDueDate, frequencyUnit, status }) {
 }
 
 // ── Form component dùng chung cho cả Tạo và Sửa ────────────────────────────
-function ScheduleForm({ form, setF, assets }) {
+function ScheduleForm({ form, setF, patchForm, assets }) {
+  const isPredictive = form.scheduleKind === "predictive";
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -150,37 +152,77 @@ function ScheduleForm({ form, setF, assets }) {
           ))}
         </Select>
         <Select
-          label="Loại bảo trì"
-          value={form.maintenanceType}
-          onChange={(e) => setF("maintenanceType", e.target.value)}
+          label="Kiểu lịch *"
+          value={form.scheduleKind ?? "periodic"}
+          onChange={(e) => {
+            const kind = e.target.value;
+            if (kind === "predictive") {
+              patchForm({
+                scheduleKind: "predictive",
+                maintenanceType: "PREDICTIVE",
+                frequencyUnit: "HOURS",
+                frequencyValue:
+                  form.frequencyUnit === "HOURS"
+                    ? Number(form.frequencyValue) || 720
+                    : 720,
+              });
+            } else {
+              const u =
+                form.frequencyUnit === "HOURS"
+                  ? "DAYS"
+                  : form.frequencyUnit ?? "DAYS";
+              patchForm({
+                scheduleKind: "periodic",
+                maintenanceType: "PREVENTIVE",
+                frequencyUnit: u,
+                frequencyValue:
+                  form.frequencyUnit === "HOURS" ? 30 : Number(form.frequencyValue) || 30,
+              });
+            }
+          }}
         >
-          <option value="PREVENTIVE">Định kỳ (Preventive)</option>
-          <option value="PREDICTIVE">Dự đoán (Predictive)</option>
-          <option value="CORRECTIVE">Khắc phục (Corrective)</option>
+          <option value="periodic">Định kỳ (ngày / tuần / tháng / năm)</option>
+          <option value="predictive">Dự báo (theo giờ chạy máy)</option>
         </Select>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <Input
-              label="Tần suất"
-              type="number"
-              min={1}
-              value={form.frequencyValue ?? 30}
-              onChange={(e) => setF("frequencyValue", e.target.value)}
-            />
+        {isPredictive ? (
+          <Input
+            label="Ngưỡng giờ chạy (tích lũy) *"
+            type="number"
+            min={1}
+            value={form.frequencyValue ?? 720}
+            onChange={(e) => setF("frequencyValue", e.target.value)}
+          />
+        ) : (
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <Input
+                label="Tần suất *"
+                type="number"
+                min={1}
+                value={form.frequencyValue ?? 30}
+                onChange={(e) => setF("frequencyValue", e.target.value)}
+              />
+            </div>
+            <div className="flex-1">
+              <Select
+                label="Đơn vị *"
+                value={form.frequencyUnit ?? "DAYS"}
+                onChange={(e) => setF("frequencyUnit", e.target.value)}
+              >
+                <option value="DAYS">Ngày</option>
+                <option value="WEEKS">Tuần</option>
+                <option value="MONTHS">Tháng</option>
+                <option value="YEARS">Năm</option>
+              </Select>
+            </div>
           </div>
-          <div className="flex-1">
-            <Select
-              label="Đơn vị"
-              value={form.frequencyUnit ?? "DAYS"}
-              onChange={(e) => setF("frequencyUnit", e.target.value)}
-            >
-              <option value="DAYS">Ngày</option>
-              <option value="WEEKS">Tuần</option>
-              <option value="MONTHS">Tháng</option>
-              <option value="HOURS">Giờ chạy</option>
-            </Select>
-          </div>
-        </div>
+        )}
+        {isPredictive && (
+          <p className="text-sm text-gray-600 col-span-2">
+            Đơn vị: <strong>giờ chạy tích lũy</strong> — khi nhập đồng hồ máy vượt ngưỡng, hệ thống tự tạo phiếu PM
+            chờ duyệt (không dùng nút WO trên dòng lịch).
+          </p>
+        )}
         <Input
           label="Ngày bắt đầu *"
           type="date"
@@ -200,7 +242,7 @@ function ScheduleForm({ form, setF, assets }) {
         onChange={(e) => setF("description", e.target.value)}
         placeholder="Mô tả nội dung bảo trì cần thực hiện..."
       />
-      {form.frequencyUnit !== "HOURS" && form.startDate && (
+      {!isPredictive && form.startDate && (
         <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
           Ngày đến hạn đầu tiên: <strong>{fDate(form.startDate)}</strong> +{" "}
           {form.frequencyValue}{" "}
@@ -208,10 +250,9 @@ function ScheduleForm({ form, setF, assets }) {
           tạo/hoàn thành WO, hệ thống tự tính chu kỳ tiếp theo.
         </p>
       )}
-      {form.frequencyUnit === "HOURS" && (
+      {isPredictive && (
         <p className="text-xs text-indigo-700 bg-indigo-50 rounded-lg px-3 py-2">
-          Lịch theo giờ chạy — hệ thống dự báo ngày PM dựa vào đồng hồ tích lũy
-          và trung bình giờ/ngày của tài sản.
+          Lịch dự báo theo giờ — dựa trên bộ đếm tài sản và trung bình giờ/ngày; không tạo phiếu từ nút WO trên lịch.
         </p>
       )}
     </div>
@@ -276,6 +317,10 @@ export function SchedulesPage() {
 
   const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
+  const patchForm = useCallback((patch) => {
+    setForm((p) => ({ ...p, ...patch }));
+  }, []);
+
   const validateForm = (f) => {
     if (!f.assetId || !f.scheduleName?.trim() || !f.startDate) {
       toast.error("Vui lòng điền đầy đủ: Tài sản, Tên lịch, Ngày bắt đầu");
@@ -283,6 +328,10 @@ export function SchedulesPage() {
     }
     if (!f.description?.trim()) {
       toast.error("Vui lòng nhập mô tả công việc");
+      return false;
+    }
+    if (!f.frequencyValue || Number(f.frequencyValue) < 1) {
+      toast.error("Tần suất hoặc ngưỡng giờ phải ≥ 1");
       return false;
     }
     return true;
@@ -293,10 +342,20 @@ export function SchedulesPage() {
     if (!validateForm(form)) return;
     setSaving(true);
     try {
+      const { scheduleKind: _sk, ...formRest } = form;
       await scheduleApi.create({
-        ...form,
-        frequencyValue: Number(form.frequencyValue || 30),
-        frequencyUnit: (form.frequencyUnit || "DAYS").toUpperCase(),
+        ...formRest,
+        maintenanceType:
+          form.scheduleKind === "predictive" ? "PREDICTIVE" : "PREVENTIVE",
+        frequencyValue: Number(
+          form.frequencyValue ||
+            (form.scheduleKind === "predictive" ? 720 : 30),
+        ),
+        frequencyUnit: (
+          form.scheduleKind === "predictive"
+            ? "HOURS"
+            : form.frequencyUnit || "DAYS"
+        ).toUpperCase(),
       });
       toast.success("Đã tạo lịch bảo trì");
       setCreateOpen(false);
@@ -310,12 +369,14 @@ export function SchedulesPage() {
   };
 
   const openEdit = (s) => {
+    const predictive = s.frequencyUnit === "HOURS";
     setForm({
+      scheduleKind: predictive ? "predictive" : "periodic",
       assetId: String(s.assetId ?? ""),
       scheduleName: s.scheduleName ?? "",
       maintenanceType: s.maintenanceType ?? "PREVENTIVE",
       description: s.description ?? "",
-      frequencyValue: s.frequencyValue ?? 30,
+      frequencyValue: s.frequencyValue ?? (predictive ? 720 : 30),
       frequencyUnit: s.frequencyUnit ?? "DAYS",
       startDate: s.startDate ? s.startDate.split("T")[0] : "",
       endDate: s.endDate ? s.endDate.split("T")[0] : "",
@@ -328,10 +389,24 @@ export function SchedulesPage() {
     if (!validateForm(form)) return;
     setSaving(true);
     try {
+      const { scheduleKind: _sk, ...formRest } = form;
       await scheduleApi.update(editItem.scheduleId, {
-        ...form,
-        frequencyValue: Number(form.frequencyValue || 30),
-        frequencyUnit: (form.frequencyUnit || "DAYS").toUpperCase(),
+        ...formRest,
+        maintenanceType:
+          form.scheduleKind === "predictive"
+            ? "PREDICTIVE"
+            : form.maintenanceType === "CORRECTIVE"
+              ? "CORRECTIVE"
+              : "PREVENTIVE",
+        frequencyValue: Number(
+          form.frequencyValue ||
+            (form.scheduleKind === "predictive" ? 720 : 30),
+        ),
+        frequencyUnit: (
+          form.scheduleKind === "predictive"
+            ? "HOURS"
+            : form.frequencyUnit || "DAYS"
+        ).toUpperCase(),
       });
       toast.success("Đã cập nhật lịch bảo trì");
       setEditItem(null);
@@ -385,6 +460,7 @@ export function SchedulesPage() {
   }).length;
 
   const TH_TOOLTIPS = {
+    Kiểu: "Định kỳ (ngày/tuần/tháng/năm) hoặc dự báo theo giờ chạy tích lũy.",
     "Tần suất": "Chu kỳ lặp lại giữa các lần bảo trì (vd. mỗi 30 ngày).",
     "Ngày bắt đầu": "Ngày bắt đầu áp dụng kế hoạch lịch.",
     "Ngày đến hạn":
@@ -412,13 +488,15 @@ export function SchedulesPage() {
             hiện).
           </li>
           <li>
-            Nút <strong>WO</strong> hoặc scheduler tạo{" "}
-            <strong>phiếu việc</strong> vào <strong>Chờ thực hiện</strong> —{" "}
-            <em>không</em> lặp bước phê duyệt phiếu (vì kế hoạch đã duyệt).
+            Lịch <strong>định kỳ</strong>: nút <strong>WO</strong> hoặc scheduler
+            (đến hạn) tạo <strong>phiếu việc</strong>{" "}
+            <strong>Chờ thực hiện</strong> — <em>không</em> phê duyệt lại phiếu.
+            Lịch <strong>dự báo theo giờ</strong> không có nút WO — phiếu tự sinh
+            khi vượt ngưỡng giờ chạy (chờ duyệt phiếu).
           </li>
           <li>
-            Trưởng ca / Trưởng phòng <strong>phân công</strong> công nhân hoặc
-            NV Kỹ thuật trên chi tiết phiếu; người được giao xem phiếu tại{" "}
+            Trưởng ca / Trưởng phòng <strong>phân công</strong> KTV hiện trường hoặc
+            Chuyên viên KTS trên chi tiết phiếu; người được giao xem phiếu tại{" "}
             <strong>Phiếu việc</strong> + thông báo.
           </li>
           <li>
@@ -477,7 +555,7 @@ export function SchedulesPage() {
                   {[
                     "Tên lịch",
                     "Tài sản",
-                    "Loại",
+                    "Kiểu",
                     "Trạng thái",
                     "Tần suất",
                     "Ngày bắt đầu",
@@ -516,9 +594,11 @@ export function SchedulesPage() {
                         {s.assetName}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge color={TYPE_COLOR[s.maintenanceType] ?? "gray"}>
-                          {TYPE_LABEL[s.maintenanceType] ?? s.maintenanceType}
-                        </Badge>
+                        {(() => {
+                          const sk = scheduleKindKey(s);
+                          const b = SCHEDULE_KIND_BADGE[sk];
+                          return <Badge color={b.color}>{b.label}</Badge>;
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <Badge color={STATUS_COLOR[s.status] ?? "gray"}>
@@ -562,12 +642,13 @@ export function SchedulesPage() {
                           {canApproveSch &&
                             ["PENDING", "IN_PROGRESS", "OVERDUE"].includes(
                               s.status,
-                            ) && (
+                            ) &&
+                            s.frequencyUnit !== "HOURS" && (
                               <Button
                                 size="xs"
                                 variant="secondary"
                                 onClick={() => handleGenerateWO(s.scheduleId)}
-                                title="Tạo WO thủ công"
+                                title="Tạo WO từ lịch định kỳ (theo ngày/tuần/tháng/năm)"
                               >
                                 <Play size={11} /> WO
                               </Button>
@@ -616,7 +697,12 @@ export function SchedulesPage() {
         size="lg"
       >
         <form onSubmit={handleCreate} className="space-y-4">
-          <ScheduleForm form={form} setF={setF} assets={assets} />
+          <ScheduleForm
+            form={form}
+            setF={setF}
+            patchForm={patchForm}
+            assets={assets}
+          />
           <div className="flex justify-end gap-3 pt-2">
             <Button
               type="button"
@@ -640,7 +726,12 @@ export function SchedulesPage() {
         size="lg"
       >
         <form onSubmit={handleEdit} className="space-y-4">
-          <ScheduleForm form={form} setF={setF} assets={assets} />
+          <ScheduleForm
+            form={form}
+            setF={setF}
+            patchForm={patchForm}
+            assets={assets}
+          />
           <div className="flex justify-end gap-3 pt-2">
             <Button
               type="button"

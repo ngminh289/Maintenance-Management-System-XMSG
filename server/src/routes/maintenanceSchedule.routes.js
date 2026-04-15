@@ -43,7 +43,7 @@ maintenanceScheduleRouter.delete(
   ctrl.remove,
 );
 
-// Tạo Work Order từ lịch bảo trì — cần APPROVE trên MAINTENANCE_PLAN
+// Tạo WO từ lịch định kỳ (không áp dụng lịch HOURS — service trả 400)
 maintenanceScheduleRouter.post(
   "/:id/generate-work-order",
   requirePermission("MAINTENANCE_PLAN", "APPROVE"),

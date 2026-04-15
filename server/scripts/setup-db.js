@@ -102,19 +102,18 @@ async function run() {
       const [[posRow]] = await conn.query(
         `SELECT PositionID FROM ${DB_NAME}.Positions WHERE Level = 4 LIMIT 1`,
       );
-      const [[deptRow]] = await conn.query(
-        `SELECT DepartmentID FROM ${DB_NAME}.Departments LIMIT 1`,
-      );
+      /** Admin thuộc Phòng kỹ thuật - công nghệ (DepartmentID = 2 — orgUnits / migration 040). */
+      const ADMIN_DEPARTMENT_ID = 2;
 
-      if (!posRow || !deptRow) {
-        warn('Không tìm thấy Position hoặc Department — seed chưa chạy?');
+      if (!posRow) {
+        warn('Không tìm thấy Position Admin (Level 4) — seed chưa chạy?');
       } else {
         const hash = await bcrypt.hash(ADMIN_PASSWORD, BCRYPT_ROUNDS);
         await conn.query(
           `INSERT INTO ${DB_NAME}.Employees
            (FullName, Username, PasswordHash, Email, EmailVerified, IsActive, PositionID, DepartmentID)
            VALUES (?, ?, ?, ?, TRUE, TRUE, ?, ?)`,
-          [ADMIN_FULLNAME, ADMIN_USERNAME, hash, ADMIN_EMAIL, posRow.PositionID, deptRow.DepartmentID],
+          [ADMIN_FULLNAME, ADMIN_USERNAME, hash, ADMIN_EMAIL, posRow.PositionID, ADMIN_DEPARTMENT_ID],
         );
         log(`Admin tạo thành công: ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}`);
       }

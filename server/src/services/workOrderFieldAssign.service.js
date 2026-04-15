@@ -1,5 +1,5 @@
 /**
- * workOrderFieldAssign.service.js — Phân công Công nhân / NV KT (L≤2) lên phiếu WO.
+ * workOrderFieldAssign.service.js — Phân công KTV hiện trường / Chuyên viên KTS (L≤2) lên phiếu WO.
  * Nghỉ phép: so với PlannedDate — sau kỳ nghỉ vẫn phân công được; không PlannedDate + đang nghỉ → chặn.
  * validateFieldTechnicianAssignment gọi trước khi ghi ApprovalLog cuối (tránh duyệt “xong” rồi mới lỗi phân công).
  * Dùng trong: workOrder.service.js (assign), approval.service.js (duyệt xong + phân công ngay).
@@ -34,7 +34,7 @@ export async function validateFieldTechnicianAssignment(
     throw createError("Nhân viên đang vô hiệu, không thể phân công", 400);
   if ((emp.positionLevel ?? 99) > MAX_ASSIGNEE_LEVEL) {
     throw createError(
-      "Chỉ được phân công Công nhân hoặc Nhân viên Kỹ thuật (thực hiện hiện trường).",
+      "Chỉ được phân công KTV hiện trường hoặc Chuyên viên kỹ thuật số (thực hiện hiện trường).",
       403,
     );
   }

@@ -1,5 +1,5 @@
 /**
- * DocumentFeedbackInboxPage.jsx — NV Kỹ thuật: hàng đợi phản hồi / góp ý tài liệu, cập nhật trạng thái.
+ * DocumentFeedbackInboxPage.jsx — Chuyên viên KTS: hàng đợi phản hồi / góp ý tài liệu, cập nhật trạng thái.
  * API: GET/PATCH /api/document-feedback. Liên quan: rbac DOCUMENT_FEEDBACK:REVIEW, migration 038.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -103,7 +103,7 @@ export function DocumentFeedbackInboxPage() {
             Phản hồi & góp ý tài liệu
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            Tiếp nhận góp ý từ Công nhân, Trưởng ca, Trưởng phòng, Admin, Ban GĐ — cập nhật trạng thái và ghi chú xử lý.
+            Tiếp nhận góp ý từ KTV hiện trường, Trưởng ca, Trưởng phòng, Admin, Ban GĐ — cập nhật trạng thái và ghi chú xử lý.
           </p>
         </div>
         <Link

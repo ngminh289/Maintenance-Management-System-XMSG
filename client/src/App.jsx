@@ -2,7 +2,7 @@
  * App.jsx — Định tuyến toàn bộ ứng dụng với phân quyền theo role.
  * RoleGuard bảo vệ từng nhóm route theo RBAC (utils/rbac.js).
  * /checklists/history — danh sách + modal chi tiết kết quả checklist.
- * /documents/feedback-inbox — hàng đợi phản hồi tài liệu (chỉ NV Kỹ thuật).
+ * /documents/feedback-inbox — hàng đợi phản hồi tài liệu (chỉ Chuyên viên KTS).
  */
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster }          from 'react-hot-toast';
@@ -11,7 +11,6 @@ import { ProtectedRoute, RoleGuard } from './components/layout/ProtectedRoute.js
 import { MainLayout }       from './components/layout/MainLayout.jsx';
 
 import { LoginPage }            from './pages/LoginPage.jsx';
-import { RegisterPage }         from './pages/RegisterPage.jsx';
 import { VerifyEmailPage }      from './pages/VerifyEmailPage.jsx';
 import { ForgotPasswordPage }   from './pages/ForgotPasswordPage.jsx';
 import { ResetPasswordPage }    from './pages/ResetPasswordPage.jsx';
@@ -46,7 +45,7 @@ export default function App() {
       <Routes>
         {/* ─── Công khai ──────────────────────────────────────── */}
         <Route path="/login"           element={<LoginPage />} />
-        <Route path="/register"        element={<RegisterPage />} />
+        <Route path="/register"        element={<Navigate to="/login" replace />} />
         <Route path="/verify-email"    element={<VerifyEmailPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
@@ -64,12 +63,12 @@ export default function App() {
               <Route path="/assets/:id" element={<AssetDetailPage />} />
             </Route>
 
-            {/* Lịch bảo trì — NV Kỹ thuật (soạn) + Trưởng ca (duyệt) — rule/truongca.rule */}
+            {/* Lịch bảo trì — Chuyên viên KTS (soạn) + Trưởng ca (duyệt) — rule/truongca.rule */}
             <Route element={<RoleGuard routeKey="schedules" />}>
               <Route path="/schedules" element={<SchedulesPage />} />
             </Route>
 
-            {/* Phiếu việc — Công nhân (được giao) + NV KT + Trưởng ca (toàn bộ + duyệt) */}
+            {/* Phiếu việc — KTV hiện trường (được giao) + CV KTS + Trưởng ca (toàn bộ + duyệt) */}
             <Route element={<RoleGuard routeKey="work-orders" />}>
               <Route path="/work-orders"     element={<WorkOrderListPage />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
@@ -96,7 +95,7 @@ export default function App() {
               <Route path="/documents/feedback-inbox" element={<DocumentFeedbackInboxPage />} />
             </Route>
 
-            {/* Phê duyệt — Trưởng ca (NV KT / Ban GĐ không vào đây; BGD xem KPI qua Dashboard + Báo cáo) */}
+            {/* Phê duyệt — Trưởng ca (CV KTS / Ban GĐ không vào đây; BGD xem KPI qua Dashboard + Báo cáo) */}
             <Route element={<RoleGuard routeKey="approvals" />}>
               <Route path="/approvals" element={<ApprovalsPage />} />
             </Route>

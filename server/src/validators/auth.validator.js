@@ -1,19 +1,9 @@
 /**
  * auth.validator.js — Kiểm tra đầu vào cho các endpoint xác thực.
  * Dùng trong: routes/auth.routes.js (qua middleware/validate.js).
+ * Không còn schema đăng ký công khai — chỉ Admin tạo nhân viên.
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export function registerSchema(body) {
-  const { fullName, username, email, password, positionId, departmentId } = body;
-  if (!fullName?.trim()) return 'Họ tên không được để trống';
-  if (!username?.trim() || username.length < 3) return 'Username phải có ít nhất 3 ký tự';
-  if (!email?.trim() || !EMAIL_RE.test(email)) return 'Email không hợp lệ';
-  if (!password || password.length < 8) return 'Mật khẩu phải có ít nhất 8 ký tự';
-  if (!positionId || isNaN(Number(positionId))) return 'Chức vụ không hợp lệ';
-  if (!departmentId || isNaN(Number(departmentId))) return 'Phòng ban không hợp lệ';
-  return null;
-}
 
 export function loginSchema(body) {
   // Chấp nhận cả ba field: identifier, email, username

@@ -1,6 +1,6 @@
 /**
  * auth.service.js — Nghiệp vụ xác thực: bcrypt, JWT, cookie httpOnly, nodemailer.
- * function.rule: đăng nhập, verify Gmail, quên mật khẩu, refresh token.
+ * function.rule: đăng nhập, verify Gmail, quên mật khẩu, refresh token. Tài khoản mới: Admin tạo qua employee API (không đăng ký công khai).
  * Dùng trong: controllers/auth.controller.js.
  */
 import bcrypt from 'bcrypt';
@@ -10,10 +10,6 @@ import { sendMail } from '../config/mailer.js';
 import { env } from '../config/env.js';
 import { createError } from '../utils/createError.js';
 import * as employeeModel from '../models/employee.model.js';
-import * as positionModel  from '../models/position.model.js';
-
-// Cấp tối đa cho phép tự đăng ký (Level 1 = Nhân viên / Hiện trường)
-const MAX_SELF_REGISTER_LEVEL = 1;
 
 const BCRYPT_ROUNDS = 12;
 
@@ -37,45 +33,6 @@ function buildTokenPayload(emp) {
     positionLevel: emp.positionLevel,
     departmentId: emp.departmentId,
   };
-}
-
-export async function register({ fullName, username, email, phone, password, positionId, departmentId }) {
-  const existing = await employeeModel.findByUsernameOrEmail(username, email);
-  if (existing) throw createError('Username hoặc email đã tồn tại', 409);
-
-  // Kiểm tra chức vụ tồn tại và không vượt cấp được phép tự đăng ký
-  const position = await positionModel.findById(positionId);
-  if (!position) throw createError('Chức vụ không hợp lệ', 400);
-  if (position.level > MAX_SELF_REGISTER_LEVEL) {
-    throw createError(
-      `Chức vụ "${position.positionName}" (Cấp ${position.level}) không được phép tự đăng ký. Liên hệ quản trị viên để tạo tài khoản.`,
-      403,
-    );
-  }
-
-  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  // Tự đăng ký: chưa kích hoạt — sau khi xác thực email, quản trị viên bật IsActive.
-  const employeeId = await employeeModel.create({
-    fullName, username, passwordHash, email,
-    phone: phone || null, positionId, departmentId,
-    emailVerified: false,
-    isActive: false,
-    wasEverActivated: false,
-  });
-
-  const token = signVerifyToken(employeeId);
-  const link = `${env.appPublicUrl}/verify-email?token=${token}`;
-
-  await sendMail({
-    to: email,
-    subject: 'Xác thực tài khoản Warehouse',
-    html: `<p>Xin chào <b>${fullName}</b>,</p>
-           <p>Nhấn vào liên kết bên dưới để xác thực tài khoản (hiệu lực 24 giờ):</p>
-           <p><a href="${link}">${link}</a></p>`,
-    text: `Xin chào ${fullName},\n\nLink xác thực:\n${link}`,
-  });
-
-  return { employeeId, email };
 }
 
 export async function verifyEmail(token) {

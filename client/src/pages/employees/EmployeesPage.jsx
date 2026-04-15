@@ -3,6 +3,7 @@
  * project.rule 1.2: "Đăng ký nhân viên + Chia nhóm bảo trì (M:N)".
  * Lịch nghỉ phép (LeaveStartAt → LeaveEndAt): Quản trị viên thiết lập; trong khoảng = tự động nghỉ (NOW() server).
  * RBAC: canAccess('employees'); EMPLOYEE:CREATE / DELETE; lịch nghỉ — Level ≥ 4; nhóm — MAINTENANCE_GROUP:WRITE / :DELETE.
+ * Thêm nhân viên: chọn chức vụ → phòng ban tự gán theo orgUnits.js (khớp server).
  */
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../../api/index.js";
@@ -16,6 +17,7 @@ import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canAccess, canDo } from "../../utils/rbac.js";
+import { departmentIdForPosition } from "../../utils/orgUnits.js";
 import { fDateTime } from "../../utils/format.js";
 import {
   Plus,
@@ -409,7 +411,20 @@ function EmployeesTab({ me }) {
             <Select
               label="Chức vụ *"
               value={form.positionId ?? ""}
-              onChange={(e) => setF("positionId", e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                const deptId = v ? departmentIdForPosition(Number(v)) : null;
+                setForm((p) => ({
+                  ...p,
+                  positionId: v,
+                  departmentId: deptId != null ? String(deptId) : "",
+                }));
+                setErrors((er) => ({
+                  ...er,
+                  positionId: undefined,
+                  departmentId: undefined,
+                }));
+              }}
               error={errors.positionId}
             >
               <option value="">— Chọn chức vụ —</option>
@@ -419,19 +434,19 @@ function EmployeesTab({ me }) {
                 </option>
               ))}
             </Select>
-            <Select
-              label="Phòng ban *"
-              value={form.departmentId ?? ""}
-              onChange={(e) => setF("departmentId", e.target.value)}
+            <Input
+              label="Phòng ban (theo chức vụ)"
+              value={
+                form.departmentId
+                  ? departments.find(
+                      (d) => String(d.departmentId) === String(form.departmentId),
+                    )?.departmentName ?? "—"
+                  : ""
+              }
+              readOnly
+              placeholder="Chọn chức vụ trước"
               error={errors.departmentId}
-            >
-              <option value="">— Chọn phòng ban —</option>
-              {departments.map((d) => (
-                <option key={d.departmentId} value={d.departmentId}>
-                  {d.departmentName}
-                </option>
-              ))}
-            </Select>
+            />
           </div>
           {errors._ && (
             <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">
