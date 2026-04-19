@@ -3,9 +3,9 @@
  *
  * Gửi checklist: lưu kết quả + chi tiết, ReviewStatus=PENDING — KHÔNG đổi tài sản / WO / bộ đếm.
  * Trưởng ca / Trưởng phòng duyệt (APPROVE): mới chạy logic theo OverallStatus:
- *   OK      → AVAILABLE, đóng WO (nếu có) + đồng bộ bảo trì
+ *   OK      → đóng WO (nếu có) + reconcile tài sản (AVAILABLE nếu hết phiến onsite, còn thì MAINTENANCE); không WO → AVAILABLE
  *   WARNING → MONITORING, WO PREDICTIVE HIGH + thông báo
- *   NG      → BROKEN, WO CORRECTIVE EMERGENCY + thông báo
+ *   NG      → BROKEN, WO CORRECTIVE EMERGENCY + thông báo (MAINTENANCE khi KTV bắt đầu IN_PROGRESS)
  * Đồng hồ giờ chạy (recordReading) chỉ gọi khi APPROVE.
  *
  * REJECT: giữ nguyên tài sản, thông báo cho người nộp.
@@ -316,7 +316,6 @@ export async function applyApprovedChecklistEffects(row) {
   let newWorkOrderId = null;
 
   if (overallStatus === "OK") {
-    await assetModel.updateStatus(assetId, "AVAILABLE");
     if (woId) {
       const w = await workOrderModel.findById(woId);
       const autoHours = w
@@ -328,6 +327,9 @@ export async function applyApprovedChecklistEffects(row) {
       });
       const completedWo = await workOrderModel.findById(woId);
       await workOrderMaintSync.afterWorkOrderCompleted(completedWo);
+      await workOrderSvc.reconcileAssetStatusForOnsiteWorkOrders(assetId);
+    } else {
+      await assetModel.updateStatus(assetId, "AVAILABLE");
     }
   } else if (overallStatus === "WARNING") {
     await assetModel.updateStatus(assetId, "MONITORING");

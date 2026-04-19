@@ -4,6 +4,8 @@
  * CounterBaselineResetAt/By: reset mốc giờ PM từ phiếu CORRECTIVE (migration 032).
  * Dùng trong: services/workOrder.service.js, checklist.service.js.
  * findAll: thêm approvalHasPending, needsApprovalResubmit (JOIN logic ApprovalLogs).
+ * countAssetMaintenanceHoldOrders: IN_PROGRESS hoặc AWAITING khẩn (EMERGENCY hoặc CORRECTIVE+HIGH) — giữ MAINTENANCE.
+ * countEmployeeBlockingWorkOrders: chặn KTV mở thêm phiếu khi còn IN_PROGRESS/PAUSED hoặc AWAITING khẩn trên phiếu khác.
  */
 import { getPool } from "../config/database.js";
 
@@ -156,6 +158,43 @@ export async function findOpenPredictiveIdByAsset(assetId) {
     [assetId],
   );
   return rows[0]?.woId ?? null;
+}
+
+/** Khẩn chờ nghiệm thu: EMERGENCY hoặc CORRECTIVE+HIGH (khớp phê duyệt 2 bước). */
+const SQL_W_AWAITING_URGENT = `(
+         w.Status = 'AWAITING_CLOSURE'
+         AND (w.Priority = 'EMERGENCY' OR (w.WO_Source = 'CORRECTIVE' AND w.Priority = 'HIGH'))
+       )`;
+
+/** Còn phiếu đang làm hoặc phiếu khẩn chờ nghiệm thu — tài sản MAINTENANCE (PAUSED / chờ nghiệm thu thường nhả máy). */
+export async function countAssetMaintenanceHoldOrders(assetId) {
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt FROM WorkOrders w
+     WHERE w.AssetID = ?
+       AND (w.Status = 'IN_PROGRESS' OR ${SQL_W_AWAITING_URGENT})`,
+    [assetId],
+  );
+  return Number(rows[0]?.cnt ?? 0);
+}
+
+/**
+ * Số phiếu khác (≠ excludeWoId) mà nhân viên đang gánh và chưa “nhả” cho phiếu mới:
+ * IN_PROGRESS / PAUSED, hoặc AWAITING khẩn (EMERGENCY hoặc CORRECTIVE+HIGH).
+ */
+export async function countEmployeeBlockingWorkOrders(employeeId, excludeWoId) {
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt
+     FROM WO_Assignments wa
+     INNER JOIN WorkOrders w ON w.WO_ID = wa.WO_ID
+     WHERE wa.EmployeeID = ?
+       AND w.WO_ID <> ?
+       AND (
+         w.Status IN ('IN_PROGRESS','PAUSED')
+         OR ${SQL_W_AWAITING_URGENT}
+       )`,
+    [employeeId, excludeWoId],
+  );
+  return Number(rows[0]?.cnt ?? 0);
 }
 
 /** Giờ làm việc thuần (đã trừ pause). Đến WorkReportedAt nếu đã báo hoàn thành chờ nghiệm thu. */

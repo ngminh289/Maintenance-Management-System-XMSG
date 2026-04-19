@@ -1,9 +1,11 @@
 /**
  * workOrder.service.js — Nghiệp vụ Phiếu công việc: tạo, phân công, chuyển trạng thái.
  * Luồng thực hiện: WAITING → IN_PROGRESS → AWAITING_CLOSURE (thợ báo xong + ảnh) → COMPLETED (TC/TP nghiệm thu đóng).
+ * Đồng bộ tài sản: MAINTENANCE khi còn phiếu IN_PROGRESS hoặc phiếu EMERGENCY đang chờ nghiệm thu; PAUSED / chờ nghiệm thu phiếu thường → reconcile AVAILABLE.
+ * COMPLETED: reconcile; chặn KTV bắt đầu / làm tiếp phiếu nếu còn phiếu khác IN_PROGRESS/PAUSED hoặc chờ nghiệm thu khẩn.
  * KTV hiện trường / Chuyên viên KTS: chặn IN_PROGRESS (bắt đầu / tiếp tục từ PAUSED) khi đang nghỉ phép có lịch.
  * WO từ lịch đã phê duyệt: createFromApprovedSchedule → WAITING.
- * WO hoàn thành → workOrderMaintenanceSync; checklist/ hệ thống có thể gọi updateStatus COMPLETED trực tiếp.
+ * WO hoàn thành → workOrderMaintenanceSync; checklist OK đóng WO gọi reconcileAssetStatusForOnsiteWorkOrders.
  * Liên quan: workOrderPhoto.model.js, workOrderMaintenanceSync, approval, notification.
  * saveClosureNotesDraft / resetRuntimeBaselineForCorrective: thợ được giao hoặc TC+ (không cần ASSET:UPDATE cho reset mốc giờ).
  * getById(+viewer): recentChecklists — 3 checklist APPROVED gần nhất cùng tài sản (NVKT/TC+ hoặc thợ được phân công).
@@ -30,6 +32,18 @@ const SERVER_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 /** Level ≥ 3: Trưởng ca / Trưởng phòng — nghiệm thu đóng phiếu */
 const SUPERVISOR_MIN_LEVEL = 3;
+
+/**
+ * MAINTENANCE nếu còn phiếu IN_PROGRESS hoặc AWAITING_CLOSURE khẩn (EMERGENCY) trên tài sản; ngược lại AVAILABLE.
+ * Không ghi đè DECOMMISSIONED.
+ */
+export async function reconcileAssetStatusForOnsiteWorkOrders(assetId) {
+  if (!assetId) return;
+  const asset = await assetModel.findById(assetId);
+  if (!asset || asset.status === "DECOMMISSIONED") return;
+  const n = await model.countAssetMaintenanceHoldOrders(assetId);
+  await assetModel.updateStatus(assetId, n > 0 ? "MAINTENANCE" : "AVAILABLE");
+}
 
 // Trạng thái cho phép chuyển tiếp (guard)
 const TRANSITIONS = {
@@ -354,6 +368,26 @@ export async function changeStatus(
         );
       }
     }
+    const busyIds = [];
+    if (assigned && !isSupervisor && (wo.status === "WAITING" || wo.status === "PAUSED")) {
+      const eid = Number(employeeId);
+      if (Number.isFinite(eid) && eid > 0) busyIds.push(eid);
+    } else if (isSupervisor && wo.status === "AWAITING_CLOSURE") {
+      for (const r of assignmentRows) {
+        const eid = Number(r.employeeId);
+        if (Number.isFinite(eid) && eid > 0) busyIds.push(eid);
+      }
+    }
+    const uniqueBusy = [...new Set(busyIds)];
+    for (const eid of uniqueBusy) {
+      const blocking = await model.countEmployeeBlockingWorkOrders(eid, id);
+      if (blocking > 0) {
+        throw createError(
+          "Nhân viên đang bận phiếu việc khác (đang thực hiện / tạm dừng, hoặc chờ nghiệm thu phiếu khẩn: EMERGENCY hoặc sự cố HIGH). Vui lòng chờ họ xong hoặc tạm dừng phiến đang làm trước khi bắt đầu / làm tiếp phiếu này.",
+          409,
+        );
+      }
+    }
   }
 
   let precomputedAwaitingHours;
@@ -396,6 +430,9 @@ export async function changeStatus(
       "SYSTEM_ALERT",
       3,
     );
+    if (wo.assetId) {
+      await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
+    }
   } else if (newStatus === "COMPLETED") {
     const actualDate = new Date().toISOString().split("T")[0];
     const fresh = await model.findById(id);
@@ -419,19 +456,32 @@ export async function changeStatus(
     });
 
     if (wo.assetId) {
-      await assetModel.updateStatus(wo.assetId, "AVAILABLE");
+      await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
       const completedRow = await model.findById(id);
       await workOrderMaintSync.afterWorkOrderCompleted(completedRow);
     }
     if (wo.createdBy) {
+      const af = wo.assetId ? await assetModel.findById(wo.assetId) : null;
+      const tail =
+        af?.status === "MAINTENANCE"
+          ? "Tài sản vẫn MAINTENANCE (còn phiếu đang thực hiện hoặc phiếu khẩn chờ nghiệm thu trên cùng thiết bị)."
+          : "Tài sản đã trở lại AVAILABLE.";
       await notifService.send(
         wo.createdBy,
-        `Phiếu WO #${id} đã hoàn thành. Tài sản đã trở lại AVAILABLE.`,
+        `Phiếu WO #${id} đã hoàn thành. ${tail}`,
         "WORK_ORDER_COMPLETED",
       );
     }
   } else {
     await model.updateStatus(id, newStatus, {});
+  }
+
+  if (newStatus === "PAUSED" && wo.assetId) {
+    await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
+  }
+
+  if (newStatus === "IN_PROGRESS" && wo.assetId) {
+    await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
   }
 
   if (newStatus === "IN_PROGRESS" && wo.status === "WAITING") {

@@ -6,6 +6,7 @@
  *   - Chỉ sự cố nghiêm trọng mới 2 bước — B1 Trưởng ca → B2 Trưởng phòng (workflow khẩn):
  *     Priority = EMERGENCY, hoặc (CORRECTIVE + HIGH).
  * Duyệt WO bước cuối: có thể kèm assignEmployeeId → phân công hiện trường ngay (tuỳ chọn).
+ * Trạng thái tài sản MAINTENANCE khi KTV bắt đầu thực hiện (IN_PROGRESS) — xem workOrder.service.js; không gán MAINTENANCE tại bước phê duyệt WO.
  * Phân công được validate trước khi ghi APPROVED / WAITING — tránh lỗi nghỉ phép làm “log đã xử lý”.
  * Liên quan: models/approvalLog.model.js, workOrderFieldAssign.service.js.
  */
@@ -225,22 +226,6 @@ export async function approve({
     log.resourceId,
     STATUS_MAP[log.resourceType]?.approved,
   );
-
-  // Khi WO CORRECTIVE được duyệt hoàn tất → máy chuyển sang MAINTENANCE (đang sửa chữa)
-  // Khi WO hoàn thành (changeStatus COMPLETED) → asset sẽ chuyển về AVAILABLE
-  if (log.resourceType === "WORK_ORDER") {
-    const [woRows] = await getPool().query(
-      "SELECT AssetID AS assetId, WO_Source AS woSource FROM WorkOrders WHERE WO_ID = ?",
-      [log.resourceId],
-    );
-    const wo = woRows[0];
-    if (wo?.assetId && wo.woSource === "CORRECTIVE") {
-      await getPool().query(
-        "UPDATE Assets SET Status = 'MAINTENANCE' WHERE AssetID = ?",
-        [wo.assetId],
-      );
-    }
-  }
 
   // Thông báo người gửi (+ BFD 4: tài liệu số → KTV đã từng được phân công WO trên cùng tài sản)
   let submitterMessage = `Yêu cầu của bạn (${log.resourceType} #${log.resourceId}) đã được phê duyệt`;
