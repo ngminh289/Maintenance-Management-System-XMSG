@@ -1,49 +1,89 @@
 /**
- * AssetDetailPage.jsx — Chi tiết tài sản: thông tin, đồng hồ giờ chạy, QR, lịch sử ghi nhận & bảo trì.
- * Bộ đếm: chỉ số máy (LastReading) ≠ tổng delta (TotalAccumulated) ≠ mốc sau PM (LastMaintenanceTotal — reset khi PM theo giờ xong).
+ * AssetDetailPage.jsx — Chi tiết tài sản đầy đủ.
+ * Sections: Thông tin cơ bản | Thông tin kỹ thuật | Thời gian & trạng thái | Ảnh thiết bị
+ * Bộ đếm: chỉ số máy (LastReading) ≠ tổng delta (TotalAccumulated)
+ *         ≠ mốc sau PM (LastMaintenanceTotal — reset khi PM theo giờ xong).
+ * Liên quan: AssetForm.jsx, asset.model.js, asset.api.js
+ * Ảnh: chỉ role ASSET:UPDATE mới upload/xóa được.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Pencil, QrCode, ArrowLeft, Gauge, Bell, Wrench } from 'lucide-react';
-import { assetApi }    from '../../api/asset.api.js';
-import { Badge }       from '../../components/ui/Badge.jsx';
-import { Card }        from '../../components/ui/Card.jsx';
-import { Button }      from '../../components/ui/Button.jsx';
-import { Modal }       from '../../components/ui/Modal.jsx';
-import { Input }       from '../../components/ui/Input.jsx';
-import { PageLoader }  from '../../components/ui/Spinner.jsx';
-import { AssetForm }   from './AssetForm.jsx';
 import {
-  ASSET_STATUS_LABEL, ASSET_STATUS_COLOR, fDate, fDateTime, fNumber, WO_SOURCE_LABEL,
+  Pencil, QrCode, ArrowLeft, Gauge, Bell, Wrench,
+  Info, Settings, Clock, Images, Trash2, ImagePlus, X,
+} from 'lucide-react';
+import { assetApi }   from '../../api/asset.api.js';
+import { Badge }      from '../../components/ui/Badge.jsx';
+import { Card }       from '../../components/ui/Card.jsx';
+import { Button }     from '../../components/ui/Button.jsx';
+import { Modal }      from '../../components/ui/Modal.jsx';
+import { Input }      from '../../components/ui/Input.jsx';
+import { PageLoader } from '../../components/ui/Spinner.jsx';
+import { AssetForm }  from './AssetForm.jsx';
+import {
+  ASSET_STATUS_LABEL, ASSET_STATUS_COLOR,
+  fDate, fDateTime, fNumber, WO_SOURCE_LABEL,
 } from '../../utils/format.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { canDo } from '../../utils/rbac.js';
+import { canDo }   from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 const PREDICTIVE_EVENT_LABEL = {
-  WARN_DUE_SOON: 'Cảnh báo sắp tới ngưỡng PM',
-  THRESHOLD_EXCEEDED: 'Vượt ngưỡng giờ chạy',
-  AUTO_WO_CREATED: 'Tạo WO dự báo tự động',
+  WARN_DUE_SOON:             'Cảnh báo sắp tới ngưỡng PM',
+  THRESHOLD_EXCEEDED:        'Vượt ngưỡng giờ chạy',
+  AUTO_WO_CREATED:           'Tạo WO dự báo tự động',
   AUTO_WO_SKIPPED_DUPLICATE: 'Không tạo WO (đã có phiếu mở)',
 };
 
+const PHOTO_ACCEPT = '.jpg,.jpeg,.png,.webp';
+const MAX_PHOTOS   = 10;
+
+function InfoRow({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className="font-semibold text-gray-900 mt-1 break-words">{value ?? '—'}</p>
+    </div>
+  );
+}
+
+function GroupTitle({ icon: Icon, children }) {
+  return (
+    <div className="flex items-center gap-1.5 mb-3 mt-1 first:mt-0">
+      {Icon && <Icon size={13} className="text-gray-400" />}
+      <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500">{children}</span>
+    </div>
+  );
+}
+
 export function AssetDetailPage() {
   const { user } = useAuth();
-  const { id } = useParams();
-  const [asset,          setAsset]          = useState(null);
-  const [counter,        setCounter]        = useState(null);
+  const { id }   = useParams();
+
+  const [asset,           setAsset]           = useState(null);
+  const [counter,         setCounter]         = useState(null);
   const [hourlySchedules, setHourlySchedules] = useState([]);
-  const [history,        setHistory]        = useState([]);
-  const [predEvents,     setPredEvents]     = useState([]);
-  const [maintHistory,   setMaintHistory]   = useState([]);
-  const [types,          setTypes]          = useState([]);
-  const [locs,           setLocs]           = useState([]);
-  const [loading,        setLoading]        = useState(true);
+  const [history,         setHistory]         = useState([]);
+  const [predEvents,      setPredEvents]      = useState([]);
+  const [maintHistory,    setMaintHistory]    = useState([]);
+  const [types,           setTypes]           = useState([]);
+  const [locs,            setLocs]            = useState([]);
+  const [loading,         setLoading]         = useState(true);
+
   const [editOpen,    setEditOpen]    = useState(false);
   const [qrOpen,      setQrOpen]      = useState(false);
   const [readingOpen, setReadingOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+
   const [reading,     setReading]     = useState('');
   const [readLoading, setReadLoading] = useState(false);
+
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
+  const photoInputRef = useRef(null);
+
+  const canEditAsset  = canDo(user, 'ASSET:UPDATE');
+  const canLogHours   = canDo(user, 'RUNTIME_LOG:CREATE');
 
   const load = async () => {
     try {
@@ -86,6 +126,40 @@ export function AssetDetailPage() {
     } finally { setReadLoading(false); }
   };
 
+  const handlePhotoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    e.target.value = '';
+
+    const currentCount = asset?.photos?.length ?? 0;
+    if (currentCount + files.length > MAX_PHOTOS) {
+      toast.error(`Tối đa ${MAX_PHOTOS} ảnh. Hiện có ${currentCount} ảnh.`);
+      return;
+    }
+
+    setPhotoUploading(true);
+    try {
+      const fd = new FormData();
+      files.forEach(f => fd.append('photos', f));
+      const res = await assetApi.uploadPhotos(id, fd);
+      setAsset(p => ({ ...p, photos: res.data.data }));
+      toast.success(`Đã thêm ${files.length} ảnh`);
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Lỗi upload ảnh');
+    } finally { setPhotoUploading(false); }
+  };
+
+  const handleDeletePhoto = async (photoId) => {
+    setDeletingPhotoId(photoId);
+    try {
+      const res = await assetApi.deletePhoto(id, photoId);
+      setAsset(p => ({ ...p, photos: res.data.data }));
+      toast.success('Đã xóa ảnh');
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Lỗi xóa ảnh');
+    } finally { setDeletingPhotoId(null); }
+  };
+
   if (loading) return <PageLoader />;
   if (!asset)  return <div className="text-center py-20 text-gray-400">Không tìm thấy tài sản</div>;
 
@@ -93,12 +167,16 @@ export function AssetDetailPage() {
   const hasHourlySchedule = hourlySchedules.length > 0;
   const pmDateDisplay = c?.estimatedNextPMDate
     ? fDate(c.estimatedNextPMDate)
-    : hasHourlySchedule
-      ? 'Chưa đủ dữ liệu giờ chạy'
-      : 'Chưa có lịch theo giờ chạy';
+    : hasHourlySchedule ? 'Chưa đủ dữ liệu giờ chạy' : 'Chưa có lịch theo giờ chạy';
 
-  const canEditAsset = canDo(user, 'ASSET:UPDATE');
-  const canLogHours = canDo(user, 'RUNTIME_LOG:CREATE');
+  const warrantyExpired = asset.warrantyDate && new Date(asset.warrantyDate) < new Date();
+  const warrantyDisplay = asset.warrantyDate
+    ? <span className={warrantyExpired ? 'text-red-600' : 'text-green-600'}>
+        {fDate(asset.warrantyDate)}{warrantyExpired ? ' (Hết hạn)' : ' (Còn hạn)'}
+      </span>
+    : '—';
+
+  const photos = asset.photos ?? [];
 
   return (
     <div className="space-y-5">
@@ -109,7 +187,9 @@ export function AssetDetailPage() {
             <ArrowLeft size={18} />
           </Link>
           <h2 className="text-lg font-bold text-gray-900">{asset.assetName}</h2>
-          <Badge color={ASSET_STATUS_COLOR[asset.status]}>{ASSET_STATUS_LABEL[asset.status]}</Badge>
+          <Badge color={ASSET_STATUS_COLOR[asset.status]}>
+            {ASSET_STATUS_LABEL[asset.status]}
+          </Badge>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setQrOpen(true)}>
@@ -124,33 +204,66 @@ export function AssetDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Thông tin cơ bản */}
+        {/* ── Card thông tin ── */}
         <Card title="Thông tin thiết bị" className="lg:col-span-2">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
-            {[
-              ['Mã tài sản',     `#${asset.assetId}`],
-              ['Loại thiết bị',  asset.typeName],
-              ['Vị trí',         asset.locationName],
-              ['Nhà sản xuất',   asset.manufacturer || '—'],
-              ['Số Serial',      asset.serialNumber || '—'],
-              ['Ngày đưa vào SD', fDate(asset.commissionDate)],
-              ['Tạo lúc',        fDateTime(asset.createdAt)],
-            ].map(([label, val]) => (
-              <div key={label}>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
-                <p className="font-semibold text-gray-900 mt-1">{val}</p>
+          <div className="space-y-5">
+            <div>
+              <GroupTitle icon={Info}>Thông tin cơ bản</GroupTitle>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <InfoRow label="Mã tài sản"    value={`#${asset.assetId}`} />
+                <InfoRow label="Loại thiết bị" value={asset.assetTypeName} />
+                <InfoRow label="Vị trí"        value={asset.locationName} />
               </div>
-            ))}
+            </div>
+
+            <hr className="border-gray-100" />
+
+            <div>
+              <GroupTitle icon={Settings}>Thông tin kỹ thuật</GroupTitle>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <InfoRow label="Nhà sản xuất" value={asset.manufacturer} />
+                <InfoRow label="Model"         value={asset.model} />
+                <InfoRow label="Số serial"     value={asset.serialNumber} />
+                <InfoRow label="Năm sản xuất"  value={asset.yearOfManufacture} />
+              </div>
+              {asset.technicalSpecs && (
+                <div className="mt-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Đặc tính kỹ thuật</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-line bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                    {asset.technicalSpecs}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <hr className="border-gray-100" />
+
+            <div>
+              <GroupTitle icon={Clock}>Thời gian & trạng thái</GroupTitle>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <InfoRow label="Ngày mua"              value={fDate(asset.purchaseDate)} />
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Hạn bảo hành</p>
+                  <p className="font-semibold mt-1">{warrantyDisplay}</p>
+                </div>
+                <InfoRow label="Ngày đưa vào sử dụng" value={fDate(asset.commissionDate)} />
+                <InfoRow label="Ngày ngưng hoạt động" value={fDate(asset.decommissionDate)} />
+              </div>
+            </div>
+
             {asset.description && (
-              <div className="col-span-2">
-                <p className="text-gray-400 text-xs">Mô tả</p>
-                <p className="text-gray-700 mt-0.5">{asset.description}</p>
-              </div>
+              <>
+                <hr className="border-gray-100" />
+                <div className="text-sm">
+                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-1">Mô tả</p>
+                  <p className="text-gray-700 whitespace-pre-line">{asset.description}</p>
+                </div>
+              </>
             )}
           </div>
         </Card>
 
-        {/* Bộ đếm giờ */}
+        {/* ── Bộ đếm giờ ── */}
         <Card
           title="Bộ đếm giờ chạy"
           action={
@@ -166,76 +279,42 @@ export function AssetDetailPage() {
               <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-lg px-2.5 py-2 border border-gray-100">
                 <strong>Chỉ số trên máy</strong> là số đồng hồ ghi nhận lần cuối.
                 <strong> Tổng tích lũy</strong> là tổng các bước nhảy (delta) trong hệ thống.
-                <strong> Mốc sau PM</strong> dùng tính ngưỡng bảo trì theo giờ — được cập nhật khi hoàn thành phiếu PM (không phải sự cố).
+                <strong> Mốc sau PM</strong> dùng tính ngưỡng bảo trì theo giờ.
               </p>
               {[
-                [
-                  "Chỉ số đồng hồ máy (lần ghi cuối)",
-                  `${fNumber(c.lastReadingValue)} h`,
-                  "Trùng với giá trị nhập từ màn hình máy",
-                ],
-                [
-                  "Tổng giờ chạy tích lũy (delta)",
-                  `${fNumber(c.totalAccumulatedHours)} h`,
-                  "Cộng dồn mỗi lần nhập chỉ số mới",
-                ],
-                [
-                  "Mốc sau bảo trì theo giờ",
-                  `${fNumber(c.lastMaintenanceTotal ?? 0)} h`,
-                  "Reset về tổng tích lũy hiện tại sau PM định kỳ/dự báo",
-                ],
+                ['Chỉ số đồng hồ máy (lần ghi cuối)', `${fNumber(c.lastReadingValue)} h`, 'Trùng với giá trị nhập từ màn hình máy'],
+                ['Tổng giờ chạy tích lũy (delta)',    `${fNumber(c.totalAccumulatedHours)} h`, 'Cộng dồn mỗi lần nhập chỉ số mới'],
+                ['Mốc sau bảo trì theo giờ',          `${fNumber(c.lastMaintenanceTotal ?? 0)} h`, 'Reset về tổng tích lũy hiện tại sau PM'],
               ].map(([label, val, hint]) => (
-                <div
-                  key={label}
-                  className="py-2 border-b border-gray-100 last:border-0"
-                >
+                <div key={label} className="py-2 border-b border-gray-100 last:border-0">
                   <div className="flex justify-between items-start gap-2">
-                    <span className="font-medium text-gray-700 text-xs leading-snug max-w-[58%]">
-                      {label}
-                    </span>
-                    <span className="font-bold text-gray-900 tabular-nums shrink-0">
-                      {val}
-                    </span>
+                    <span className="font-medium text-gray-700 text-xs leading-snug max-w-[58%]">{label}</span>
+                    <span className="font-bold text-gray-900 tabular-nums shrink-0">{val}</span>
                   </div>
                   <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
                 </div>
               ))}
               {hasHourlySchedule && (
                 <div className="flex justify-between items-center py-1.5 rounded-lg bg-sky-50/80 px-2 border border-sky-100">
-                  <span className="font-medium text-sky-900 text-xs">
-                    Giờ chạy kể từ mốc PM (tính ngưỡng)
-                  </span>
+                  <span className="font-medium text-sky-900 text-xs">Giờ chạy kể từ mốc PM</span>
                   <span className="font-bold text-sky-950 tabular-nums">
-                    {fNumber(
-                      Math.max(
-                        0,
-                        Number(c.totalAccumulatedHours ?? 0) -
-                          Number(c.lastMaintenanceTotal ?? 0),
-                      ),
-                    )}{" "}
-                    h
+                    {fNumber(Math.max(0, Number(c.totalAccumulatedHours ?? 0) - Number(c.lastMaintenanceTotal ?? 0)))} h
                   </span>
                 </div>
               )}
               <div className="flex justify-between items-center py-1 border-b border-gray-100">
                 <span className="font-medium text-gray-600">Trung bình/ngày</span>
-                <span className="font-bold text-gray-900">
-                  {fNumber(c.averageHoursPerDay ?? 0)} h/ngày
-                </span>
+                <span className="font-bold text-gray-900">{fNumber(c.averageHoursPerDay ?? 0)} h/ngày</span>
               </div>
               <div className="flex justify-between items-start py-1">
                 <span className="font-medium text-gray-600">Ngày PM dự báo</span>
-                <span
-                  className={`font-bold text-right text-xs max-w-[55%] ${
-                    c.estimatedNextPMDate ? "text-gray-900" : "text-amber-600"
-                  }`}
-                >
+                <span className={`font-bold text-right text-xs max-w-[55%] ${c.estimatedNextPMDate ? 'text-gray-900' : 'text-amber-600'}`}>
                   {pmDateDisplay}
                 </span>
               </div>
               {!hasHourlySchedule && (
                 <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5">
-                  Thêm lịch <strong>dự báo (theo giờ)</strong> để dùng ngưỡng PM và dự báo ngày.
+                  Thêm lịch <strong>dự báo (theo giờ)</strong> để dùng ngưỡng PM.
                 </p>
               )}
             </div>
@@ -245,6 +324,113 @@ export function AssetDetailPage() {
         </Card>
       </div>
 
+      {/* ── Ảnh thiết bị ── */}
+      <Card
+        title={<span className="flex items-center gap-2"><Images size={16} /> Ảnh thiết bị</span>}
+        action={
+          canEditAsset ? (
+            <Button
+              size="xs"
+              variant="secondary"
+              loading={photoUploading}
+              onClick={() => photoInputRef.current?.click()}
+              disabled={photos.length >= MAX_PHOTOS}
+            >
+              <ImagePlus size={12} />
+              {photos.length >= MAX_PHOTOS ? `Tối đa ${MAX_PHOTOS} ảnh` : 'Thêm ảnh'}
+            </Button>
+          ) : undefined
+        }
+      >
+        {canEditAsset && (
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept={PHOTO_ACCEPT}
+            multiple
+            className="hidden"
+            onChange={handlePhotoUpload}
+          />
+        )}
+
+        {photos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
+            <Images size={32} className="opacity-30" />
+            <p className="text-sm">Chưa có ảnh nào</p>
+            {canEditAsset && (
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="text-xs text-blue-600 hover:underline mt-1"
+              >
+                Thêm ảnh đầu tiên
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {photos.map(p => {
+              const src = assetApi.getPhotoUrl(p.filePath);
+              const isDeleting = deletingPhotoId === p.photoId;
+              return (
+                <div
+                  key={p.photoId}
+                  className="relative group rounded-xl border border-gray-200 overflow-hidden bg-gray-50 aspect-square cursor-pointer"
+                  onClick={() => !isDeleting && setLightboxSrc(src)}
+                >
+                  <img
+                    src={src}
+                    alt={`Ảnh ${p.photoId}`}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  {/* Overlay thông tin */}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex flex-col justify-end p-1.5 pointer-events-none">
+                    {p.uploadedByName && (
+                      <p className="text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity truncate">
+                        {p.uploadedByName}
+                      </p>
+                    )}
+                  </div>
+                  {/* Nút xóa — chỉ role ASSET:UPDATE */}
+                  {canEditAsset && (
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={(e) => { e.stopPropagation(); handleDeletePhoto(p.photoId); }}
+                      className="absolute top-1.5 right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-60 z-10"
+                      title="Xóa ảnh"
+                    >
+                      {isDeleting ? (
+                        <span className="block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Trash2 size={11} />
+                      )}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {/* Ô thêm ảnh nếu còn slot */}
+            {canEditAsset && photos.length < MAX_PHOTOS && (
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoUploading}
+                className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-400 text-gray-400 hover:text-blue-500 flex flex-col items-center justify-center gap-1 transition-colors disabled:opacity-40"
+              >
+                <ImagePlus size={20} />
+                <span className="text-[11px]">Thêm ảnh</span>
+              </button>
+            )}
+          </div>
+        )}
+        {photos.length > 0 && (
+          <p className="text-xs text-gray-400 mt-3">{photos.length}/{MAX_PHOTOS} ảnh · Nhấp để xem toàn màn hình</p>
+        )}
+      </Card>
+
+      {/* Lịch sử bảo trì */}
       <Card title={<span className="flex items-center gap-2"><Wrench size={16} /> Lịch sử bảo trì</span>}>
         <p className="text-xs text-gray-500 mb-3">
           Phiếu định kỳ / dự báo / thủ công hoàn thành sẽ cập nhật lịch và mốc giờ; phiếu sự cố chỉ lưu lịch sử.
@@ -273,15 +459,15 @@ export function AssetDetailPage() {
                     <td className="py-2.5 pr-3">{row.actualHours != null ? `${fNumber(row.actualHours)} h` : '—'}</td>
                     <td className="py-2.5 pr-3">{row.totalRuntimeHours != null ? `${fNumber(row.totalRuntimeHours)} h` : '—'}</td>
                     <td className="py-2.5 pr-3">
-                      {row.workOrderId
-                        ? (
-                          <Link to={`/work-orders/${row.workOrderId}`} className="font-semibold text-blue-700 hover:underline">
-                            #{row.workOrderId}
-                          </Link>
-                          )
-                        : '—'}
+                      {row.workOrderId ? (
+                        <Link to={`/work-orders/${row.workOrderId}`} className="font-semibold text-blue-700 hover:underline">
+                          #{row.workOrderId}
+                        </Link>
+                      ) : '—'}
                     </td>
-                    <td className="py-2.5 text-gray-600 text-xs max-w-xs truncate" title={row.description}>{row.description ?? '—'}</td>
+                    <td className="py-2.5 text-gray-600 text-xs max-w-xs truncate" title={row.description}>
+                      {row.description ?? '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -290,7 +476,7 @@ export function AssetDetailPage() {
         )}
       </Card>
 
-      {/* Nhật ký dự báo (thuật toán / cảnh báo) */}
+      {/* Nhật ký dự báo */}
       {predEvents.length > 0 && (
         <Card title={<span className="flex items-center gap-2"><Bell size={16} /> Nhật ký dự báo bảo trì</span>}>
           <div className="overflow-x-auto">
@@ -307,22 +493,17 @@ export function AssetDetailPage() {
                   <tr key={ev.logId} className="hover:bg-gray-50">
                     <td className="py-2.5 pr-4 font-medium text-gray-800 whitespace-nowrap">{fDateTime(ev.createdAt)}</td>
                     <td className="py-2.5 pr-4">
-                      <Badge color={
-                        ev.eventType === 'THRESHOLD_EXCEEDED' ? 'red'
-                          : ev.eventType === 'WARN_DUE_SOON' ? 'orange' : 'blue'
-                      }>
+                      <Badge color={ev.eventType === 'THRESHOLD_EXCEEDED' ? 'red' : ev.eventType === 'WARN_DUE_SOON' ? 'orange' : 'blue'}>
                         {PREDICTIVE_EVENT_LABEL[ev.eventType] ?? ev.eventType}
                       </Badge>
                     </td>
                     <td className="py-2.5 pr-4 text-gray-700 max-w-md">{ev.detail ?? '—'}</td>
                     <td className="py-2.5">
-                      {ev.relatedWOId
-                        ? (
-                          <Link to={`/work-orders/${ev.relatedWOId}`} className="font-semibold text-blue-700 hover:underline">
-                            WO #{ev.relatedWOId}
-                          </Link>
-                          )
-                        : '—'}
+                      {ev.relatedWOId ? (
+                        <Link to={`/work-orders/${ev.relatedWOId}`} className="font-semibold text-blue-700 hover:underline">
+                          WO #{ev.relatedWOId}
+                        </Link>
+                      ) : '—'}
                     </td>
                   </tr>
                 ))}
@@ -332,7 +513,7 @@ export function AssetDetailPage() {
         </Card>
       )}
 
-      {/* Runtime history */}
+      {/* Lịch sử giờ chạy */}
       {history.length > 0 && (
         <Card title="Lịch sử ghi nhận giờ chạy (RuntimeLogs)">
           <div className="overflow-x-auto">
@@ -345,7 +526,7 @@ export function AssetDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                  {history.map(h => (
+                {history.map(h => (
                   <tr key={h.logId} className="hover:bg-gray-50">
                     <td className="py-2.5 pr-4 font-medium text-gray-800">{fDateTime(h.captureTime)}</td>
                     <td className="py-2.5 pr-4 font-mono font-bold text-gray-900">{fNumber(h.readingValue)} h</td>
@@ -361,16 +542,17 @@ export function AssetDetailPage() {
         </Card>
       )}
 
-      {/* Edit modal */}
+      {/* Modal chỉnh sửa */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Chỉnh sửa tài sản" size="lg">
         <AssetForm
           asset={asset} types={types} locations={locs}
-          onSuccess={() => { setEditOpen(false); load(); toast.success('Đã cập nhật'); }}
+          canUploadPhoto={canEditAsset}
+          onSuccess={() => { setEditOpen(false); load(); toast.success('Đã cập nhật tài sản'); }}
           onCancel={() => setEditOpen(false)}
         />
       </Modal>
 
-      {/* QR modal */}
+      {/* Modal QR */}
       <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="QR Code" size="sm">
         <div className="flex flex-col items-center gap-4">
           <img src={assetApi.getQRUrl(id)} alt="QR" className="w-52 h-52 border rounded-xl" />
@@ -380,13 +562,12 @@ export function AssetDetailPage() {
         </div>
       </Modal>
 
-      {/* Record reading modal */}
+      {/* Modal nhập giờ chạy */}
       <Modal open={readingOpen} onClose={() => setReadingOpen(false)} title="Nhập chỉ số đồng hồ máy" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-gray-600 leading-relaxed">
-            Nhập <strong>chỉ số hiện tại</strong> đang hiển thị trên màn hình máy (tổng giờ chạy theo đồng hồ máy),
-            không phải “số giờ thêm trong ngày”. Hệ thống sẽ tính bước nhảy so với lần ghi trước để cộng vào{" "}
-            <strong>tổng tích lũy (delta)</strong>.
+            Nhập <strong>chỉ số hiện tại</strong> đang hiển thị trên màn hình máy, không phải "số giờ thêm trong ngày".
+            Hệ thống sẽ tính bước nhảy so với lần ghi trước để cộng vào <strong>tổng tích lũy (delta)</strong>.
           </p>
           <Input
             label="Chỉ số đồng hồ máy (giờ)"
@@ -401,6 +582,27 @@ export function AssetDetailPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Lightbox xem ảnh toàn màn hình */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <X size={28} />
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="Ảnh thiết bị"
+            className="max-w-full max-h-full rounded-xl shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

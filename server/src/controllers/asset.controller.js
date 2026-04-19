@@ -1,12 +1,12 @@
 /**
  * asset.controller.js — HTTP handler: /api/assets.
- * Bao gồm: CRUD, soft-delete (DECOMMISSIONED), QR code generation.
+ * Bao gồm: CRUD, soft-delete (DECOMMISSIONED), QR code, ảnh tài sản.
  * project.rule: "Sinh QR động khi đăng ký tài sản (chứa AssetID, link đến checklist)".
  * Liên quan: services/asset.service.js, routes/asset.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { ok } from '../utils/response.js';
-import * as service from '../services/asset.service.js';
+import { ok }           from '../utils/response.js';
+import * as service     from '../services/asset.service.js';
 import QRCode from 'qrcode';
 
 export const getAll = asyncHandler(async (req, res) => {
@@ -57,8 +57,33 @@ export const generateQR = asyncHandler(async (req, res) => {
     return ok(res, { assetId: asset.assetId, assetName: asset.assetName, qrPayload, dataUrl });
   }
 
-  // Mặc định: trả về ảnh PNG để hiển thị/tải về
   res.setHeader('Content-Type', 'image/png');
   res.setHeader('Content-Disposition', `inline; filename="qr-${asset.assetId}.png"`);
   await QRCode.toFileStream(res, qrPayload, { width: 300, margin: 2 });
+});
+
+// ── Ảnh tài sản ─────────────────────────────────────────────────────────────
+
+/** GET /api/assets/:id/photos */
+export const getPhotos = asyncHandler(async (req, res) => {
+  return ok(res, await service.getPhotos(req.params.id));
+});
+
+/** POST /api/assets/:id/photos — multipart, field "photos" (tối đa 10 ảnh/lần) */
+export const addPhotos = asyncHandler(async (req, res) => {
+  const photos = await service.addPhotos(
+    Number(req.params.id),
+    req.files || [],
+    { uploadedBy: req.user.sub },
+  );
+  return ok(res, photos, 201);
+});
+
+/** DELETE /api/assets/:id/photos/:photoId */
+export const deletePhoto = asyncHandler(async (req, res) => {
+  const photos = await service.deletePhoto(
+    Number(req.params.id),
+    Number(req.params.photoId),
+  );
+  return ok(res, photos);
 });

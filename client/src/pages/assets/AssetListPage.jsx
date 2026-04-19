@@ -155,6 +155,7 @@ export function AssetListPage() {
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thêm tài sản mới" size="lg">
         <AssetForm
           types={types} locations={locs}
+          canUploadPhoto={canDo(user, 'ASSET:UPDATE')}
           onSuccess={() => { setCreateOpen(false); load(); toast.success('Đã thêm tài sản'); }}
           onCancel={() => setCreateOpen(false)}
         />
