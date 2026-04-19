@@ -2,6 +2,7 @@
  * auth.service.js — Nghiệp vụ xác thực: bcrypt, JWT, cookie httpOnly, nodemailer.
  * function.rule: đăng nhập, verify Gmail, quên mật khẩu, refresh token. Tài khoản mới: Admin tạo qua employee API (không đăng ký công khai).
  * Dùng trong: controllers/auth.controller.js.
+ * getMe (Level 1–2): thêm fieldWorkSummary — rảnh/bận/nghỉ phép + phiếu đang gánh (Dashboard hiện trường).
  */
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -10,6 +11,7 @@ import { sendMail } from '../config/mailer.js';
 import { env } from '../config/env.js';
 import { createError } from '../utils/createError.js';
 import * as employeeModel from '../models/employee.model.js';
+import * as workOrderModel from '../models/workOrder.model.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -113,8 +115,116 @@ export async function refreshTokens(refreshToken) {
   return { accessToken: signAccessToken(buildTokenPayload(emp)) };
 }
 
+function isAwaitingUrgentRow(wo) {
+  if (!wo || wo.status !== 'AWAITING_CLOSURE') return false;
+  if (wo.priority === 'EMERGENCY') return true;
+  if (String(wo.woSource) === 'CORRECTIVE' && wo.priority === 'HIGH') return true;
+  return false;
+}
+
+function slimWoRow(r) {
+  return {
+    woId: r.woId,
+    status: r.status,
+    priority: r.priority,
+    woSource: r.woSource,
+    plannedDate: r.plannedDate,
+    assetName: r.assetName,
+    locationName: r.locationName,
+  };
+}
+
+/** Tóm tắt cho KTV hiện trường / NV KT (dashboard) — khớp quy tắc chặn đa phiếu ở workOrder.service. */
+function buildFieldWorkSummary(emp, rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const onLeave = Boolean(emp.onScheduledLeave);
+  if (onLeave) {
+    return {
+      availability: 'ON_LEAVE',
+      leaveStartAt: emp.leaveStartAt,
+      leaveEndAt: emp.leaveEndAt,
+      headline: 'Đang nghỉ phép có lịch',
+      detail:
+        'Không thể bắt đầu thực hiện phiếu mới trong khoảng thời gian này.',
+      activeWorkOrder: null,
+      openWorkOrders: list.map(slimWoRow),
+    };
+  }
+  const inPro = list.find((r) => r.status === 'IN_PROGRESS');
+  const paused = list.find((r) => r.status === 'PAUSED');
+  const urgentAwait = list.filter(isAwaitingUrgentRow);
+  const normalAwait = list.filter(
+    (r) => r.status === 'AWAITING_CLOSURE' && !isAwaitingUrgentRow(r),
+  );
+  const waiting = list.filter((r) => r.status === 'WAITING');
+
+  if (inPro) {
+    return {
+      availability: 'BUSY_ON_SITE',
+      headline: 'Đang thực hiện tại hiện trường',
+      detail:
+        'Không mở thêm phiếu thực hiện khác cho đến khi hoàn tất, báo chờ nghiệm thu hoặc tạm dừng.',
+      activeWorkOrder: slimWoRow(inPro),
+      openWorkOrders: list.map(slimWoRow),
+    };
+  }
+  if (paused) {
+    return {
+      availability: 'BUSY_PAUSED',
+      headline: 'Phiếu đang tạm dừng',
+      detail:
+        'Tiếp tục khi sẵn sàng; không bắt đầu thêm phiếu thực hiện khác.',
+      activeWorkOrder: slimWoRow(paused),
+      openWorkOrders: list.map(slimWoRow),
+    };
+  }
+  if (urgentAwait.length) {
+    return {
+      availability: 'BUSY_AWAITING_REVIEW',
+      headline: 'Chờ nghiệm thu (phiếu khẩn / sự cố nặng)',
+      detail:
+        'Chưa nhận phiếu thực hiện mới cho đến khi Trưởng ca / Trưởng phòng nghiệm thu xong.',
+      activeWorkOrder: slimWoRow(urgentAwait[0]),
+      openWorkOrders: list.map(slimWoRow),
+    };
+  }
+  if (normalAwait.length) {
+    return {
+      availability: 'AWAITING_NON_URGENT',
+      headline: 'Đã báo xong — chờ nghiệm thu (phiếu thường)',
+      detail:
+        'Có thể nhận phiếu thực hiện khác nếu được phân công (máy có thể đã AVAILABLE).',
+      primaryAwaiting: slimWoRow(normalAwait[0]),
+      activeWorkOrder: null,
+      openWorkOrders: list.map(slimWoRow),
+    };
+  }
+  const nWait = waiting.length;
+  if (nWait > 0) {
+    return {
+      availability: 'ASSIGNED_IDLE',
+      headline: `Rảnh — ${nWait} phiếu chờ bắt đầu`,
+      detail: 'Chưa có phiếu đang thực hiện.',
+      activeWorkOrder: null,
+      openWorkOrders: list.map(slimWoRow),
+    };
+  }
+  return {
+    availability: 'IDLE',
+    headline: 'Đang rảnh',
+    detail: 'Không có phiếu việc mở được giao cho bạn.',
+    activeWorkOrder: null,
+    openWorkOrders: [],
+  };
+}
+
 export async function getMe(employeeId) {
   const emp = await employeeModel.findById(employeeId);
   if (!emp) throw createError('Không tìm thấy nhân viên', 404);
+  const lvl = Number(emp.positionLevel) || 0;
+  if (lvl >= 1 && lvl <= 2) {
+    const rows = await workOrderModel.findOpenAssignmentsForEmployee(employeeId);
+    emp.fieldWorkSummary = buildFieldWorkSummary(emp, rows);
+  }
   return emp;
 }

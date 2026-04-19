@@ -6,6 +6,7 @@
  * findAll: thêm approvalHasPending, needsApprovalResubmit (JOIN logic ApprovalLogs).
  * countAssetMaintenanceHoldOrders: IN_PROGRESS hoặc AWAITING khẩn (EMERGENCY hoặc CORRECTIVE+HIGH) — giữ MAINTENANCE.
  * countEmployeeBlockingWorkOrders: chặn KTV mở thêm phiếu khi còn IN_PROGRESS/PAUSED hoặc AWAITING khẩn trên phiếu khác.
+ * findOpenAssignmentsForEmployee: phiếu mở theo WO_Assignments — tóm tắt trạng thái hiện trường (/auth/me).
  */
 import { getPool } from "../config/database.js";
 
@@ -195,6 +196,31 @@ export async function countEmployeeBlockingWorkOrders(employeeId, excludeWoId) {
     [employeeId, excludeWoId],
   );
   return Number(rows[0]?.cnt ?? 0);
+}
+
+/** Phiếu chưa đóng mà nhân viên được phân công — Dashboard trạng thái KTV/CV KTS. */
+export async function findOpenAssignmentsForEmployee(employeeId) {
+  const [rows] = await getPool().query(
+    `SELECT w.WO_ID AS woId, w.Status AS status, w.Priority AS priority, w.WO_Source AS woSource,
+            w.PlannedDate AS plannedDate, a.AssetName AS assetName, l.LocationName AS locationName
+     FROM WO_Assignments wa
+     INNER JOIN WorkOrders w ON w.WO_ID = wa.WO_ID
+     INNER JOIN Assets a ON a.AssetID = w.AssetID
+     INNER JOIN Locations l ON l.LocationID = a.LocationID
+     WHERE wa.EmployeeID = ?
+       AND w.Status NOT IN ('COMPLETED','CANCELLED')
+     ORDER BY
+       CASE w.Status
+         WHEN 'IN_PROGRESS' THEN 1
+         WHEN 'PAUSED' THEN 2
+         WHEN 'AWAITING_CLOSURE' THEN 3
+         WHEN 'WAITING' THEN 4
+         ELSE 5
+       END,
+       w.WO_ID DESC`,
+    [employeeId],
+  );
+  return rows;
 }
 
 /** Giờ làm việc thuần (đã trừ pause). Đến WorkReportedAt nếu đã báo hoàn thành chờ nghiệm thu. */

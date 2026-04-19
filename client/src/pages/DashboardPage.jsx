@@ -4,6 +4,7 @@
  *   - director  (Ban Giám đốc)              : KPI cấp cao + báo cáo (không menu Phê duyệt — chỉ R)
  *   - admin     (Quản trị hệ thống)         : quản lý hệ thống + nhân sự
  *   - field     (KTV hiện trường / Chuyên viên KTS)   : công việc được giao + checklist
+ * FieldDashboard: refetchMe() → /auth/me + fieldWorkSummary (rảnh / bận / nghỉ phép + phiếu đang gánh).
  * Dùng getDashboardType() từ utils/rbac.js.
  */
 import { useEffect, useState } from 'react';
@@ -13,6 +14,7 @@ import {
   CheckCircle, XCircle, Clock, QrCode,
   Users, FileText, BarChart2, CalendarClock,
   ArrowRight, Calendar, ClipboardList, GitBranch,
+  CalendarOff, PlayCircle, PauseCircle, ShieldAlert, Inbox, Sparkles,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -385,28 +387,119 @@ function AdminDashboard() {
   );
 }
 
+/** Giao diện theo fieldWorkSummary từ /auth/me (Level 1–2). */
+const FIELD_SUMMARY_STYLES = {
+  ON_LEAVE: {
+    wrap: 'from-amber-50 to-orange-50/80 border-amber-200',
+    icon: CalendarOff,
+    iconClass: 'text-amber-700',
+    badge: 'yellow',
+  },
+  BUSY_ON_SITE: {
+    wrap: 'from-orange-50 to-red-50/70 border-orange-200',
+    icon: PlayCircle,
+    iconClass: 'text-orange-700',
+    badge: 'orange',
+  },
+  BUSY_PAUSED: {
+    wrap: 'from-yellow-50 to-amber-50/80 border-yellow-200',
+    icon: PauseCircle,
+    iconClass: 'text-yellow-800',
+    badge: 'yellow',
+  },
+  BUSY_AWAITING_REVIEW: {
+    wrap: 'from-violet-50 to-indigo-50/80 border-violet-200',
+    icon: ShieldAlert,
+    iconClass: 'text-violet-800',
+    badge: 'yellow',
+  },
+  AWAITING_NON_URGENT: {
+    wrap: 'from-sky-50 to-blue-50/70 border-sky-200',
+    icon: ClipboardList,
+    iconClass: 'text-sky-800',
+    badge: 'blue',
+  },
+  ASSIGNED_IDLE: {
+    wrap: 'from-emerald-50 to-green-50/70 border-emerald-200',
+    icon: Inbox,
+    iconClass: 'text-emerald-800',
+    badge: 'green',
+  },
+  IDLE: {
+    wrap: 'from-slate-50 to-gray-50 border-slate-200',
+    icon: Sparkles,
+    iconClass: 'text-slate-600',
+    badge: 'green',
+  },
+};
+
+/** JWT có `sub`, /auth/me trả `employeeId` — API phiếu việc cần số id nhân viên. */
+function currentEmployeeId(user) {
+  if (!user) return null;
+  const id = user.employeeId ?? user.sub;
+  if (id == null || id === '') return null;
+  const n = Number(id);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // ─── FIELD DASHBOARD (KTV hiện trường / Chuyên viên KTS) ───────────────────────────────
 function FieldDashboard() {
-  const { user }          = useAuth();
+  const { user, refetchMe } = useAuth();
   const [myWOs, setMyWOs] = useState([]);
   const [recentChecklists, setRecentChecklists] = useState([]);
+  const [fieldSummary, setFieldSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const employeeId = currentEmployeeId(user);
+  const isFieldRole =
+    (user?.positionLevel ?? 0) >= 1 && (user?.positionLevel ?? 0) <= 2;
+
   useEffect(() => {
-    Promise.all([
-      workOrderApi.getAll({ assignedTo: user?.sub, limit: 5, page: 1 }),
-      checklistApi.getResults ? checklistApi.getResults({ limit: 5 }) : Promise.resolve({ data: { data: [] } }),
-    ]).then(([wo, cl]) => {
-      setMyWOs(wo.data.data?.items ?? []);
-      setRecentChecklists(Array.isArray(cl.data.data) ? cl.data.data : cl.data.data?.items ?? []);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [user]);
+    if (employeeId == null) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [me, wo, cl] = await Promise.all([
+          refetchMe?.().catch(() => null),
+          workOrderApi.getAll({ assignedTo: employeeId, limit: 5, page: 1 }),
+          checklistApi.getResults ? checklistApi.getResults({ limit: 5 }) : Promise.resolve({ data: { data: [] } }),
+        ]);
+        if (cancelled) return;
+        setFieldSummary(me?.fieldWorkSummary ?? null);
+        setMyWOs(wo.data.data?.items ?? []);
+        setRecentChecklists(Array.isArray(cl.data.data) ? cl.data.data : cl.data.data?.items ?? []);
+      } catch {
+        if (!cancelled) setFieldSummary(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [employeeId, refetchMe]);
 
   if (loading) return <PageLoader />;
-
-  const positionName = user?.positionName ?? '';
   // Chuyên viên KTS (Level 2) có thêm quyền tạo tài liệu và lịch bảo trì
   const isKyThuat = (user?.positionLevel ?? 0) >= 2 && (user?.positionLevel ?? 0) < 3;
+
+  const fsIdlePlaceholder = {
+    availability: 'IDLE',
+    headline: 'Trạng thái hiện trường',
+    detail:
+      'Nếu bạn đã cập nhật server: tải lại trang (F5). Nếu vẫn không có dữ liệu, báo quản trị kiểm tra API /auth/me.',
+    activeWorkOrder: null,
+    openWorkOrders: [],
+  };
+  const fs = isFieldRole ? (fieldSummary ?? fsIdlePlaceholder) : null;
+  const fsStyle =
+    fs?.availability && FIELD_SUMMARY_STYLES[fs.availability]
+      ? FIELD_SUMMARY_STYLES[fs.availability]
+      : FIELD_SUMMARY_STYLES.IDLE;
+  const FsIcon = fsStyle?.icon ?? Sparkles;
+  const focusWo = fs?.activeWorkOrder ?? fs?.primaryAwaiting ?? null;
 
   return (
     <div className="space-y-6">
@@ -420,6 +513,55 @@ function FieldDashboard() {
           <p className="text-sm text-blue-700">{user?.positionName} — {user?.departmentName}</p>
         </div>
       </div>
+
+      {/* Trạng thái hiện trường: rảnh / bận / nghỉ phép + phiếu chính (Level 1–2) */}
+      {isFieldRole && fs && fsStyle && (
+        <div
+          className={`rounded-xl border bg-gradient-to-br shadow-sm p-4 sm:p-5 ${fsStyle.wrap}`}
+        >
+          <div className="flex flex-wrap items-start gap-3">
+            <div className={`rounded-xl bg-white/90 p-2.5 shadow-sm border border-black/5 ${fsStyle.iconClass}`}>
+              <FsIcon size={26} strokeWidth={2} aria-hidden />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                <h2 className="text-base font-bold text-gray-900">Trạng thái của tôi</h2>
+                <Badge color={fsStyle.badge}>{fs.headline}</Badge>
+              </div>
+              {fs.detail && (
+                <p className="text-sm text-gray-700 mt-2 leading-relaxed">{fs.detail}</p>
+              )}
+              {fs.availability === 'ON_LEAVE' && (fs.leaveStartAt || fs.leaveEndAt) && (
+                <p className="text-xs font-medium text-amber-900/90 mt-2">
+                  Nghỉ có lịch: {fs.leaveStartAt ? fDate(fs.leaveStartAt) : '—'} → {fs.leaveEndAt ? fDate(fs.leaveEndAt) : '—'}
+                </p>
+              )}
+              {focusWo && (
+                <div className="mt-3 rounded-lg border border-white/60 bg-white/70 px-3 py-2.5">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Phiếu trọng tâm</p>
+                  <Link
+                    to={`/work-orders/${focusWo.woId}`}
+                    className="text-sm font-bold text-blue-700 hover:underline font-mono mt-0.5 inline-block"
+                  >
+                    WO-{String(focusWo.woId).padStart(4, '0')}
+                  </Link>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{focusWo.assetName}</p>
+                  <p className="text-xs text-gray-600 truncate">{focusWo.locationName}</p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    <Badge color={WO_STATUS_COLOR[focusWo.status]}>{WO_STATUS_LABEL[focusWo.status] ?? focusWo.status}</Badge>
+                    <Badge color={WO_PRIORITY_COLOR[focusWo.priority]}>{WO_PRIORITY_LABEL[focusWo.priority] ?? focusWo.priority}</Badge>
+                  </div>
+                </div>
+              )}
+              {Array.isArray(fs.openWorkOrders) && fs.openWorkOrders.length > 1 && (
+                <p className="text-xs text-gray-600 mt-3">
+                  Tổng {fs.openWorkOrders.length} phiếu mở được giao — xem danh sách đầy đủ tại Phiếu việc.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-4">

@@ -14,9 +14,12 @@ export function AuthProvider({ children }) {
   const fetchMe = useCallback(async () => {
     try {
       const res = await authApi.me();
-      setUser(res.data.data);
+      const data = res.data.data;
+      setUser(data);
+      return data;
     } catch {
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
