@@ -2,9 +2,10 @@
  * asset.validator.js — Validate Assets CRUD.
  * Dùng trong: routes/asset.routes.js.
  * Trường mở rộng: model, yearOfManufacture, technicalSpecs,
- *                 purchaseDate, warrantyDate, decommissionDate
+ *                 purchaseDate, warrantyDate, decommissionDate, productionLine (047)
  */
 const VALID_STATUSES = ['AVAILABLE', 'MONITORING', 'CAUTION', 'MAINTENANCE', 'BROKEN', 'DECOMMISSIONED'];
+const VALID_PRODUCTION_LINES = ['Dây chuyền', 'Dùng chung'];
 
 /** null / undefined / '' đều coi là "không truyền" — hợp lệ cho trường optional */
 const isValidDate = (d) => d && !isNaN(Date.parse(d));
@@ -26,6 +27,9 @@ export function createAssetSchema(body) {
   if (!isAbsent(purchaseDate)       && !isValidDate(purchaseDate))       return 'Ngày mua không hợp lệ';
   if (!isAbsent(warrantyDate)       && !isValidDate(warrantyDate))       return 'Hạn bảo hành không hợp lệ';
   if (!isAbsent(decommissionDate)   && !isValidDate(decommissionDate))   return 'Ngày ngưng hoạt động không hợp lệ';
+  if (!isAbsent(body.productionLine) && !VALID_PRODUCTION_LINES.includes(body.productionLine)) {
+    return `Dây chuyền không hợp lệ. Chấp nhận: ${VALID_PRODUCTION_LINES.join(', ')}`;
+  }
 
   return null;
 }
@@ -47,6 +51,9 @@ export function updateAssetSchema(body) {
   if (!isAbsent(purchaseDate)       && !isValidDate(purchaseDate))       return 'Ngày mua không hợp lệ';
   if (!isAbsent(warrantyDate)       && !isValidDate(warrantyDate))       return 'Hạn bảo hành không hợp lệ';
   if (!isAbsent(decommissionDate)   && !isValidDate(decommissionDate))   return 'Ngày ngưng hoạt động không hợp lệ';
+  if (!isAbsent(body.productionLine) && !VALID_PRODUCTION_LINES.includes(body.productionLine)) {
+    return `Dây chuyền không hợp lệ. Chấp nhận: ${VALID_PRODUCTION_LINES.join(', ')}`;
+  }
 
   return null;
 }

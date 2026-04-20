@@ -1,7 +1,9 @@
 /**
  * workOrder.controller.js — HTTP handler: /api/work-orders.
+ * Phân công cá nhân: POST /:id/assign { employeeId }.
+ * Phân công nhóm: POST /:id/assign-group { groupId, leaderId }.
+ * Trưởng nhóm (IsGroupLeader=1): bắt đầu phiếu + ghi chú vật tư.
  * Liên quan: services/workOrder.service.js, routes/workOrder.routes.js.
- * saveClosureNotesDraft / resetRuntimeBaselineForCorrective: quyền chi tiết trong service (phân công / TC+).
  */
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ok } from "../utils/response.js";
@@ -89,12 +91,18 @@ export const deletePhoto = asyncHandler(async (req, res) => {
 });
 
 export const assign = asyncHandler(async (req, res) =>
-  ok(
-    res,
-    await service.assign(Number(req.params.id), Number(req.body.employeeId), {
-      actorLevel: req.user.positionLevel,
-    }),
-  ),
+  ok(res, await service.assign(Number(req.params.id), Number(req.body.employeeId), {
+    actorLevel: req.user.positionLevel,
+  })),
+);
+
+/** POST /:id/assign-group { groupId, leaderId } — phân công nhóm với trưởng nhóm. */
+export const assignGroup = asyncHandler(async (req, res) =>
+  ok(res, await service.assignGroup(
+    Number(req.params.id),
+    Number(req.body.groupId),
+    { actorLevel: req.user.positionLevel },
+  )),
 );
 
 export const unassign = asyncHandler(async (req, res) =>

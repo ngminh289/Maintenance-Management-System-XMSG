@@ -52,6 +52,7 @@ export function AssetForm({ asset, types = [], locations = [], canUploadPhoto = 
     warrantyDate:      asset?.warrantyDate        ? asset.warrantyDate.slice(0, 10)       : '',
     decommissionDate:  asset?.decommissionDate    ? asset.decommissionDate.slice(0, 10)   : '',
     description:       asset?.description        ?? '',
+    productionLine:    asset?.productionLine     ?? '',
   });
 
   const [selectedPhotos, setSelectedPhotos] = useState([]); // File[]
@@ -262,6 +263,17 @@ export function AssetForm({ asset, types = [], locations = [], canUploadPhoto = 
           error={errors.decommissionDate}
         />
       </div>
+
+      {/* ── Dây chuyền ── */}
+      <Select
+        label="Phân loại sử dụng"
+        value={form.productionLine}
+        onChange={e => set('productionLine', e.target.value)}
+      >
+        <option value="">— Chưa phân loại —</option>
+        <option value="Dây chuyền">Dây chuyền</option>
+        <option value="Dùng chung">Dùng chung</option>
+      </Select>
 
       {/* ── Mô tả ── */}
       <Textarea

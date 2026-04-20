@@ -26,9 +26,10 @@ export async function getAll(query) {
   const { page, limit, offset } = getPagination(query);
   const filters = {
     status:      query.status || undefined,
-    assetTypeId: query.assetTypeId ? Number(query.assetTypeId) : undefined,
-    locationId:  query.locationId  ? Number(query.locationId)  : undefined,
-    search:      query.search?.trim() || undefined,
+    assetTypeId:    query.assetTypeId    ? Number(query.assetTypeId) : undefined,
+    locationId:     query.locationId     ? Number(query.locationId)  : undefined,
+    search:         query.search?.trim() || undefined,
+    productionLine: query.productionLine || undefined,
   };
 
   const [items, total] = await Promise.all([

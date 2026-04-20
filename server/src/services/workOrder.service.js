@@ -23,7 +23,7 @@ import * as notifService from "./notification.service.js";
 import * as assetModel from "../models/asset.model.js";
 import * as assetCounterModel from "../models/assetCounter.model.js";
 import * as assetCounterForecast from "./assetCounterForecast.service.js";
-import { assignFieldTechnicianToWorkOrder } from "./workOrderFieldAssign.service.js";
+import { assignFieldTechnicianToWorkOrder, assignGroupToWorkOrder } from "./workOrderFieldAssign.service.js";
 import * as employeeModel from "../models/employee.model.js";
 import * as checklistResultModel from "../models/checklistResult.model.js";
 
@@ -212,13 +212,14 @@ async function loadAssignmentsSet(woId) {
   const rows = await model.getAssignments(woId);
   return {
     rows,
-    isAssigned: (employeeId) =>
-      rows.some((a) => Number(a.employeeId) === Number(employeeId)),
+    isAssigned:     (employeeId) => rows.some((a) => Number(a.employeeId) === Number(employeeId)),
+    isGroupLeader:  (employeeId) => rows.some((a) => Number(a.employeeId) === Number(employeeId) && Number(a.isGroupLeader) === 1),
   };
 }
 
 /**
- * Thợ / TC lưu ghi chú + vật tư trong lúc WAITING / IN_PROGRESS / PAUSE (không đổi trạng thái).
+ * Trưởng nhóm / TC lưu ghi chú + vật tư (không đổi trạng thái).
+ * Chỉ người là IsGroupLeader hoặc Trưởng ca/Trưởng phòng (Level ≥ 3) mới được ghi.
  */
 export async function saveClosureNotesDraft(
   id,
@@ -226,25 +227,18 @@ export async function saveClosureNotesDraft(
 ) {
   const wo = await model.findById(id);
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
-  const { isAssigned } = await loadAssignmentsSet(id);
-  const allowed =
-    isAssigned(employeeId) || (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
+  const { isGroupLeader } = await loadAssignmentsSet(id);
+  const allowed = isGroupLeader(employeeId) || (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
   if (!allowed) {
     throw createError(
-      "Chỉ người được phân công hoặc Trưởng ca/Trưởng phòng mới sửa được ghi chú.",
+      "Chỉ trưởng nhóm hoặc Trưởng ca/Trưởng phòng mới ghi chú vật tư được.",
       403,
     );
   }
   if (!["WAITING", "IN_PROGRESS", "PAUSED"].includes(wo.status)) {
-    throw createError(
-      "Chỉ lưu nháp khi phiếu đang chờ thực hiện hoặc đang làm việc.",
-      400,
-    );
+    throw createError("Chỉ lưu nháp khi phiếu đang chờ thực hiện hoặc đang làm việc.", 400);
   }
-  await model.setClosureFieldReport(id, {
-    closureFieldNotes,
-    closurePartsNotes,
-  });
+  await model.setClosureFieldReport(id, { closureFieldNotes, closurePartsNotes });
   return getById(id);
 }
 
@@ -259,14 +253,10 @@ export async function resetRuntimeBaselineForCorrective(id, {
   const wo = await model.findById(id);
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
   if (wo.woSource !== "CORRECTIVE") {
-    throw createError(
-      "Chỉ phiếu sự cố (CORRECTIVE) mới reset mốc giờ chạy cho dự báo.",
-      400,
-    );
+    throw createError("Chỉ phiếu sự cố (CORRECTIVE) mới reset mốc giờ chạy cho dự báo.", 400);
   }
-  const { isAssigned } = await loadAssignmentsSet(id);
-  const allowed =
-    isAssigned(employeeId) || (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
+  const { isGroupLeader } = await loadAssignmentsSet(id);
+  const allowed = isGroupLeader(employeeId) || (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
   if (!allowed) {
     throw createError("Không đủ quyền thực hiện trên phiếu này.", 403);
   }
@@ -309,8 +299,9 @@ export async function changeStatus(
   const wo = await model.findById(id);
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
 
-  const { rows: assignmentRows, isAssigned } = await loadAssignmentsSet(id);
+  const { rows: assignmentRows, isAssigned, isGroupLeader } = await loadAssignmentsSet(id);
   const assigned = isAssigned(employeeId);
+  const isLeader = isGroupLeader(employeeId);
   const isSupervisor = (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
 
   const allowed = TRANSITIONS[wo.status] || [];
@@ -323,9 +314,9 @@ export async function changeStatus(
   }
 
   if (newStatus === "AWAITING_CLOSURE") {
-    if (!assigned) {
+    if (!isLeader && !isSupervisor) {
       throw createError(
-        "Chỉ người được phân công mới báo hoàn thành chờ nghiệm thu",
+        "Chỉ trưởng nhóm hoặc Trưởng ca/Trưởng phòng mới báo hoàn thành chờ nghiệm thu.",
         403,
       );
     }
@@ -355,11 +346,14 @@ export async function changeStatus(
   }
 
   if (newStatus === "IN_PROGRESS") {
-    const fieldActorStarting =
-      assigned &&
-      !isSupervisor &&
-      (wo.status === "WAITING" || wo.status === "PAUSED");
-    if (fieldActorStarting) {
+    // Từ WAITING / PAUSED: chỉ trưởng nhóm (leader) hoặc giám sát mới bắt đầu
+    if ((wo.status === "WAITING" || wo.status === "PAUSED") && !isSupervisor) {
+      if (!isLeader) {
+        throw createError(
+          "Chỉ trưởng nhóm mới được bắt đầu / tiếp tục thực hiện phiếu. Hãy nhờ trưởng nhóm xác nhận.",
+          403,
+        );
+      }
       const starter = await employeeModel.findById(employeeId);
       if (starter?.onScheduledLeave) {
         throw createError(
@@ -369,9 +363,12 @@ export async function changeStatus(
       }
     }
     const busyIds = [];
-    if (assigned && !isSupervisor && (wo.status === "WAITING" || wo.status === "PAUSED")) {
-      const eid = Number(employeeId);
-      if (Number.isFinite(eid) && eid > 0) busyIds.push(eid);
+    if ((isLeader || isSupervisor) && (wo.status === "WAITING" || wo.status === "PAUSED")) {
+      // Khi bắt đầu WO nhóm, kiểm tra conflict cho TẤT CẢ thành viên nhóm
+      for (const r of assignmentRows) {
+        const eid = Number(r.employeeId);
+        if (Number.isFinite(eid) && eid > 0) busyIds.push(eid);
+      }
     } else if (isSupervisor && wo.status === "AWAITING_CLOSURE") {
       for (const r of assignmentRows) {
         const eid = Number(r.employeeId);
@@ -382,8 +379,11 @@ export async function changeStatus(
     for (const eid of uniqueBusy) {
       const blocking = await model.countEmployeeBlockingWorkOrders(eid, id);
       if (blocking > 0) {
+        // Tìm tên nhân viên đang bị conflict để thông báo rõ
+        const conflictEmp = assignmentRows.find(r => Number(r.employeeId) === eid);
+        const who = conflictEmp?.fullName ? `${conflictEmp.fullName} đang` : "Một thành viên đang";
         throw createError(
-          "Nhân viên đang bận phiếu việc khác (đang thực hiện / tạm dừng, hoặc chờ nghiệm thu phiếu khẩn: EMERGENCY hoặc sự cố HIGH). Vui lòng chờ họ xong hoặc tạm dừng phiến đang làm trước khi bắt đầu / làm tiếp phiếu này.",
+          `${who} bận phiếu việc khác (đang thực hiện / tạm dừng hoặc chờ nghiệm thu phiếu khẩn). Vui lòng hoàn tất hoặc tạm dừng phiếu đó trước.`,
           409,
         );
       }
@@ -553,6 +553,11 @@ export async function deleteWorkOrderPhoto(
 
 export async function assign(woId, employeeId, { actorLevel } = {}) {
   return assignFieldTechnicianToWorkOrder(woId, employeeId, actorLevel);
+}
+
+/** Phân công nhóm — nhập groupId + leaderId (phải là thành viên nhóm). */
+export async function assignGroup(woId, groupId, { actorLevel } = {}) {
+  return assignGroupToWorkOrder(woId, groupId, actorLevel);
 }
 
 export async function unassign(woId, employeeId, { actorLevel } = {}) {

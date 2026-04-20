@@ -77,9 +77,10 @@ const ROUTE_ACCESS = {
   /** Hàng đợi phản hồi / góp ý tài liệu — chỉ Chuyên viên KTS (xem xét). */
   'document-feedback-inbox': [false, true, false, false, false],
   workflows: [false, false, false, true, false], // mẫu luồng phê duyệt — Admin C/U (4.1)
+  'admin-settings': [false, false, false, true, false], // cấu hình hệ thống (loại tài sản, vị trí) — Admin only
   approvals: [false, false, true, false, false], // chỉ Trưởng ca xử lý hàng chờ duyệt; Ban GĐ chỉ R (báo cáo)
   reports: [false, true, true, true, true], // báo cáo từ KT trở lên
-  employees: [false, false, false, true, false], // nhân sự: admin only
+  employees: [false, false, true, true, false], // Trưởng ca/Trưởng phòng xem + Admin quản lý
 };
 
 /** truongCa và truongPhong dùng chung cột ma trận (Level 3, quyền tương đương trên UI). */

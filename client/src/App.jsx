@@ -31,6 +31,7 @@ import { DocumentFeedbackInboxPage } from './pages/documents/DocumentFeedbackInb
 import { ReportsPage }          from './pages/reports/ReportsPage.jsx';
 import { WorkflowsPage }        from './pages/workflows/WorkflowsPage.jsx';
 import { ProfilePage }          from './pages/ProfilePage.jsx';
+import { AdminPage }            from './pages/admin/AdminPage.jsx';
 
 export default function App() {
   return (
@@ -113,6 +114,11 @@ export default function App() {
             {/* Mẫu luồng phê duyệt — Admin (BFD 4.1 C/U) */}
             <Route element={<RoleGuard routeKey="workflows" />}>
               <Route path="/workflows" element={<WorkflowsPage />} />
+            </Route>
+
+            {/* Cấu hình hệ thống — Admin only */}
+            <Route element={<RoleGuard routeKey="admin-settings" />}>
+              <Route path="/admin" element={<AdminPage />} />
             </Route>
 
             {/* Hồ sơ cá nhân — mọi user đều truy cập được */}

@@ -1,13 +1,8 @@
 /**
- * WorkOrderDetailPage.jsx — Chi tiết WO: phân công, thực hiện, ảnh hiện trường, báo hoàn thành → chờ nghiệm thu → TC/TP đóng phiếu.
- * Thợ (được giao): nhận việc, tạm dừng/tiếp tục, upload nhiều ảnh, báo hoàn thành (AWAITING_CLOSURE).
- * Trưởng ca / Trưởng phòng: nghiệm thu đóng (COMPLETED), hoặc trả về làm tiếp (IN_PROGRESS).
- * Thợ báo AWAITING_CLOSURE: ghi chú hiện trường + linh kiện/vật tư (lưu lịch sử bảo trì snapshot); TC xem trước ảnh.
- * Phê duyệt: WO nghiêm trọng (EMERGENCY hoặc CORRECTIVE+HIGH) = 2 bước TC → Trưởng phòng; UI hiển thị tiến trình + phân công tại bước cuối.
- * Sau «Yêu cầu chỉnh sửa» (không còn log PENDING): Sửa phiếu + «Gửi lại phê duyệt» (submit) — lại từ bước 1 TC, WO 2 cấp thì vẫn qua TP.
- * Phân công: ẩn nhân viên đang trong lịch nghỉ (onScheduledLeave).
- * Ghi chú/vật tư (WO): nhập sớm (WAITING…PAUSED) + Lưu nháp; 3 checklist APPROVED gần nhất cùng tài sản (NVKT+ hoặc thợ được giao).
- * Phiếu CORRECTIVE: reset mốc giờ PM (một lần/phiếu, hiển thị thời điểm + người làm).
+ * WorkOrderDetailPage.jsx — Chi tiết WO.
+ * Phân công cá nhân hoặc nhóm (với trưởng nhóm).
+ * Chỉ trưởng nhóm (IsGroupLeader) mới bắt đầu phiếu và ghi chú vật tư.
+ * Trưởng ca / Trưởng phòng: phân công, nghiệm thu, đóng phiếu.
  */
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -26,11 +21,14 @@ import {
   ClipboardList,
   Send,
   Pencil,
+  Star,
 } from "lucide-react";
+import { EmployeeCard } from "../../components/ui/EmployeeCard.jsx";
 import { workOrderApi } from "../../api/workOrder.api.js";
 import { employeeApi } from "../../api/employee.api.js";
 import { assetApi } from "../../api/asset.api.js";
 import { approvalApi } from "../../api/approval.api.js";
+import { api } from "../../api/index.js";
 import { WorkOrderForm } from "./WorkOrderForm.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Button } from "../../components/ui/Button.jsx";
@@ -72,8 +70,15 @@ export function WorkOrderDetailPage() {
   const [approvals, setApprovals] = useState([]);
   const [approvalWorkflowSteps, setApprovalWorkflowSteps] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [assignOpen, setAssignOpen] = useState(false);
+  const [groups,    setGroups]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [assignOpen,     setAssignOpen]     = useState(false);
+  const [assignMode,         setAssignMode]         = useState("individual"); // "individual" | "group"
+  const [assignSpecialty,    setAssignSpecialty]    = useState("");
+  const [assignCraftLevel,   setAssignCraftLevel]   = useState("");
+  const [assignGroupFilter,  setAssignGroupFilter]  = useState(""); // lọc chuyên môn nhóm
+  const [selectedGroup,      setSelectedGroup]      = useState("");
+  const [groupMembers,       setGroupMembers]       = useState([]);
   const [approveOpen, setApproveOpen] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState("");
   const [approveAction, setApproveAction] = useState("APPROVED");
@@ -118,19 +123,13 @@ export function WorkOrderDetailPage() {
 
   useEffect(() => {
     load();
-    employeeApi
-      .getAll({ limit: 200 })
-      .then((r) => {
-        const items = r.data.data?.items ?? [];
-        setEmployees(
-          items.filter(
-            (e) =>
-              e.isActive !== false &&
-              (e.positionLevel ?? 99) <= ASSIGNEE_MAX_LEVEL,
-          ),
-        );
-      })
-      .catch(() => {});
+    employeeApi.getAll({ limit: 200 }).then((r) => {
+      const items = r.data.data?.items ?? [];
+      setEmployees(items.filter(e => e.isActive !== false && (e.positionLevel ?? 99) <= ASSIGNEE_MAX_LEVEL));
+    }).catch(() => {});
+    api.get("/maintenance-groups").then(r => {
+      setGroups(r.data.data?.items ?? r.data.data ?? []);
+    }).catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -350,18 +349,41 @@ export function WorkOrderDetailPage() {
   };
 
   const handleAssign = async () => {
-    if (!selectedEmp) return;
-    setSaving(true);
-    try {
-      await workOrderApi.assign(id, Number(selectedEmp));
-      toast.success("Đã phân công");
-      setAssignOpen(false);
-      load();
-    } catch (err) {
-      toast.error(err.response?.data?.message ?? "Lỗi phân công");
-    } finally {
-      setSaving(false);
+    if (assignMode === "group") {
+      if (!selectedGroup) { toast.error("Chọn nhóm"); return; }
+      setSaving(true);
+      try {
+        await workOrderApi.assignGroup(id, Number(selectedGroup));
+        toast.success("Đã phân công nhóm");
+        setAssignOpen(false);
+        load();
+      } catch (err) {
+        toast.error(err.response?.data?.message ?? "Lỗi phân công nhóm");
+      } finally { setSaving(false); }
+    } else {
+      if (!selectedEmp) return;
+      setSaving(true);
+      try {
+        await workOrderApi.assign(id, Number(selectedEmp));
+        toast.success("Đã phân công");
+        setAssignOpen(false);
+        load();
+      } catch (err) {
+        toast.error(err.response?.data?.message ?? "Lỗi phân công");
+      } finally { setSaving(false); }
     }
+  };
+
+  /** Load thành viên nhóm khi chọn nhóm */
+  const handleSelectGroup = async (gid) => {
+    setSelectedGroup(gid);
+    setSelectedLeader("");
+    setGroupMembers([]);
+    if (!gid) return;
+    try {
+      const r = await api.get(`/maintenance-groups/${gid}`);
+      setGroupMembers(r.data.data?.members ?? []);
+    } catch { toast.error("Không tải được thành viên nhóm"); }
   };
 
   const handleApprove = async () => {
@@ -403,16 +425,22 @@ export function WorkOrderDetailPage() {
   const isAssigned = wo.assignments?.some(
     (a) => Number(a.employeeId) === Number(user?.employeeId),
   );
+  /** Người dùng hiện tại là trưởng nhóm của phiếu này */
+  const amGroupLeader = wo.assignments?.some(
+    (a) => Number(a.employeeId) === Number(user?.employeeId) && Number(a.isGroupLeader) === 1,
+  );
   const isTcPlus = (user?.positionLevel ?? 0) >= LEVEL_TRUONG_CA;
   const canUpdate = canDo(user, "WORK_ORDER:UPDATE");
-  const canAcceptWork = canUpdate && isAssigned;
+  /** Bắt đầu / tạm dừng / tiếp tục: chỉ trưởng nhóm hoặc TC+ */
+  const canAcceptWork = canUpdate && (amGroupLeader || isTcPlus);
   const canSuperviseFlow = canUpdate && (isAssigned || isTcPlus);
+  /** Báo hoàn thành: trưởng nhóm hoặc TC+ */
   const canReportAwaiting =
-    canUpdate && isAssigned && wo.status === "IN_PROGRESS";
+    canUpdate && (amGroupLeader || isTcPlus) && wo.status === "IN_PROGRESS";
   const canUploadPhotos =
     canUpdate &&
     (isAssigned || isTcPlus) &&
-    ["IN_PROGRESS", "AWAITING_CLOSURE"].includes(wo.status);
+    wo.status === "IN_PROGRESS";
   const canCloseAfterReview =
     canUpdate && isTcPlus && wo.status === "AWAITING_CLOSURE";
   const canReopenFromAwaiting =
@@ -420,16 +448,17 @@ export function WorkOrderDetailPage() {
   const canApprove =
     wo.status === "PENDING_APPROVAL" && canDo(user, "WORK_ORDER:APPROVE");
   const canAssign = canDo(user, "WORK_ORDER:ASSIGN");
+  /** Ghi chú vật tư: chỉ trưởng nhóm hoặc TC+ */
   const canEditClosureDraft =
     canUpdate &&
-    (isAssigned || isTcPlus) &&
+    (amGroupLeader || isTcPlus) &&
     ["WAITING", "IN_PROGRESS", "PAUSED"].includes(wo.status);
   const canResetRuntimeBaseline =
     wo.woSource === "CORRECTIVE" &&
     !wo.counterBaselineResetAt &&
-    ["IN_PROGRESS", "PAUSED", "AWAITING_CLOSURE"].includes(wo.status) &&
+    ["IN_PROGRESS", "PAUSED"].includes(wo.status) &&
     canUpdate &&
-    (isAssigned || isTcPlus);
+    (amGroupLeader || isTcPlus);
 
   const twoStepApproval = Number(pendingApprovalLog?.totalLevels) === 2;
   const tpStepName =
@@ -763,11 +792,12 @@ export function WorkOrderDetailPage() {
 
       {wo.status === "WAITING" && isAssigned && (
         <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
-          <span className="font-semibold">Bạn được phân công.</span>{" "}
-          <Link
-            to={`/checklists?assetId=${wo.assetId}`}
-            className="font-bold text-blue-800 underline"
-          >
+          {amGroupLeader ? (
+            <span className="font-semibold text-blue-800">Bạn là trưởng nhóm — bấm <strong>Bắt đầu</strong> để khởi động phiếu này.</span>
+          ) : (
+            <span className="font-semibold">Bạn được phân công — chờ trưởng nhóm bắt đầu.</span>
+          )}{" "}
+          <Link to={`/checklists?assetId=${wo.assetId}`} className="font-bold text-blue-800 underline ml-1">
             Tài liệu / QR — #{wo.assetId}
           </Link>
         </div>
@@ -898,24 +928,43 @@ export function WorkOrderDetailPage() {
         <Card title="Nhân viên phụ trách">
           {wo.assignments?.length > 0 ? (
             <ul className="space-y-2">
-              {wo.assignments.map((a) => (
-                <li
-                  key={a.employeeId}
-                  className="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-xl"
-                >
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white">
-                    {a.fullName?.[0] ?? "?"}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {a.fullName}
-                    </p>
-                    <p className="text-xs font-medium text-gray-600">
-                      {a.positionName}
-                    </p>
-                  </div>
-                </li>
-              ))}
+              {wo.assignments.map((a) => {
+                const photoUrl = a.photoPath ? employeeApi.getPhotoUrl(a.photoPath) : null;
+                const isLeader = Number(a.isGroupLeader) === 1;
+                return (
+                  <EmployeeCard key={a.employeeId} emp={a} side="right">
+                    <li className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-default ${isLeader ? "bg-blue-50 border border-blue-100" : "bg-gray-50"}`}>
+                      {photoUrl ? (
+                        <img src={photoUrl} alt={a.fullName} className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                          {a.fullName?.[0] ?? "?"}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-gray-900">{a.fullName}</p>
+                          {isLeader && (
+                            <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase tracking-wide">
+                              Trưởng nhóm
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">
+                          {a.positionName}
+                          {a.specialty ? ` · ${a.specialty}` : ""}
+                          {a.craftLevel ? ` · Bậc ${a.craftLevel}` : ""}
+                        </p>
+                      </div>
+                      {a.craftLevel && (
+                        <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold flex-shrink-0">
+                          <Star size={11} /> {a.craftLevel}
+                        </div>
+                      )}
+                    </li>
+                  </EmployeeCard>
+                );
+              })}
             </ul>
           ) : (
             <p className="text-sm text-gray-400">Chưa phân công</p>
@@ -1090,41 +1139,196 @@ export function WorkOrderDetailPage() {
 
       <Modal
         open={assignOpen}
-        onClose={() => setAssignOpen(false)}
-        title="Phân công nhân viên"
-        size="sm"
+        onClose={() => { setAssignOpen(false); setAssignMode("individual"); setAssignSpecialty(""); setSelectedEmp(""); setSelectedGroup(""); setSelectedLeader(""); setGroupMembers([]); }}
+        title="Phân công thực hiện"
+        size="md"
       >
         <div className="space-y-4">
-          <p className="text-xs text-gray-600 leading-relaxed">
-            KTV hiện trường / Chuyên viên KTS thực hiện tại hiện trường.
-          </p>
-          <Select
-            label="Nhân viên thực hiện"
-            value={selectedEmp}
-            onChange={(e) => setSelectedEmp(e.target.value)}
-          >
-            <option value="">— Chọn nhân viên —</option>
-            {employees.map((e) => {
-              const onLeave = Boolean(e.onScheduledLeave);
-              return (
-                <option
-                  key={e.employeeId}
-                  value={e.employeeId}
-                  disabled={onLeave}
+          {/* Chọn chế độ */}
+          <div className="flex gap-2">
+            {[["individual","Cá nhân"],["group","Nhóm bảo trì"]].map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => { setAssignMode(mode); setSelectedEmp(""); setSelectedGroup(""); setGroupMembers([]); setAssignSpecialty(""); setAssignCraftLevel(""); setAssignGroupFilter(""); }}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                  assignMode === mode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"}`}
+              >{label}</button>
+            ))}
+          </div>
+
+          {assignMode === "individual" ? (
+            <>
+              {/* Filter cá nhân */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Lọc chuyên môn..."
+                  value={assignSpecialty}
+                  onChange={e => { setAssignSpecialty(e.target.value); setSelectedEmp(""); }}
+                  className="flex-1 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 outline-none placeholder:text-gray-400"
+                />
+                <select
+                  value={assignCraftLevel}
+                  onChange={e => { setAssignCraftLevel(e.target.value); setSelectedEmp(""); }}
+                  className="w-36 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-2 py-2 focus:border-blue-500 outline-none"
                 >
-                  {e.fullName} — {e.positionName}
-                  {onLeave ? " (đang nghỉ có lịch)" : ""}
-                </option>
-              );
-            })}
-          </Select>
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setAssignOpen(false)}>
-              Hủy
-            </Button>
-            <Button onClick={handleAssign} loading={saving}>
-              Phân công
-            </Button>
+                  <option value="">Tất cả bậc</option>
+                  {[1,2,3,4,5,6,7].map(n => (
+                    <option key={n} value={n}>Bậc thợ {n}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Danh sách chọn nhân viên */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Nhân viên thực hiện <span className="text-gray-400 font-normal">(tự là trưởng nhóm)</span>
+                </label>
+                <div className="border border-gray-200 rounded-xl overflow-auto max-h-60 divide-y divide-gray-100">
+                  {employees
+                    .filter(e =>
+                      (!assignSpecialty || (e.specialty ?? "").toLowerCase().includes(assignSpecialty.toLowerCase())) &&
+                      (!assignCraftLevel || String(e.craftLevel) === String(assignCraftLevel))
+                    )
+                    .map(e => {
+                      const onLeave = Boolean(e.onScheduledLeave);
+                      const selected = String(selectedEmp) === String(e.employeeId);
+                      return (
+                        <EmployeeCard key={e.employeeId} emp={e} side="left">
+                          <button
+                            type="button"
+                            disabled={onLeave}
+                            onClick={() => !onLeave && setSelectedEmp(String(e.employeeId))}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                              selected ? "bg-blue-50" : onLeave ? "opacity-50 cursor-not-allowed bg-gray-50" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            {e.photoPath ? (
+                              <img src={employeeApi.getPhotoUrl(e.photoPath)} alt={e.fullName} className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700 flex-shrink-0">
+                                {e.fullName?.[0] ?? "?"}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className={`text-sm font-semibold ${selected ? "text-blue-700" : "text-gray-900"}`}>{e.fullName}</p>
+                                {selected && <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded">✓</span>}
+                                {onLeave && <span className="text-[10px] text-orange-600 font-semibold bg-orange-50 px-1.5 py-0.5 rounded">Đang nghỉ</span>}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate">
+                                {e.positionName}
+                                {e.specialty ? ` · ${e.specialty}` : ""}
+                                {e.craftLevel ? ` · Bậc ${e.craftLevel}` : ""}
+                              </p>
+                            </div>
+                            {e.craftLevel && (
+                              <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold flex-shrink-0">
+                                <Star size={11} /> {e.craftLevel}
+                              </div>
+                            )}
+                          </button>
+                        </EmployeeCard>
+                      );
+                    })}
+                  {employees.filter(e =>
+                    (!assignSpecialty || (e.specialty ?? "").toLowerCase().includes(assignSpecialty.toLowerCase())) &&
+                    (!assignCraftLevel || String(e.craftLevel) === String(assignCraftLevel))
+                  ).length === 0 && (
+                    <p className="px-4 py-6 text-sm text-gray-400 text-center">Không có nhân viên phù hợp</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Lọc nhóm theo chuyên môn */}
+              <input
+                type="text"
+                placeholder="Lọc nhóm theo chuyên môn..."
+                value={assignGroupFilter}
+                onChange={e => { setAssignGroupFilter(e.target.value); setSelectedGroup(""); setGroupMembers([]); }}
+                className="w-full text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 outline-none placeholder:text-gray-400"
+              />
+
+              {/* Danh sách nhóm */}
+              <div className="border border-gray-200 rounded-xl overflow-auto max-h-44 divide-y divide-gray-100">
+                {groups
+                  .filter(g => !assignGroupFilter || (g.specialty ?? "").toLowerCase().includes(assignGroupFilter.toLowerCase()) || g.groupName.toLowerCase().includes(assignGroupFilter.toLowerCase()))
+                  .map(g => {
+                    const sel = String(selectedGroup) === String(g.groupId);
+                    return (
+                      <button
+                        key={g.groupId}
+                        type="button"
+                        onClick={() => handleSelectGroup(g.groupId)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${sel ? "bg-blue-50" : "hover:bg-gray-50"}`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${sel ? "bg-blue-600 text-white" : "bg-indigo-100 text-indigo-700"}`}>
+                          {g.groupName?.[0] ?? "N"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-semibold ${sel ? "text-blue-700" : "text-gray-900"}`}>{g.groupName}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {g.memberCount ?? 0} thành viên
+                            {g.specialty ? ` · ${g.specialty}` : ""}
+                            {g.leaderName ? ` · TN: ${g.leaderName}` : " · Chưa có trưởng nhóm"}
+                          </p>
+                        </div>
+                        {sel && <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded flex-shrink-0">✓</span>}
+                      </button>
+                    );
+                  })}
+                {groups.filter(g => !assignGroupFilter || (g.specialty ?? "").toLowerCase().includes(assignGroupFilter.toLowerCase()) || g.groupName.toLowerCase().includes(assignGroupFilter.toLowerCase())).length === 0 && (
+                  <p className="px-4 py-6 text-sm text-gray-400 text-center">Không có nhóm phù hợp</p>
+                )}
+              </div>
+
+              {/* Xem trước thành viên nhóm đã chọn */}
+              {groupMembers.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-1.5">Thành viên nhóm</p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto border border-gray-200 rounded-xl">
+                    {groupMembers.map(m => {
+                      const isLeader = Number(m.isGroupLeader) === 1;
+                      return (
+                        <EmployeeCard key={m.employeeId} emp={{ ...m, specialty: m.empSpecialty }} side="left">
+                          <div className={`flex items-center gap-3 px-3 py-2 ${isLeader ? "bg-yellow-50" : ""}`}>
+                            {m.photoPath ? (
+                              <img src={employeeApi.getPhotoUrl(m.photoPath)} alt={m.fullName} className="w-7 h-7 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 flex-shrink-0">
+                                {m.fullName?.[0] ?? "?"}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-sm font-semibold text-gray-800">{m.fullName}</p>
+                                {isLeader && (
+                                  <span className="text-[10px] font-bold bg-yellow-500 text-white px-1.5 py-0.5 rounded">Trưởng nhóm</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate">
+                                {m.positionName}
+                                {m.empSpecialty ? ` · ${m.empSpecialty}` : ""}
+                                {m.craftLevel ? ` · Bậc ${m.craftLevel}` : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </EmployeeCard>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1.5">Trưởng nhóm sẽ bắt đầu phiếu và ghi chú vật tư.</p>
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="flex justify-end gap-3 pt-1">
+            <Button variant="secondary" onClick={() => setAssignOpen(false)}>Hủy</Button>
+            <Button onClick={handleAssign} loading={saving}>Phân công</Button>
           </div>
         </div>
       </Modal>

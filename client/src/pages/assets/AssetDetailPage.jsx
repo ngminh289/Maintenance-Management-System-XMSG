@@ -248,6 +248,9 @@ export function AssetDetailPage() {
                 </div>
                 <InfoRow label="Ngày đưa vào sử dụng" value={fDate(asset.commissionDate)} />
                 <InfoRow label="Ngày ngưng hoạt động" value={fDate(asset.decommissionDate)} />
+                {asset.productionLine && (
+                  <InfoRow label="Phân loại sử dụng" value={asset.productionLine} />
+                )}
               </div>
             </div>
 

@@ -2,29 +2,35 @@
  * employee.model.js — SQL thuần cho bảng Employees.
  * Chú ý: findByUsernameOrEmail trả về PasswordHash — chỉ dùng trong auth.service.
  * Lịch nghỉ: LeaveStartAt / LeaveEndAt; onScheduledLeave = NOW() trong [start,end] (migration 030).
- * Dùng trong: auth.service, employee.service, workOrderFieldAssign, documentFeedback (notify NV KT).
+ * Kỹ năng: CraftLevel, Specialty, ExperienceNotes (migration 043).
+ * Ảnh đại diện: PhotoPath (migration 043) — uploads/employees/:filename.
+ * Dùng trong: auth.service, employee.service, workOrderFieldAssign, documentFeedback.
  */
 import { getPool } from "../config/database.js";
 
 const PUBLIC_COLS = `
-  e.EmployeeID   AS employeeId,
-  e.FullName     AS fullName,
-  e.Username     AS username,
-  e.Email        AS email,
-  e.Phone        AS phone,
-  e.EmailVerified AS emailVerified,
-  e.IsActive     AS isActive,
-  e.WasEverActivated AS wasEverActivated,
-  e.LeaveStartAt AS leaveStartAt,
-  e.LeaveEndAt   AS leaveEndAt,
+  e.EmployeeID        AS employeeId,
+  e.FullName          AS fullName,
+  e.Username          AS username,
+  e.Email             AS email,
+  e.Phone             AS phone,
+  e.CraftLevel        AS craftLevel,
+  e.Specialty         AS specialty,
+  e.ExperienceNotes   AS experienceNotes,
+  e.PhotoPath         AS photoPath,
+  e.EmailVerified     AS emailVerified,
+  e.IsActive          AS isActive,
+  e.WasEverActivated  AS wasEverActivated,
+  e.LeaveStartAt      AS leaveStartAt,
+  e.LeaveEndAt        AS leaveEndAt,
   (e.LeaveStartAt IS NOT NULL AND e.LeaveEndAt IS NOT NULL
    AND NOW() >= e.LeaveStartAt AND NOW() <= e.LeaveEndAt) AS onScheduledLeave,
-  e.CreatedAt    AS createdAt,
-  e.PositionID   AS positionId,
-  p.PositionName AS positionName,
-  p.Level        AS positionLevel,
-  e.DepartmentID AS departmentId,
-  d.DepartmentName AS departmentName`;
+  e.CreatedAt         AS createdAt,
+  e.PositionID        AS positionId,
+  p.PositionName      AS positionName,
+  p.Level             AS positionLevel,
+  e.DepartmentID      AS departmentId,
+  d.DepartmentName    AS departmentName`;
 
 const BASE_JOIN = `
   FROM Employees e
@@ -32,31 +38,27 @@ const BASE_JOIN = `
   JOIN Departments d ON d.DepartmentID = e.DepartmentID`;
 
 export async function findAll({
-  limit,
-  offset,
-  departmentId,
-  positionId,
-  isActive,
-  search,
+  limit, offset,
+  departmentId, positionId, isActive, search, specialty, craftLevel, maxLevel,
 } = {}) {
   const params = [];
   let where = "WHERE 1=1";
 
-  if (departmentId !== undefined) {
-    where += " AND e.DepartmentID = ?";
-    params.push(departmentId);
+  if (departmentId !== undefined) { where += " AND e.DepartmentID = ?"; params.push(departmentId); }
+  if (positionId   !== undefined) { where += " AND e.PositionID = ?";   params.push(positionId); }
+  if (isActive     !== undefined) { where += " AND e.IsActive = ?";     params.push(isActive); }
+  if (maxLevel     !== undefined) {
+    where += " AND p.Level <= ?";
+    params.push(maxLevel);
   }
-  if (positionId !== undefined) {
-    where += " AND e.PositionID = ?";
-    params.push(positionId);
-  }
-  if (isActive !== undefined) {
-    where += " AND e.IsActive = ?";
-    params.push(isActive);
+  if (craftLevel) { where += " AND e.CraftLevel = ?"; params.push(Number(craftLevel)); }
+  if (specialty) {
+    where += " AND e.Specialty LIKE ?";
+    params.push(`%${specialty}%`);
   }
   if (search) {
-    where += " AND (e.FullName LIKE ? OR e.Username LIKE ? OR e.Email LIKE ?)";
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    where += " AND (e.FullName LIKE ? OR e.Username LIKE ? OR e.Email LIKE ? OR e.Specialty LIKE ?)";
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   const orderBy = "ORDER BY e.FullName";
@@ -70,34 +72,21 @@ export async function findAll({
   return rows;
 }
 
-export async function count({
-  departmentId,
-  positionId,
-  isActive,
-  search,
-} = {}) {
+export async function count({ departmentId, positionId, isActive, search, specialty, craftLevel, maxLevel } = {}) {
   const params = [];
+  let join  = "FROM Employees e JOIN Positions p ON p.PositionID = e.PositionID";
   let where = "WHERE 1=1";
-  if (departmentId !== undefined) {
-    where += " AND DepartmentID = ?";
-    params.push(departmentId);
-  }
-  if (positionId !== undefined) {
-    where += " AND PositionID = ?";
-    params.push(positionId);
-  }
-  if (isActive !== undefined) {
-    where += " AND IsActive = ?";
-    params.push(isActive);
-  }
+  if (departmentId !== undefined) { where += " AND e.DepartmentID = ?"; params.push(departmentId); }
+  if (positionId   !== undefined) { where += " AND e.PositionID = ?";   params.push(positionId); }
+  if (isActive     !== undefined) { where += " AND e.IsActive = ?";     params.push(isActive); }
+  if (maxLevel     !== undefined) { where += " AND p.Level <= ?";       params.push(maxLevel); }
+  if (craftLevel)  { where += " AND e.CraftLevel = ?"; params.push(Number(craftLevel)); }
+  if (specialty)   { where += " AND e.Specialty LIKE ?"; params.push(`%${specialty}%`); }
   if (search) {
-    where += " AND (FullName LIKE ? OR Username LIKE ? OR Email LIKE ?)";
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    where += " AND (e.FullName LIKE ? OR e.Username LIKE ? OR e.Email LIKE ? OR e.Specialty LIKE ?)";
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
-  const [rows] = await getPool().query(
-    `SELECT COUNT(*) AS cnt FROM Employees ${where}`,
-    params,
-  );
+  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt ${join} ${where}`, params);
   return Number(rows[0].cnt);
 }
 
@@ -136,50 +125,42 @@ export async function findByEmail(email) {
 }
 
 export async function create({
-  fullName,
-  username,
-  passwordHash,
-  email,
-  phone,
-  positionId,
-  departmentId,
-  emailVerified = false,
-  isActive = true,
-  wasEverActivated,
+  fullName, username, passwordHash, email, phone,
+  positionId, departmentId,
+  craftLevel, specialty, experienceNotes,
+  emailVerified = false, isActive = true, wasEverActivated,
 }) {
   const ever = wasEverActivated !== undefined ? wasEverActivated : isActive;
   const [result] = await getPool().query(
-    `INSERT INTO Employees (FullName, Username, PasswordHash, Email, Phone, PositionID, DepartmentID, EmailVerified, IsActive, WasEverActivated)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO Employees
+       (FullName, Username, PasswordHash, Email, Phone,
+        CraftLevel, Specialty, ExperienceNotes,
+        PositionID, DepartmentID, EmailVerified, IsActive, WasEverActivated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      fullName,
-      username,
-      passwordHash,
-      email,
-      phone || null,
-      positionId,
-      departmentId,
-      emailVerified,
-      isActive,
-      ever,
+      fullName, username, passwordHash, email, phone || null,
+      craftLevel || null, specialty || null, experienceNotes || null,
+      positionId, departmentId, emailVerified, isActive, ever,
     ],
   );
   return result.insertId;
 }
 
 export async function update(id, fields) {
-  const allowed = ["FullName", "Email", "Phone", "PositionID", "DepartmentID"];
   const map = {
-    fullName: "FullName",
-    email: "Email",
-    phone: "Phone",
-    positionId: "PositionID",
-    departmentId: "DepartmentID",
+    fullName:         "FullName",
+    email:            "Email",
+    phone:            "Phone",
+    positionId:       "PositionID",
+    departmentId:     "DepartmentID",
+    craftLevel:       "CraftLevel",
+    specialty:        "Specialty",
+    experienceNotes:  "ExperienceNotes",
   };
   const setClauses = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {
-    if (fields[key] !== undefined && allowed.includes(col)) {
+    if (fields[key] !== undefined) {
       setClauses.push(`${col} = ?`);
       params.push(fields[key] ?? null);
     }
@@ -189,6 +170,14 @@ export async function update(id, fields) {
   const [result] = await getPool().query(
     `UPDATE Employees SET ${setClauses.join(", ")} WHERE EmployeeID = ?`,
     params,
+  );
+  return result.affectedRows;
+}
+
+export async function updatePhoto(id, photoPath) {
+  const [result] = await getPool().query(
+    "UPDATE Employees SET PhotoPath = ? WHERE EmployeeID = ?",
+    [photoPath, id],
   );
   return result.affectedRows;
 }
@@ -207,7 +196,6 @@ export async function updatePassword(id, passwordHash) {
   );
 }
 
-/** Danh sách EmployeeID đang hoạt động theo PositionID (VD: 2 = Chuyên viên KTS — thông báo phản hồi tài liệu). */
 export async function findActiveEmployeeIdsByPositionId(positionId) {
   const [rows] = await getPool().query(
     `SELECT EmployeeID AS employeeId FROM Employees
@@ -217,7 +205,6 @@ export async function findActiveEmployeeIdsByPositionId(positionId) {
   return rows.map((r) => Number(r.employeeId));
 }
 
-/** Tìm nhân viên theo Level chức vụ (dùng để gửi notification cho quản lý) */
 export async function findAllByLevel(minLevel) {
   const [rows] = await getPool().query(
     `SELECT e.EmployeeID AS employeeId, e.FullName AS fullName

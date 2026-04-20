@@ -27,7 +27,7 @@ export function AssetListPage() {
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(true);
   const [page,    setPage]    = useState(1);
-  const [filters, setFilters] = useState({ search: '', status: '', assetTypeId: '' });
+  const [filters, setFilters] = useState({ search: '', status: '', assetTypeId: '', productionLine: '' });
   const [createOpen, setCreateOpen] = useState(false);
   const [qrAsset,    setQrAsset]    = useState(null);
   const LIMIT = 15;
@@ -39,7 +39,8 @@ export function AssetListPage() {
         page, limit: LIMIT,
         ...(filters.search     && { search: filters.search }),
         ...(filters.status     && { status: filters.status }),
-        ...(filters.assetTypeId && { assetTypeId: filters.assetTypeId }),
+        ...(filters.assetTypeId    && { assetTypeId:    filters.assetTypeId }),
+        ...(filters.productionLine && { productionLine: filters.productionLine }),
       });
       setAssets(res.data.data?.items ?? []);
       setTotal(res.data.data?.total  ?? 0);
@@ -88,6 +89,11 @@ export function AssetListPage() {
           <option value="">Tất cả loại</option>
           {types.map(t => <option key={t.assetTypeId} value={t.assetTypeId}>{t.typeName}</option>)}
         </Select>
+        <Select value={filters.productionLine ?? ''} onChange={e => handleFilter('productionLine', e.target.value)} className="w-44">
+          <option value="">Tất cả phân loại</option>
+          <option value="Dây chuyền">Dây chuyền</option>
+          <option value="Dùng chung">Dùng chung</option>
+        </Select>
         {canDo(user, 'ASSET:CREATE') && (
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={15} /> Thêm tài sản
@@ -106,7 +112,7 @@ export function AssetListPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-300">
                     <tr>
-                      {['Mã', 'Tên thiết bị', 'Loại', 'Vị trí', 'Trạng thái', 'Ngày đưa vào SD', ''].map(h => (
+                      {['Mã', 'Tên thiết bị', 'Loại', 'Phân loại', 'Vị trí', 'Trạng thái', 'Ngày đưa vào SD', ''].map(h => (
                         <th key={h} className="text-left text-xs font-bold text-gray-700 px-4 py-3 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
@@ -121,7 +127,12 @@ export function AssetListPage() {
                           </Link>
                           {a.serialNumber && <p className="text-xs text-gray-500 mt-0.5">S/N: {a.serialNumber}</p>}
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-700">{a.typeName}</td>
+                        <td className="px-4 py-3 font-medium text-gray-700">{a.assetTypeName}</td>
+                        <td className="px-4 py-3">
+                          {a.productionLine
+                            ? <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${a.productionLine === 'Dây chuyền' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{a.productionLine}</span>
+                            : <span className="text-gray-400 text-xs">—</span>}
+                        </td>
                         <td className="px-4 py-3 text-gray-700">{a.locationName}</td>
                         <td className="px-4 py-3">
                           <Badge color={ASSET_STATUS_COLOR[a.status]}>

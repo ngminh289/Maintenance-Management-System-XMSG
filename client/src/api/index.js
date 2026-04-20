@@ -10,6 +10,14 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+/** Khi gửi FormData, xóa Content-Type để browser tự thêm boundary đúng chuẩn multipart. */
+api.interceptors.request.use((config) => {
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+  return config;
+});
+
 let isRefreshing = false;
 let failQueue = [];
 

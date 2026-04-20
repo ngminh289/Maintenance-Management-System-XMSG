@@ -1,9 +1,9 @@
 /**
  * asset.model.js — SQL thuần cho bảng Assets (JOIN AssetTypes + Locations).
  * Dùng trong: services/asset.service.js.
- * Liên quan: migrations/041_asset_extended_fields.sql
+ * Liên quan: migrations/041_asset_extended_fields.sql, 047_group_soft_delete_notif_asset_line.sql
  * Trường mở rộng: model, yearOfManufacture, technicalSpecs,
- *                 purchaseDate, warrantyDate, decommissionDate
+ *                 purchaseDate, warrantyDate, decommissionDate, productionLine (047)
  */
 import { getPool } from '../config/database.js';
 
@@ -26,20 +26,22 @@ const COLS = `
   a.DecommissionDate     AS decommissionDate,
   a.Photo                AS photo,
   a.QRCodePath           AS qrCodePath,
-  a.Description          AS description`;
+  a.Description          AS description,
+  a.ProductionLine       AS productionLine`;
 
 const BASE_JOIN = `
   FROM Assets a
   JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID
   JOIN Locations  l  ON l.LocationID   = a.LocationID`;
 
-export async function findAll({ limit, offset, status, assetTypeId, locationId, search } = {}) {
+export async function findAll({ limit, offset, status, assetTypeId, locationId, search, productionLine } = {}) {
   const params = [];
   let where = 'WHERE 1=1';
 
-  if (status)      { where += ' AND a.Status = ?';      params.push(status); }
-  if (assetTypeId) { where += ' AND a.AssetTypeID = ?'; params.push(assetTypeId); }
-  if (locationId)  { where += ' AND a.LocationID = ?';  params.push(locationId); }
+  if (status)         { where += ' AND a.Status = ?';         params.push(status); }
+  if (assetTypeId)    { where += ' AND a.AssetTypeID = ?';    params.push(assetTypeId); }
+  if (locationId)     { where += ' AND a.LocationID = ?';     params.push(locationId); }
+  if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(productionLine); }
   if (search)      {
     where += ' AND (a.AssetName LIKE ? OR a.SerialNumber LIKE ? OR a.Manufacturer LIKE ? OR a.Model LIKE ?)';
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
@@ -56,17 +58,19 @@ export async function findAll({ limit, offset, status, assetTypeId, locationId, 
   return rows;
 }
 
-export async function count({ status, assetTypeId, locationId, search } = {}) {
+export async function count({ status, assetTypeId, locationId, search, productionLine } = {}) {
   const params = [];
+  let join  = 'FROM Assets a JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID JOIN Locations l ON l.LocationID = a.LocationID';
   let where = 'WHERE 1=1';
-  if (status)      { where += ' AND Status = ?';      params.push(status); }
-  if (assetTypeId) { where += ' AND AssetTypeID = ?'; params.push(assetTypeId); }
-  if (locationId)  { where += ' AND LocationID = ?';  params.push(locationId); }
+  if (status)         { where += ' AND a.Status = ?';         params.push(status); }
+  if (assetTypeId)    { where += ' AND a.AssetTypeID = ?';    params.push(assetTypeId); }
+  if (locationId)     { where += ' AND a.LocationID = ?';     params.push(locationId); }
+  if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(productionLine); }
   if (search) {
-    where += ' AND (AssetName LIKE ? OR SerialNumber LIKE ? OR Manufacturer LIKE ? OR Model LIKE ?)';
+    where += ' AND (a.AssetName LIKE ? OR a.SerialNumber LIKE ? OR a.Manufacturer LIKE ? OR a.Model LIKE ?)';
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
-  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt FROM Assets ${where}`, params);
+  const [rows] = await getPool().query(`SELECT COUNT(*) AS cnt ${join} ${where}`, params);
   return Number(rows[0].cnt);
 }
 
@@ -83,7 +87,7 @@ export async function create({
   commissionDate, manufacturer, serialNumber,
   model, yearOfManufacture, technicalSpecs,
   purchaseDate, warrantyDate, decommissionDate,
-  photo, qrCodePath, description,
+  photo, qrCodePath, description, productionLine,
 }) {
   const [result] = await getPool().query(
     `INSERT INTO Assets (
@@ -91,8 +95,8 @@ export async function create({
       CommissionDate, Manufacturer, SerialNumber,
       Model, YearOfManufacture, TechnicalSpecs,
       PurchaseDate, WarrantyDate, DecommissionDate,
-      Photo, QRCodePath, Description
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      Photo, QRCodePath, Description, ProductionLine
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       assetName, assetTypeId, locationId,
       status || 'AVAILABLE',
@@ -101,6 +105,7 @@ export async function create({
       model || null, yearOfManufacture || null, technicalSpecs || null,
       purchaseDate || null, warrantyDate || null, decommissionDate || null,
       photo || null, qrCodePath || null, description || null,
+      productionLine || null,
     ],
   );
   return result.insertId;
@@ -124,6 +129,7 @@ export async function update(id, fields) {
     photo:              'Photo',
     qrCodePath:         'QRCodePath',
     description:        'Description',
+    productionLine:     'ProductionLine',
   };
   const setClauses = [];
   const params = [];

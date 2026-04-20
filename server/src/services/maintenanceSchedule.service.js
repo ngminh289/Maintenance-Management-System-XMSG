@@ -244,23 +244,20 @@ export async function checkCalendarSchedules() {
         );
       }
 
-      await notifService.create({
-        type: "MAINTENANCE_DUE",
-        message:
-          days < 0
-            ? `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — quá hạn ${Math.abs(days)} ngày.`
-            : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
-        assetId: s.assetId,
-        createdBy: null,
-      });
+      await notifService.notifyManagers(
+        days < 0
+          ? `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — quá hạn ${Math.abs(days)} ngày.`
+          : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
+        "MAINTENANCE_DUE",
+        2,
+      );
     } else if (days <= WARN_DAYS) {
       // Sắp đến hạn → chỉ cảnh báo, chưa tạo WO
-      await notifService.create({
-        type: "MAINTENANCE_DUE",
-        message: `[SẮP ĐẾN HẠN] Lịch bảo trì "${s.scheduleName}" của tài sản ${s.assetName} đến hạn sau ${days} ngày (${s.nextDueDate}).`,
-        assetId: s.assetId,
-        createdBy: null,
-      });
+      await notifService.notifyManagers(
+        `[SẮP ĐẾN HẠN] Lịch bảo trì "${s.scheduleName}" của tài sản ${s.assetName} đến hạn sau ${days} ngày (${s.nextDueDate}).`,
+        "MAINTENANCE_DUE",
+        2,
+      );
     }
   }
 

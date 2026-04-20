@@ -316,12 +316,20 @@ export async function applyTimingTransition(woId, fromStatus, toStatus) {
 
 export async function getAssignments(woId) {
   const [rows] = await getPool().query(
-    `SELECT e.EmployeeID AS employeeId, e.FullName AS fullName,
-            p.PositionName AS positionName, e.Phone AS phone, e.Email AS email
+    `SELECT e.EmployeeID    AS employeeId,
+            e.FullName      AS fullName,
+            e.PhotoPath     AS photoPath,
+            e.Specialty     AS specialty,
+            e.CraftLevel    AS craftLevel,
+            p.PositionName  AS positionName,
+            e.Phone         AS phone,
+            e.Email         AS email,
+            wa.IsGroupLeader AS isGroupLeader
      FROM WO_Assignments wa
      JOIN Employees e ON e.EmployeeID = wa.EmployeeID
      JOIN Positions p ON p.PositionID = e.PositionID
-     WHERE wa.WO_ID = ?`,
+     WHERE wa.WO_ID = ?
+     ORDER BY wa.IsGroupLeader DESC, e.FullName`,
     [woId],
   );
   return rows;
@@ -404,11 +412,23 @@ export async function updateStatus(
   );
 }
 
-export async function assign(woId, employeeId) {
+/**
+ * Thêm hoặc cập nhật phân công (upsert).
+ * isGroupLeader = true → người này là trưởng nhóm phiếu việc.
+ * Phân công cá nhân: isGroupLeader = true (chính họ tự khởi động).
+ */
+export async function assign(woId, employeeId, isGroupLeader = false) {
   await getPool().query(
-    "INSERT IGNORE INTO WO_Assignments (WO_ID, EmployeeID) VALUES (?, ?)",
-    [woId, employeeId],
+    `INSERT INTO WO_Assignments (WO_ID, EmployeeID, IsGroupLeader)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE IsGroupLeader = VALUES(IsGroupLeader)`,
+    [woId, employeeId, isGroupLeader ? 1 : 0],
   );
+}
+
+/** Xóa toàn bộ phân công hiện tại của WO (dùng trước khi giao nhóm mới). */
+export async function clearAssignments(woId) {
+  await getPool().query("DELETE FROM WO_Assignments WHERE WO_ID = ?", [woId]);
 }
 
 export async function unassign(woId, employeeId) {

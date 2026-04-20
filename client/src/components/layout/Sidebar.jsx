@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, ClipboardCheck, Layers, Users, ShieldCheck, ChevronRight,
   ListChecks,
-  Factory, BarChart2, GitBranch, MessageSquare,
+  Factory, BarChart2, GitBranch, MessageSquare, Settings,
 } from 'lucide-react';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
 import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
@@ -61,8 +61,9 @@ const MENU_GROUPS = [
   {
     label: 'Quản trị',
     items: [
-      { to: '/employees',   routeKey: 'employees',   icon: Users,       label: 'Nhân sự' },
-      { to: '/workflows',   routeKey: 'workflows',   icon: GitBranch,   label: 'Luồng phê duyệt' },
+      { to: '/employees',   routeKey: 'employees',      icon: Users,      label: 'Nhân sự' },
+      { to: '/workflows',   routeKey: 'workflows',      icon: GitBranch,  label: 'Luồng phê duyệt' },
+      { to: '/admin',       routeKey: 'admin-settings', icon: Settings,   label: 'Cấu hình hệ thống' },
     ],
   },
 ];

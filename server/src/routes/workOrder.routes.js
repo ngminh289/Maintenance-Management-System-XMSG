@@ -65,11 +65,16 @@ workOrderRouter.delete('/:id/photos/:photoId',
   ctrl.deletePhoto,
 );
 
-// Phân công nhân viên
+// Phân công cá nhân
 workOrderRouter.post('/:id/assign',
   requirePermission('WORK_ORDER', 'UPDATE'),
   validate(assignSchema),
   ctrl.assign,
+);
+// Phân công nhóm — { groupId, leaderId }
+workOrderRouter.post('/:id/assign-group',
+  requirePermission('WORK_ORDER', 'UPDATE'),
+  ctrl.assignGroup,
 );
 workOrderRouter.delete('/:id/assign/:employeeId',
   requirePermission('WORK_ORDER', 'UPDATE'),
