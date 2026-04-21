@@ -1,31 +1,41 @@
 /**
  * notification.service.js — Gửi thông báo in-app.
- * Dùng trong: approval, workOrder, checklist, assetCounter, documentFeedback.
- * Loại DOCUMENT_FEEDBACK_* — migration 039.
- * Liên quan: models/notification.model.js, models/employee.model.js.
+ * ResourceType + ResourceID (migration 049) — cho phép frontend tạo link điều hướng.
+ * Cú pháp ctx: { resourceType, resourceId } — cả hai optional.
+ * Dùng trong: approval, workOrder, checklist, assetCounter, documentFeedback,
+ *             maintenanceGroup, workOrderFieldAssign, maintenanceSchedule.
  */
 import * as model from "../models/notification.model.js";
 import * as employeeModel from "../models/employee.model.js";
 import { getPagination } from "../utils/paginate.js";
 
-export async function send(recipientId, message, type = "SYSTEM_ALERT") {
-  await model.create({ recipientId, message, type });
+/**
+ * Gửi thông báo đến 1 người.
+ * @param {number} recipientId
+ * @param {string} message
+ * @param {string} type
+ * @param {{ resourceType?: string, resourceId?: number }} ctx
+ */
+export async function send(recipientId, message, type = "SYSTEM_ALERT", ctx = {}) {
+  await model.create({
+    recipientId,
+    message,
+    type,
+    resourceType: ctx.resourceType ?? null,
+    resourceId:   ctx.resourceId   ?? null,
+  });
 }
 
-/** Gửi cùng nội dung tới nhiều người (VD: mọi NV Kỹ thuật khi có phản hồi tài liệu). */
-export async function sendBulk(recipientIds, message, type = "SYSTEM_ALERT") {
+/** Gửi cùng nội dung tới nhiều người. */
+export async function sendBulk(recipientIds, message, type = "SYSTEM_ALERT", ctx = {}) {
   const ids = [...new Set(recipientIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))];
-  await Promise.all(ids.map((id) => model.create({ recipientId: id, message, type })));
+  await Promise.all(ids.map((id) => send(id, message, type, ctx)));
 }
 
-/** Gửi cho tất cả nhân viên có Level >= minLevel */
-export async function notifyManagers(
-  message,
-  type = "SYSTEM_ALERT",
-  minLevel = 2,
-) {
+/** Gửi cho tất cả nhân viên có Level >= minLevel. */
+export async function notifyManagers(message, type = "SYSTEM_ALERT", minLevel = 2, ctx = {}) {
   const managers = await employeeModel.findAllByLevel(minLevel);
-  await Promise.all(managers.map((m) => send(m.employeeId, message, type)));
+  await Promise.all(managers.map((m) => send(m.employeeId, message, type, ctx)));
 }
 
 export async function getMyNotifications(recipientId, query) {
@@ -40,8 +50,7 @@ export async function getMyNotifications(recipientId, query) {
 
 export async function markRead(notiId, recipientId) {
   const affected = await model.markRead(notiId, recipientId);
-  if (!affected)
-    throw Object.assign(new Error("Không tìm thấy thông báo"), { status: 404 });
+  if (!affected) throw Object.assign(new Error("Không tìm thấy thông báo"), { status: 404 });
 }
 
 export async function markAllRead(recipientId) {

@@ -248,8 +248,8 @@ export function AssetDetailPage() {
                 </div>
                 <InfoRow label="Ngày đưa vào sử dụng" value={fDate(asset.commissionDate)} />
                 <InfoRow label="Ngày ngưng hoạt động" value={fDate(asset.decommissionDate)} />
-                {asset.productionLine && (
-                  <InfoRow label="Phân loại sử dụng" value={asset.productionLine} />
+                {asset.productionLineName && (
+                  <InfoRow label="Phân loại sử dụng" value={asset.productionLineName} />
                 )}
               </div>
             </div>
@@ -548,7 +548,7 @@ export function AssetDetailPage() {
       {/* Modal chỉnh sửa */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Chỉnh sửa tài sản" size="lg">
         <AssetForm
-          asset={asset} types={types} locations={locs}
+          asset={asset} locations={locs}
           canUploadPhoto={canEditAsset}
           onSuccess={() => { setEditOpen(false); load(); toast.success('Đã cập nhật tài sản'); }}
           onCancel={() => setEditOpen(false)}

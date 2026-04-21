@@ -344,6 +344,7 @@ export async function applyApprovedChecklistEffects(row) {
       `CẢNH BÁO: [${asset.assetName}] checklist #${checklistId} đã được giám sát duyệt. WO #${newWorkOrderId} chờ phê duyệt.`,
       "SYSTEM_ALERT",
       2,
+      { resourceType: "WORK_ORDER", resourceId: newWorkOrderId },
     );
   } else if (overallStatus === "NG") {
     await assetModel.updateStatus(assetId, "BROKEN");
@@ -358,6 +359,7 @@ export async function applyApprovedChecklistEffects(row) {
       `SỰ CỐ: [${asset.assetName}] checklist #${checklistId} giám sát xác nhận NG. WO #${newWorkOrderId} đã tạo.`,
       "SYSTEM_ALERT",
       2,
+      { resourceType: "WORK_ORDER", resourceId: newWorkOrderId },
     );
   }
 
@@ -416,6 +418,7 @@ export async function submitResult({
     `Checklist #${checklistId} chờ TC/TP: ${asset.assetName} — ${overallStatus}. Người nộp ID ${checkerId}.`,
     "SYSTEM_ALERT",
     3,
+    { resourceType: "CHECKLIST", resourceId: checklistId },
   );
 
   return {
@@ -456,6 +459,7 @@ export async function reviewChecklistResult(
       row.checkerId,
       `Giám sát từ chối checklist #${checklistId} (${row.assetName}). ${supervisorNotes ? `Lý do: ${supervisorNotes}` : ""}`,
       "SYSTEM_ALERT",
+      { resourceType: "CHECKLIST", resourceId: checklistId },
     );
     return { checklistId, reviewStatus: "REJECTED", newWorkOrderId: null };
   }

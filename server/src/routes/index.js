@@ -26,6 +26,7 @@ import { workflowRouter }            from './workflow.routes.js';
 import { permissionRouter }          from './permission.routes.js';
 import { retentionPolicyRouter }     from './retentionPolicy.routes.js';
 import { statsRouter }               from './stats.routes.js';
+import { productionLineRouter }      from './productionLine.routes.js';
 
 export const apiRouter = Router();
 
@@ -39,6 +40,7 @@ apiRouter.use('/positions',            positionRouter);
 apiRouter.use('/employees',            employeeRouter);
 apiRouter.use('/asset-types',          assetTypeRouter);
 apiRouter.use('/locations',            locationRouter);
+apiRouter.use('/production-lines',     productionLineRouter);
 apiRouter.use('/tags',                 tagRouter);
 apiRouter.use('/document-categories',  documentCategoryRouter);
 

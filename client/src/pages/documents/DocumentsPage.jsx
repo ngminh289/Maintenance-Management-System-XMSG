@@ -1,7 +1,8 @@
 /**
  * DocumentsPage.jsx — Kho tài liệu số: upload, phân loại, tag, tìm kiếm, phê duyệt, phản hồi/góp ý (trừ Chuyên viên KTS gửi).
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { api }         from '../../api/index.js';
 import { assetApi }    from '../../api/asset.api.js';
@@ -14,7 +15,7 @@ import { EmptyState }  from '../../components/ui/EmptyState.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
 import {
   FileText, Upload, Send, ExternalLink, History, RefreshCw, Tag, ShieldCheck,
-  Pencil, Layers, Settings2, MessageSquare,
+  Pencil, Layers, Settings2, MessageSquare, AlertCircle, Trash2,
 } from 'lucide-react';
 import { fDateTime } from '../../utils/format.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -27,6 +28,59 @@ const DA_STATUS_LABEL = { DRAFT: 'Bản nháp', PENDING: 'Chờ duyệt', APPROV
 
 const FILE_BASE = import.meta.env.VITE_API_BASE;
 const fileUrl = (filePath) => documentFilePublicUrl(filePath, FILE_BASE);
+
+/** Tooltip yêu cầu chỉnh sửa — dùng portal để thoát overflow-x-auto */
+function ReviseTooltip({ reviserName, comment }) {
+  const [tooltipPos, setTooltipPos] = useState(null);
+  const triggerRef = useRef(null);
+
+  const show = () => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    setTooltipPos({ x: r.left, y: r.top });
+  };
+
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        onMouseEnter={show}
+        onMouseLeave={() => setTooltipPos(null)}
+        className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-orange-100 border border-orange-300 cursor-help select-none"
+      >
+        <AlertCircle size={10} className="text-orange-600 flex-shrink-0" />
+        <span className="text-[10px] font-bold text-orange-700 max-w-[160px] truncate">
+          Sửa bởi {reviserName}
+        </span>
+      </span>
+
+      {tooltipPos && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: tooltipPos.x,
+            top: tooltipPos.y - 12,
+            transform: 'translateY(-100%)',
+            zIndex: 9999,
+          }}
+          className="w-80 bg-gray-900 text-white rounded-xl shadow-2xl pointer-events-none overflow-hidden"
+        >
+          <div className="px-4 py-2 bg-orange-600/20 border-b border-orange-500/30 flex items-center gap-2">
+            <AlertCircle size={13} className="text-orange-400 flex-shrink-0" />
+            <span className="text-xs font-bold text-orange-300">Yêu cầu chỉnh sửa</span>
+          </div>
+          <div className="px-4 py-3 space-y-1.5">
+            <p className="text-[11px] font-semibold text-gray-300">Người yêu cầu</p>
+            <p className="text-sm font-bold text-white">{reviserName}</p>
+            <p className="text-[11px] font-semibold text-gray-300 mt-2">Lý do</p>
+            <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{comment}</p>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
 
 export function DocumentsPage() {
   const { user } = useAuth();
@@ -44,6 +98,7 @@ export function DocumentsPage() {
   const canCatUpdate = canDo(user, 'DOCUMENT_CATEGORY:UPDATE');
   const canCatDelete = canDo(user, 'DOCUMENT_CATEGORY:DELETE');
   const canManageCatalog = canTagCreate || canCatCreate;
+  const canForceDelete = (user?.positionLevel ?? 0) >= 3;
 
   const [docs, setDocs] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -56,18 +111,19 @@ export function DocumentsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQ, setSearchQ] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setSearchQ(searchInput), 400);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  useEffect(() => { setPage(1); }, [searchQ, filterCategoryId]);
+  useEffect(() => { setPage(1); }, [searchQ, filterCategoryId, filterStatus]);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [file, setFile] = useState(null);
   const [meta, setMeta] = useState({
-    description: '', assetId: '', tagIds: [], documentCategoryId: '',
+    description: '', assetId: '', tagIds: [], documentCategoryId: '', customFileName: '',
   });
   const [uploading, setUploading] = useState(false);
 
@@ -118,13 +174,14 @@ export function DocumentsPage() {
       const q = searchQ.trim();
       if (q) params.q = q;
       if (filterCategoryId) params.documentCategoryId = filterCategoryId;
+      if (filterStatus) params.status = filterStatus;
       const res = await api.get('/digital-assets', { params });
       setDocs(res.data.data?.items ?? []);
       setTotal(res.data.data?.total ?? 0);
     } finally {
       setLoading(false);
     }
-  }, [page, searchQ, filterCategoryId]);
+  }, [page, searchQ, filterCategoryId, filterStatus]);
 
   useEffect(() => {
     load();
@@ -142,6 +199,8 @@ export function DocumentsPage() {
     setUploading(true);
     const fd = new FormData();
     fd.append('file', file);
+    const displayName = meta.customFileName.trim() || file.name;
+    fd.append('customFileName', displayName);
     if (meta.description) fd.append('description', meta.description);
     if (meta.assetId) fd.append('assetId', meta.assetId);
     if (meta.documentCategoryId) fd.append('documentCategoryId', meta.documentCategoryId);
@@ -151,7 +210,7 @@ export function DocumentsPage() {
       toast.success('Đã upload tài liệu');
       setUploadOpen(false);
       setFile(null);
-      setMeta({ description: '', assetId: '', tagIds: [], documentCategoryId: '' });
+      setMeta({ description: '', assetId: '', tagIds: [], documentCategoryId: '', customFileName: '' });
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? 'Lỗi upload');
@@ -235,6 +294,17 @@ export function DocumentsPage() {
       toast.error(err.response?.data?.message ?? 'Lỗi upload phiên bản');
     } finally {
       setVerUploading(false);
+    }
+  };
+
+  const handleForceDelete = async (doc) => {
+    if (!window.confirm(`Xóa vĩnh viễn tài liệu "${doc.fileName}"? Hành động này không thể hoàn tác.`)) return;
+    try {
+      await api.delete(`/digital-assets/${doc.digitalAssetId}/force`);
+      toast.success('Đã xóa vĩnh viễn tài liệu');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Không thể xóa');
     }
   };
 
@@ -370,9 +440,9 @@ export function DocumentsPage() {
             />
           </div>
           {canReadCategories && (
-            <div className="w-48">
+            <div className="w-44">
               <Select
-                label="Lọc phân loại"
+                label="Phân loại"
                 value={filterCategoryId}
                 onChange={e => setFilterCategoryId(e.target.value)}
               >
@@ -383,8 +453,22 @@ export function DocumentsPage() {
               </Select>
             </div>
           )}
+          <div className="w-40">
+            <Select
+              label="Trạng thái"
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
+              <option value="">— Tất cả —</option>
+              <option value="DRAFT">Bản nháp</option>
+              <option value="PENDING">Chờ duyệt</option>
+              <option value="APPROVED">Đã duyệt</option>
+              <option value="REJECTED">Từ chối</option>
+              <option value="ARCHIVED">Lưu trữ</option>
+            </Select>
+          </div>
           <div className="flex items-end pb-0.5">
-            <Button type="button" variant="secondary" size="sm" onClick={() => { setSearchInput(''); setFilterCategoryId(''); }}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => { setSearchInput(''); setFilterCategoryId(''); setFilterStatus(''); }}>
               Xóa bộ lọc
             </Button>
           </div>
@@ -424,8 +508,14 @@ export function DocumentsPage() {
                           <div className="flex items-center gap-2">
                             <FileText size={16} className="text-blue-400 flex-shrink-0" />
                             <div>
-                              <p className="font-semibold text-gray-900 truncate max-w-[180px]">{doc.fileName}</p>
-                              {doc.description && <p className="text-xs font-medium text-gray-500 truncate max-w-[180px]">{doc.description}</p>}
+                              <p className="font-semibold text-gray-900 truncate max-w-[200px]">{doc.fileName}</p>
+                              {doc.description && <p className="text-xs font-medium text-gray-500 truncate max-w-[200px]">{doc.description}</p>}
+                              {doc.status === 'DRAFT' && doc.lastReviseComment && (
+                                <ReviseTooltip
+                                  reviserName={doc.lastReviserName}
+                                  comment={doc.lastReviseComment}
+                                />
+                              )}
                             </div>
                           </div>
                         </td>
@@ -502,6 +592,16 @@ export function DocumentsPage() {
                             >
                               <ExternalLink size={14} />
                             </a>
+                            {canForceDelete && (
+                              <button
+                                type="button"
+                                onClick={() => handleForceDelete(doc)}
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
+                                title="Xóa vĩnh viễn (Trưởng phòng)"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -521,12 +621,22 @@ export function DocumentsPage() {
             <label className="text-sm font-semibold text-gray-700 block mb-1">Chọn file *</label>
             <input
               type="file"
-              onChange={e => setFile(e.target.files[0] ?? null)}
+              onChange={e => {
+                const f = e.target.files[0] ?? null;
+                setFile(f);
+                if (f) setMeta(p => ({ ...p, customFileName: f.name }));
+              }}
               className="w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-600 file:font-medium hover:file:bg-blue-100 transition-colors"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.dwg,.zip"
             />
             <p className="text-xs text-gray-500 mt-1">Hỗ trợ: PDF, Word, Excel, ảnh, DWG, ZIP.</p>
           </div>
+          <Input
+            label="Tên hiển thị"
+            value={meta.customFileName}
+            onChange={e => setMeta(p => ({ ...p, customFileName: e.target.value }))}
+            placeholder="Tự điền từ file — có thể sửa thủ công"
+          />
           {canReadCategories && (
             <Select
               label="Phân loại (1 tài liệu — 1 loại)"

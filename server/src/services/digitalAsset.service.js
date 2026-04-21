@@ -170,7 +170,17 @@ export async function remove(id) {
   if (!['DRAFT', 'REJECTED'].includes(da.status)) {
     throw createError('Chỉ có thể xóa tài liệu ở trạng thái DRAFT hoặc REJECTED', 400);
   }
-  // Xóa file vật lý
+  const abs = resolveDocumentAbsolutePath(da.filePath);
+  if (abs) {
+    try { await unlink(abs); } catch { /* file có thể đã bị xóa */ }
+  }
+  await model.remove(id);
+}
+
+/** Xóa cứng tài liệu bất kể trạng thái — chỉ dành cho Trưởng phòng (Level >= 3). */
+export async function forceRemove(id) {
+  const da = await model.findById(id);
+  if (!da) throw createError('Không tìm thấy tài liệu', 404);
   const abs = resolveDocumentAbsolutePath(da.filePath);
   if (abs) {
     try { await unlink(abs); } catch { /* file có thể đã bị xóa */ }

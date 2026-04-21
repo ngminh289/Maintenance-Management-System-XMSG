@@ -195,6 +195,7 @@ export async function createFromApprovedSchedule({
       createdBy,
       `Đã tạo WO #${woId} từ lịch bảo trì — trạng thái Chờ thực hiện. Vui lòng phân công nhân viên hiện trường.`,
       "APPROVAL_REQUEST",
+      { resourceType: "WORK_ORDER", resourceId: woId },
     );
   }
   return woId;
@@ -422,6 +423,7 @@ export async function changeStatus(
           a.employeeId,
           `WO #${id} đã báo hoàn thành — chờ Trưởng ca/Trưởng phòng nghiệm thu.`,
           "WORK_ORDER_ASSIGNED",
+          { resourceType: "WORK_ORDER", resourceId: id },
         );
       }
     }
@@ -429,6 +431,7 @@ export async function changeStatus(
       `WO #${id} chờ nghiệm thu đóng phiếu (${wo.assetName ?? "tài sản"}).`,
       "SYSTEM_ALERT",
       3,
+      { resourceType: "WORK_ORDER", resourceId: id },
     );
     if (wo.assetId) {
       await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
@@ -470,6 +473,7 @@ export async function changeStatus(
         wo.createdBy,
         `Phiếu WO #${id} đã hoàn thành. ${tail}`,
         "WORK_ORDER_COMPLETED",
+        { resourceType: "WORK_ORDER", resourceId: id },
       );
     }
   } else {
@@ -490,6 +494,7 @@ export async function changeStatus(
         a.employeeId,
         `Phiếu WO #${id} đã bắt đầu. Vui lòng theo dõi.`,
         "WORK_ORDER_ASSIGNED",
+        { resourceType: "WORK_ORDER", resourceId: id },
       );
     }
   }

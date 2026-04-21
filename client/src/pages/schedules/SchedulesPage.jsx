@@ -15,8 +15,9 @@ import {
   Trash2,
   Send,
 } from "lucide-react";
-import { scheduleApi } from "../../api/schedule.api.js";
-import { assetApi } from "../../api/asset.api.js";
+import { scheduleApi }    from "../../api/schedule.api.js";
+import { assetApi }       from "../../api/asset.api.js";
+import { assetTypeApi }   from "../../api/assetType.api.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
@@ -130,6 +131,21 @@ function DueDateChip({ nextDueDate, frequencyUnit, status }) {
 function ScheduleForm({ form, setF, patchForm, assets }) {
   const isPredictive = form.scheduleKind === "predictive";
 
+  // Autofill PM từ DefaultPMValue/Unit của loại tài sản khi chọn tài sản
+  const handleAssetChange = async (assetId) => {
+    setF("assetId", assetId);
+    if (!assetId || isPredictive) return;
+    try {
+      const asset = assets.find(a => String(a.assetId) === String(assetId));
+      if (!asset?.assetTypeId) return;
+      const res = await assetTypeApi.getById(asset.assetTypeId);
+      const t = res.data.data;
+      if (t?.defaultPMValue && t?.defaultPMUnit && t.defaultPMUnit !== 'HOURS') {
+        patchForm({ frequencyValue: t.defaultPMValue, frequencyUnit: t.defaultPMUnit });
+      }
+    } catch { /* bỏ qua lỗi fetch, không block */ }
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -142,7 +158,7 @@ function ScheduleForm({ form, setF, patchForm, assets }) {
         <Select
           label="Tài sản *"
           value={form.assetId ?? ""}
-          onChange={(e) => setF("assetId", e.target.value)}
+          onChange={(e) => handleAssetChange(e.target.value)}
         >
           <option value="">— Chọn tài sản —</option>
           {assets.map((a) => (
@@ -221,6 +237,11 @@ function ScheduleForm({ form, setF, patchForm, assets }) {
           <p className="text-sm text-gray-600 col-span-2">
             Đơn vị: <strong>giờ chạy tích lũy</strong> — khi nhập đồng hồ máy vượt ngưỡng, hệ thống tự tạo phiếu PM
             chờ duyệt (không dùng nút WO trên dòng lịch).
+          </p>
+        )}
+        {!isPredictive && (
+          <p className="text-xs text-blue-600 col-span-2 -mt-1">
+            💡 Chọn tài sản sẽ tự gợi ý tần suất từ loại thiết bị (có thể sửa lại).
           </p>
         )}
         <Input

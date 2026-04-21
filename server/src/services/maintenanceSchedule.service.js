@@ -250,6 +250,7 @@ export async function checkCalendarSchedules() {
           : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
         "MAINTENANCE_DUE",
         2,
+        { resourceType: "WORK_ORDER", resourceId: newWoId },
       );
     } else if (days <= WARN_DAYS) {
       // Sắp đến hạn → chỉ cảnh báo, chưa tạo WO
@@ -257,6 +258,7 @@ export async function checkCalendarSchedules() {
         `[SẮP ĐẾN HẠN] Lịch bảo trì "${s.scheduleName}" của tài sản ${s.assetName} đến hạn sau ${days} ngày (${s.nextDueDate}).`,
         "MAINTENANCE_DUE",
         2,
+        { resourceType: "MAINTENANCE_PLAN", resourceId: s.scheduleId },
       );
     }
   }

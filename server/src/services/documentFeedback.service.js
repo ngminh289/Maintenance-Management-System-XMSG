@@ -54,7 +54,7 @@ export async function createForAsset(digitalAssetId, { employeeId, positionId, b
     const msg =
       `[Phản hồi tài liệu — mới] ${row.authorName} góp ý về «${da.fileName}» (#${row.feedbackId}). ` +
       'Vào menu Phản hồi tài liệu (KT) hoặc kho tài liệu để xem xét.';
-    await notifService.sendBulk(recipients, msg, 'DOCUMENT_FEEDBACK_NEW');
+    await notifService.sendBulk(recipients, msg, 'DOCUMENT_FEEDBACK_NEW', { resourceType: "DIGITAL_ASSET", resourceId: da.digitalAssetId });
   }
   return row;
 }
@@ -116,7 +116,7 @@ export async function reviewUpdate(feedbackId, { employeeId, positionId, status,
     if (note) {
       msg += ` Ghi chú: ${note.length > 200 ? `${note.slice(0, 200)}…` : note}`;
     }
-    await notifService.send(authorId, msg, 'DOCUMENT_FEEDBACK_STATUS');
+    await notifService.send(authorId, msg, 'DOCUMENT_FEEDBACK_STATUS', { resourceType: "DIGITAL_ASSET", resourceId: row.digitalAssetId });
   }
 
   return updated;

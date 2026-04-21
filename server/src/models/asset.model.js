@@ -1,9 +1,9 @@
 /**
- * asset.model.js — SQL thuần cho bảng Assets (JOIN AssetTypes + Locations).
+ * asset.model.js — SQL thuần cho bảng Assets (JOIN AssetTypes + Locations + ProductionLines).
  * Dùng trong: services/asset.service.js.
- * Liên quan: migrations/041_asset_extended_fields.sql, 047_group_soft_delete_notif_asset_line.sql
+ * Liên quan: migrations/041, 047, 048 (ProductionLine FK, AssetType hierarchy).
  * Trường mở rộng: model, yearOfManufacture, technicalSpecs,
- *                 purchaseDate, warrantyDate, decommissionDate, productionLine (047)
+ *                 purchaseDate, warrantyDate, decommissionDate, productionLine
  */
 import { getPool } from '../config/database.js';
 
@@ -27,12 +27,14 @@ const COLS = `
   a.Photo                AS photo,
   a.QRCodePath           AS qrCodePath,
   a.Description          AS description,
-  a.ProductionLine       AS productionLine`;
+  a.ProductionLine       AS productionLineId,
+  pl.LineName            AS productionLineName`;
 
 const BASE_JOIN = `
   FROM Assets a
   JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID
-  JOIN Locations  l  ON l.LocationID   = a.LocationID`;
+  JOIN Locations  l  ON l.LocationID   = a.LocationID
+  LEFT JOIN ProductionLines pl ON pl.LineID = a.ProductionLine`;
 
 export async function findAll({ limit, offset, status, assetTypeId, locationId, search, productionLine } = {}) {
   const params = [];
@@ -41,7 +43,7 @@ export async function findAll({ limit, offset, status, assetTypeId, locationId, 
   if (status)         { where += ' AND a.Status = ?';         params.push(status); }
   if (assetTypeId)    { where += ' AND a.AssetTypeID = ?';    params.push(assetTypeId); }
   if (locationId)     { where += ' AND a.LocationID = ?';     params.push(locationId); }
-  if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(productionLine); }
+  if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(Number(productionLine)); }
   if (search)      {
     where += ' AND (a.AssetName LIKE ? OR a.SerialNumber LIKE ? OR a.Manufacturer LIKE ? OR a.Model LIKE ?)';
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
@@ -60,12 +62,12 @@ export async function findAll({ limit, offset, status, assetTypeId, locationId, 
 
 export async function count({ status, assetTypeId, locationId, search, productionLine } = {}) {
   const params = [];
-  let join  = 'FROM Assets a JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID JOIN Locations l ON l.LocationID = a.LocationID';
+  const join  = 'FROM Assets a';
   let where = 'WHERE 1=1';
   if (status)         { where += ' AND a.Status = ?';         params.push(status); }
   if (assetTypeId)    { where += ' AND a.AssetTypeID = ?';    params.push(assetTypeId); }
   if (locationId)     { where += ' AND a.LocationID = ?';     params.push(locationId); }
-  if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(productionLine); }
+  if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(Number(productionLine)); }
   if (search) {
     where += ' AND (a.AssetName LIKE ? OR a.SerialNumber LIKE ? OR a.Manufacturer LIKE ? OR a.Model LIKE ?)';
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);

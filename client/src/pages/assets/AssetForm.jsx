@@ -1,12 +1,16 @@
 /**
  * AssetForm.jsx — Form thêm / chỉnh sửa tài sản đầy đủ + upload ảnh.
  * Sections: Thông tin cơ bản | Thông tin kỹ thuật | Thời gian & trạng thái | Ảnh thiết bị
+ * Loại tài sản: chỉ hiển thị loại CON (leaf) từ cây 2 cấp (migration 048).
+ * Dây chuyền: load từ API /production-lines (migration 048, thay ENUM cứng).
  * Liên quan: asset.model.js, asset.validator.js, asset.api.js, AssetDetailPage.jsx
  * Quyền upload ảnh: chỉ role có ASSET:UPDATE (truyền vào qua prop canUploadPhoto).
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { ImagePlus, X, Upload } from 'lucide-react';
-import { assetApi } from '../../api/asset.api.js';
+import { assetApi }          from '../../api/asset.api.js';
+import { assetTypeApi }      from '../../api/assetType.api.js';
+import { productionLineApi } from '../../api/productionLine.api.js';
 import { Button }   from '../../components/ui/Button.jsx';
 import { Input, Select, Textarea } from '../../components/ui/Input.jsx';
 
@@ -33,9 +37,17 @@ function SectionTitle({ children }) {
   );
 }
 
-export function AssetForm({ asset, types = [], locations = [], canUploadPhoto = false, onSuccess, onCancel }) {
+export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuccess, onCancel }) {
   const isEdit = !!asset;
   const fileInputRef = useRef(null);
+
+  const [leafTypes,       setLeafTypes]       = useState([]);
+  const [productionLines, setProductionLines] = useState([]);
+
+  useEffect(() => {
+    assetTypeApi.getLeaves().then(r => setLeafTypes(r.data.data ?? [])).catch(() => {});
+    productionLineApi.getAll().then(r => setProductionLines(r.data.data ?? [])).catch(() => {});
+  }, []);
 
   const [form, setForm] = useState({
     assetName:         asset?.assetName         ?? '',
@@ -52,7 +64,7 @@ export function AssetForm({ asset, types = [], locations = [], canUploadPhoto = 
     warrantyDate:      asset?.warrantyDate        ? asset.warrantyDate.slice(0, 10)       : '',
     decommissionDate:  asset?.decommissionDate    ? asset.decommissionDate.slice(0, 10)   : '',
     description:       asset?.description        ?? '',
-    productionLine:    asset?.productionLine     ?? '',
+    productionLine:    asset?.productionLineId   ?? '',
   });
 
   const [selectedPhotos, setSelectedPhotos] = useState([]); // File[]
@@ -167,7 +179,11 @@ export function AssetForm({ asset, types = [], locations = [], canUploadPhoto = 
           error={errors.assetTypeId}
         >
           <option value="">— Chọn loại —</option>
-          {types.map(t => <option key={t.assetTypeId} value={t.assetTypeId}>{t.typeName}</option>)}
+          {leafTypes.map(t => (
+            <option key={t.assetTypeId} value={t.assetTypeId}>
+              {t.parentTypeName ? `${t.parentTypeName} › ${t.typeName}` : t.typeName}
+            </option>
+          ))}
         </Select>
         <Select
           label="Vị trí *"
@@ -271,8 +287,9 @@ export function AssetForm({ asset, types = [], locations = [], canUploadPhoto = 
         onChange={e => set('productionLine', e.target.value)}
       >
         <option value="">— Chưa phân loại —</option>
-        <option value="Dây chuyền">Dây chuyền</option>
-        <option value="Dùng chung">Dùng chung</option>
+        {productionLines.map(l => (
+          <option key={l.lineId} value={l.lineId}>{l.lineName}</option>
+        ))}
       </Select>
 
       {/* ── Mô tả ── */}

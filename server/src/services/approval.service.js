@@ -55,7 +55,7 @@ async function updateResourceStatus(resourceType, resourceId, status) {
   );
 }
 
-async function notifyApproversForStep(workflowId, level, message) {
+async function notifyApproversForStep(workflowId, level, message, ctx = {}) {
   const step = await model.getWorkflowStep(workflowId, level);
   if (!step) return;
   const [rows] = await getPool().query(
@@ -63,7 +63,7 @@ async function notifyApproversForStep(workflowId, level, message) {
     [step.positionId],
   );
   for (const r of rows) {
-    await notifService.send(r.employeeId, message, "APPROVAL_REQUEST");
+    await notifService.send(r.employeeId, message, "APPROVAL_REQUEST", ctx);
   }
 }
 
@@ -150,6 +150,7 @@ export async function submit({
     wf.workflowId,
     1,
     `Có yêu cầu phê duyệt mới (${resourceType} #${resourceId})`,
+    { resourceType, resourceId },
   );
   return logId;
 }
@@ -260,14 +261,14 @@ export async function approve({
       if (log.submittedBy) notifySet.delete(log.submittedBy);
       await Promise.all(
         [...notifySet].map((eid) =>
-          notifService.send(eid, fieldMsg, "SYSTEM_ALERT"),
+          notifService.send(eid, fieldMsg, "SYSTEM_ALERT", { resourceType: "DIGITAL_ASSET", resourceId: log.resourceId }),
         ),
       );
     }
   }
 
   if (log.submittedBy) {
-    await notifService.send(log.submittedBy, submitterMessage, "APPROVAL_REQUEST");
+    await notifService.send(log.submittedBy, submitterMessage, "APPROVAL_REQUEST", { resourceType: log.resourceType, resourceId: log.resourceId });
   }
 
   if (assigneeIdForWo != null) {
@@ -301,6 +302,7 @@ export async function reject({ logId, approverId, comment }) {
       log.submittedBy,
       `Yêu cầu (${log.resourceType} #${log.resourceId}) đã bị từ chối. Lý do: ${comment || "Không có"}`,
       "APPROVAL_REQUEST",
+      { resourceType: log.resourceType, resourceId: log.resourceId },
     );
   }
 }
@@ -324,6 +326,7 @@ export async function requestChanges({ logId, approverId, comment }) {
       log.submittedBy,
       `Yêu cầu chỉnh sửa (${log.resourceType} #${log.resourceId}): ${comment || ""}`,
       "APPROVAL_REQUEST",
+      { resourceType: log.resourceType, resourceId: log.resourceId },
     );
   }
 }

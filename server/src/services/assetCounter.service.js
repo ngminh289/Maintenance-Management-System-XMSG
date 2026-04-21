@@ -113,6 +113,7 @@ export async function recordReading({
           `Máy #${assetId} vẫn vượt ngưỡng ${threshold}h; phiếu WO PREDICTIVE #${openPredWoId} đang mở — không tạo thêm.`,
           "MAINTENANCE_DUE",
           2,
+          { resourceType: "WORK_ORDER", resourceId: openPredWoId },
         );
       } else {
         const woId = await workOrderSvc.createAutomatic({
@@ -132,6 +133,7 @@ export async function recordReading({
           `Máy #${assetId} đã vượt ngưỡng ${threshold}h. Đã tạo phiếu WO #${woId} chờ phê duyệt.`,
           "MAINTENANCE_DUE",
           2,
+          { resourceType: "WORK_ORDER", resourceId: woId },
         );
       }
     } else {
@@ -150,6 +152,7 @@ export async function recordReading({
           `Máy #${assetId} dự kiến đến ngưỡng bảo trì sau ${daysLeft} ngày (${estimatedNextPMDate})`,
           "MAINTENANCE_DUE",
           2,
+          { resourceType: "ASSET", resourceId: assetId },
         );
       }
     }

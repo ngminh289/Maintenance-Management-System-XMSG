@@ -14,8 +14,9 @@ export const assetTypeRouter = Router();
 
 assetTypeRouter.use(requireAuth);
 
-assetTypeRouter.get('/',    ctrl.getAll);
-assetTypeRouter.get('/:id', ctrl.getById);
+assetTypeRouter.get('/',        ctrl.getAll);
+assetTypeRouter.get('/leaves',  ctrl.getLeaves);  // Trước /:id — chỉ loại con (leaf)
+assetTypeRouter.get('/:id',     ctrl.getById);
 assetTypeRouter.post('/',   requireLevel(2), validate(assetTypeSchema), ctrl.create);
 assetTypeRouter.put('/:id', requireLevel(2), validate(assetTypeSchema), ctrl.update);
 assetTypeRouter.delete('/:id', requireLevel(3), ctrl.remove);

@@ -47,6 +47,7 @@ export async function assignFieldTechnicianToWorkOrder(woId, assigneeEmployeeId,
     assigneeEmployeeId,
     `Bạn được phân công thực hiện phiếu WO #${woId}`,
     "WORK_ORDER_ASSIGNED",
+    { resourceType: "WORK_ORDER", resourceId: woId },
   );
   return model.getAssignments(woId);
 }
@@ -107,7 +108,7 @@ export async function assignGroupToWorkOrder(woId, groupId, actorLevel, { replac
     const msg = isLeader
       ? `Bạn là Trưởng nhóm phụ trách phiếu WO #${woId} (Nhóm: ${group.groupName})`
       : `Nhóm "${group.groupName}" được giao phiếu WO #${woId}`;
-    return notifService.send(m.employeeId, msg, "WORK_ORDER_ASSIGNED");
+    return notifService.send(m.employeeId, msg, "WORK_ORDER_ASSIGNED", { resourceType: "WORK_ORDER", resourceId: woId });
   }));
 
   return model.getAssignments(woId);

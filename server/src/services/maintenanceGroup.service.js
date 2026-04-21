@@ -72,6 +72,7 @@ export async function addMember(groupId, employeeId, { roleNotes, notes } = {}) 
     employeeId,
     `Bạn đã được thêm vào nhóm bảo trì "${group.groupName}"`,
     "MAINTENANCE_GROUP_JOINED",
+    { resourceType: "MAINTENANCE_GROUP", resourceId: groupId },
   );
   return model.getMembers(groupId);
 }
@@ -95,6 +96,7 @@ export async function setGroupLeader(groupId, employeeId) {
     employeeId,
     `Bạn đã được chỉ định làm Trưởng nhóm của nhóm "${group.groupName}"`,
     "MAINTENANCE_GROUP_LEADER",
+    { resourceType: "MAINTENANCE_GROUP", resourceId: groupId },
   );
   return model.getMembers(groupId);
 }

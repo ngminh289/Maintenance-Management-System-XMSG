@@ -110,11 +110,11 @@ INSERT IGNORE INTO WorkflowTemplates (WorkflowID, WorkflowName, DocumentType, To
     (4, 'Phê duyệt WO khẩn cấp',             'WORK_ORDER',       2, 'Hai bước — sự cố nghiêm trọng: EMERGENCY hoặc CORRECTIVE+HIGH');
 
 INSERT IGNORE INTO WorkflowSteps (WorkflowID, StepLevel, PositionID) VALUES
-    (1, 1, 3),
-    (2, 1, 3),
-    (3, 1, 3),
-    (4, 1, 3),
-    (4, 2, 6);
+    (1, 1, 3),   -- WO thông thường: Trưởng ca (Position 3)
+    (2, 1, 6),   -- Tài liệu kỹ thuật: Trưởng phòng (Position 6)
+    (3, 1, 3),   -- Kế hoạch bảo trì: Trưởng ca (Position 3)
+    (4, 1, 3),   -- WO khẩn B1: Trưởng ca
+    (4, 2, 6);   -- WO khẩn B2: Trưởng phòng
 
 -- Roles_Permissions được quản lý hoàn toàn bởi migrations (011_extend_resource_types.sql).
 -- Không insert ở đây để tránh conflict với RBAC đã được thiết kế lại đúng nghiệp vụ.

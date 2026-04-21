@@ -29,7 +29,7 @@ export async function getAll(query) {
     assetTypeId:    query.assetTypeId    ? Number(query.assetTypeId) : undefined,
     locationId:     query.locationId     ? Number(query.locationId)  : undefined,
     search:         query.search?.trim() || undefined,
-    productionLine: query.productionLine || undefined,
+    productionLine: query.productionLine ? Number(query.productionLine) : undefined,
   };
 
   const [items, total] = await Promise.all([

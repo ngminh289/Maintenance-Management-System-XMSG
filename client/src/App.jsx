@@ -32,6 +32,7 @@ import { ReportsPage }          from './pages/reports/ReportsPage.jsx';
 import { WorkflowsPage }        from './pages/workflows/WorkflowsPage.jsx';
 import { ProfilePage }          from './pages/ProfilePage.jsx';
 import { AdminPage }            from './pages/admin/AdminPage.jsx';
+import { NotificationsPage }    from './pages/NotificationsPage.jsx';
 
 export default function App() {
   return (
@@ -121,8 +122,9 @@ export default function App() {
               <Route path="/admin" element={<AdminPage />} />
             </Route>
 
-            {/* Hồ sơ cá nhân — mọi user đều truy cập được */}
-            <Route path="/profile"  element={<ProfilePage />} />
+            {/* Hồ sơ cá nhân + thông báo — mọi user */}
+            <Route path="/profile"       element={<ProfilePage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/settings" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

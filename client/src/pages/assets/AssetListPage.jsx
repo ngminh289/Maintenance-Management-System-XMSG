@@ -1,11 +1,14 @@
 /**
  * AssetListPage.jsx — Danh sách tài sản với filter, tạo mới, xem QR.
+ * Loại tài sản: dropdown chỉ loại con (leaf). Dây chuyền: load từ API.
  * RBAC: ASSET:CREATE (thêm), ASSET:DELETE (loại biên).
  */
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, QrCode, AlertTriangle, Filter } from 'lucide-react';
-import { assetApi } from '../../api/asset.api.js';
+import { assetApi }          from '../../api/asset.api.js';
+import { assetTypeApi }      from '../../api/assetType.api.js';
+import { productionLineApi } from '../../api/productionLine.api.js';
 import { Button }   from '../../components/ui/Button.jsx';
 import { Badge }    from '../../components/ui/Badge.jsx';
 import { Select }   from '../../components/ui/Input.jsx';
@@ -21,9 +24,10 @@ import toast from 'react-hot-toast';
 
 export function AssetListPage() {
   const { user } = useAuth();
-  const [assets,  setAssets]  = useState([]);
-  const [types,   setTypes]   = useState([]);
-  const [locs,    setLocs]    = useState([]);
+  const [assets,          setAssets]          = useState([]);
+  const [types,           setTypes]           = useState([]);
+  const [locs,            setLocs]            = useState([]);
+  const [productionLines, setProductionLines] = useState([]);
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(true);
   const [page,    setPage]    = useState(1);
@@ -48,9 +52,14 @@ export function AssetListPage() {
   }, [page, filters]);
 
   useEffect(() => {
-    Promise.all([assetApi.getTypes(), assetApi.getLocations()]).then(([t, l]) => {
-      setTypes(t.data.data ?? []);
-      setLocs(l.data.data  ?? []);
+    Promise.all([
+      assetTypeApi.getLeaves(),         // chỉ loại con (leaf) cho filter
+      assetApi.getLocations(),
+      productionLineApi.getAll(),
+    ]).then(([t, l, pl]) => {
+      setTypes(t.data.data  ?? []);
+      setLocs(l.data.data   ?? []);
+      setProductionLines(pl.data.data ?? []);
     }).catch(() => {});
   }, []);
 
@@ -85,14 +94,17 @@ export function AssetListPage() {
           <option value="">Tất cả trạng thái</option>
           {Object.entries(ASSET_STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </Select>
-        <Select value={filters.assetTypeId} onChange={e => handleFilter('assetTypeId', e.target.value)} className="w-44">
+        <Select value={filters.assetTypeId} onChange={e => handleFilter('assetTypeId', e.target.value)} className="w-52">
           <option value="">Tất cả loại</option>
-          {types.map(t => <option key={t.assetTypeId} value={t.assetTypeId}>{t.typeName}</option>)}
+          {types.map(t => (
+            <option key={t.assetTypeId} value={t.assetTypeId}>
+              {t.parentTypeName ? `${t.parentTypeName} › ${t.typeName}` : t.typeName}
+            </option>
+          ))}
         </Select>
         <Select value={filters.productionLine ?? ''} onChange={e => handleFilter('productionLine', e.target.value)} className="w-44">
-          <option value="">Tất cả phân loại</option>
-          <option value="Dây chuyền">Dây chuyền</option>
-          <option value="Dùng chung">Dùng chung</option>
+          <option value="">Tất cả dây chuyền</option>
+          {productionLines.map(l => <option key={l.lineId} value={l.lineId}>{l.lineName}</option>)}
         </Select>
         {canDo(user, 'ASSET:CREATE') && (
           <Button onClick={() => setCreateOpen(true)}>
@@ -129,8 +141,8 @@ export function AssetListPage() {
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-700">{a.assetTypeName}</td>
                         <td className="px-4 py-3">
-                          {a.productionLine
-                            ? <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${a.productionLine === 'Dây chuyền' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{a.productionLine}</span>
+                          {a.productionLineName
+                            ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-100">{a.productionLineName}</span>
                             : <span className="text-gray-400 text-xs">—</span>}
                         </td>
                         <td className="px-4 py-3 text-gray-700">{a.locationName}</td>
@@ -165,7 +177,7 @@ export function AssetListPage() {
 
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Thêm tài sản mới" size="lg">
         <AssetForm
-          types={types} locations={locs}
+          locations={locs}
           canUploadPhoto={canDo(user, 'ASSET:UPDATE')}
           onSuccess={() => { setCreateOpen(false); load(); toast.success('Đã thêm tài sản'); }}
           onCancel={() => setCreateOpen(false)}

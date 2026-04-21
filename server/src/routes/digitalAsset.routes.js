@@ -7,6 +7,7 @@
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
+import { requireLevel }      from '../middleware/requireRole.js';
 import { uploadDocument }    from '../config/upload.js';
 import * as ctrl from '../controllers/digitalAsset.controller.js';
 import * as fbCtrl from '../controllers/documentFeedback.controller.js';
@@ -72,6 +73,12 @@ digitalAssetRouter.post('/:id/tags',
 digitalAssetRouter.delete('/:id/tags/:tagId',
   requirePermission('TAG', 'UPDATE'),
   ctrl.removeTag,
+);
+
+// Xóa cứng bất kể trạng thái — chỉ Trưởng phòng (Level >= 3)
+digitalAssetRouter.delete('/:id/force',
+  requireLevel(3),
+  ctrl.forceRemove,
 );
 
 // Xóa (chỉ DRAFT/REJECTED) — Kỹ thuật viên xóa bản thảo của mình

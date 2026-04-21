@@ -1,16 +1,18 @@
 /**
  * notification.model.js — SQL thuần cho bảng Notifications.
+ * ResourceType + ResourceID (migration 049): cho phép frontend navigate đến link.
  * Dùng trong: services/notification.service.js.
  */
 import { getPool } from '../config/database.js';
 
 const COLS = `NotiID AS notiId, RecipientID AS recipientId, Message AS message,
-              Type AS type, IsRead AS isRead, CreatedAt AS createdAt`;
+              Type AS type, ResourceType AS resourceType, ResourceID AS resourceId,
+              IsRead AS isRead, CreatedAt AS createdAt`;
 
-export async function create({ recipientId, message, type = 'SYSTEM_ALERT' }) {
+export async function create({ recipientId, message, type = 'SYSTEM_ALERT', resourceType = null, resourceId = null }) {
   const [result] = await getPool().query(
-    'INSERT INTO Notifications (RecipientID, Message, Type) VALUES (?, ?, ?)',
-    [recipientId, message, type],
+    'INSERT INTO Notifications (RecipientID, Message, Type, ResourceType, ResourceID) VALUES (?, ?, ?, ?, ?)',
+    [recipientId, message, type, resourceType, resourceId],
   );
   return result.insertId;
 }

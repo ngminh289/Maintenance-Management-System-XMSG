@@ -18,10 +18,11 @@ export const getById = asyncHandler(async (req, res) =>
 /** POST /api/digital-assets — multipart/form-data */
 export const upload = asyncHandler(async (req, res) => {
   if (!req.file) return fail(res, 'Chưa chọn file để upload', 400);
-  const { assetId, description, tagIds, documentCategoryId } = req.body;
+  const { assetId, description, tagIds, documentCategoryId, customFileName } = req.body;
   const parsedTagIds = tagIds ? JSON.parse(tagIds) : [];
+  const displayName = (customFileName && String(customFileName).trim()) ? String(customFileName).trim() : req.file.originalname;
   const da = await service.create({
-    fileName:   req.file.originalname,
+    fileName:   displayName,
     fileType:   extname(req.file.originalname).replace('.', '').toUpperCase(),
     assetId:    assetId ? Number(assetId) : null,
     documentCategoryId: documentCategoryId != null && documentCategoryId !== ''
@@ -74,4 +75,11 @@ export const remove = asyncHandler(async (req, res) => {
   await service.remove(req.params.id);
   await logAction({ employeeId: req.user.sub, action: 'DELETE', tableName: 'DigitalAssets', recordId: Number(req.params.id) });
   return ok(res, { message: 'Đã xóa tài liệu.' });
+});
+
+/** DELETE /api/digital-assets/:id/force — Trưởng phòng xóa cứng bất kể trạng thái */
+export const forceRemove = asyncHandler(async (req, res) => {
+  await service.forceRemove(req.params.id);
+  await logAction({ employeeId: req.user.sub, action: 'DELETE', tableName: 'DigitalAssets', recordId: Number(req.params.id), newValue: { force: true } });
+  return ok(res, { message: 'Đã xóa vĩnh viễn tài liệu.' });
 });

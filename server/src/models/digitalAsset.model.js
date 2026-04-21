@@ -21,7 +21,18 @@ const COLS = `
   da.CurrentVersion AS currentVersion,
   da.FilePath       AS filePath,
   da.FileSizeKB     AS fileSizeKB,
-  da.Status         AS status`;
+  da.Status         AS status,
+  (SELECT al.Comment
+   FROM ApprovalLogs al
+   WHERE al.ResourceType = 'DIGITAL_ASSET' AND al.ResourceID = da.DigitalAssetID
+     AND al.Status = 'REQUEST_CHANGES'
+   ORDER BY al.ActionDate DESC LIMIT 1) AS lastReviseComment,
+  (SELECT ev.FullName
+   FROM ApprovalLogs al2
+   JOIN Employees ev ON ev.EmployeeID = al2.ApproverID
+   WHERE al2.ResourceType = 'DIGITAL_ASSET' AND al2.ResourceID = da.DigitalAssetID
+     AND al2.Status = 'REQUEST_CHANGES'
+   ORDER BY al2.ActionDate DESC LIMIT 1) AS lastReviserName`;
 
 const BASE_JOIN = `
   FROM DigitalAssets da
