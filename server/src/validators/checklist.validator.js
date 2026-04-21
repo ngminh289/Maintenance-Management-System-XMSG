@@ -18,10 +18,16 @@ export function templateItemSchema(body) {
 
 export function submitChecklistSchema(body) {
   if (!body.assetId || isNaN(Number(body.assetId))) return 'AssetID không hợp lệ';
+  if (body.woId !== undefined && body.woId !== '' && body.woId != null) {
+    const w = Number(body.woId);
+    if (!Number.isFinite(w) || w <= 0) return 'WO_ID không hợp lệ';
+  }
   if (!body.overallStatus || !VALID_STATUS.includes(body.overallStatus)) {
     return `OverallStatus không hợp lệ. Chấp nhận: ${VALID_STATUS.join(', ')}`;
   }
-  if (body.readingValue !== undefined && isNaN(Number(body.readingValue))) return 'ReadingValue phải là số';
+  if (body.readingValue !== undefined && body.readingValue !== '' && isNaN(Number(body.readingValue))) {
+    return 'ReadingValue phải là số';
+  }
   return null;
 }
 

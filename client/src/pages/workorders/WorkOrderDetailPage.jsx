@@ -3,8 +3,9 @@
  * Phân công cá nhân hoặc nhóm (với trưởng nhóm).
  * Chỉ trưởng nhóm (IsGroupLeader) mới bắt đầu phiếu và ghi chú vật tư.
  * Trưởng ca / Trưởng phòng: phân công, nghiệm thu, đóng phiếu.
+ * Link checklist: WO từ lịch (SCHEDULE) kèm woId; banner nhắc checklist hiển thị mọi trạng thái trừ hoàn thành/hủy.
  */
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -414,6 +415,18 @@ export function WorkOrderDetailPage() {
     }
   };
 
+  const checklistForAssetHref = useMemo(() => {
+    if (!wo) return "/checklists";
+    const q = new URLSearchParams({ assetId: String(wo.assetId) });
+    if (
+      String(wo.woSource || "").toUpperCase() === "SCHEDULE" &&
+      wo.scheduleId != null
+    ) {
+      q.set("woId", String(wo.woId));
+    }
+    return `/checklists?${q.toString()}`;
+  }, [wo]);
+
   if (loading) return <PageLoader />;
   if (!wo)
     return (
@@ -610,6 +623,31 @@ export function WorkOrderDetailPage() {
         </div>
       </div>
 
+      {String(wo.woSource || "").toUpperCase() === "SCHEDULE" &&
+        wo.scheduleId != null &&
+        !["COMPLETED", "CANCELLED"].includes(wo.status) && (
+          <div className="flex gap-3 rounded-xl border border-teal-200 bg-teal-50/90 px-4 py-3 text-sm text-teal-950">
+            <ClipboardList
+              size={18}
+              className="shrink-0 text-teal-600 mt-0.5"
+              aria-hidden
+            />
+            <div>
+              <p className="font-bold text-teal-900">Checklist định kỳ đính kèm</p>
+              <p className="mt-1 leading-relaxed">
+                Phiếu này có checklist đính kèm, vui lòng thực hiện checklist hiện
+                trường.
+              </p>
+              <Link
+                to={checklistForAssetHref}
+                className="inline-block mt-2 text-sm font-semibold text-teal-900 underline hover:no-underline"
+              >
+                Mở trang checklist — tài sản #{wo.assetId}
+              </Link>
+            </div>
+          </div>
+        )}
+
       {wo.woSource === "CORRECTIVE" && wo.counterBaselineResetAt && (
         <div className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
           <TimerReset
@@ -780,12 +818,6 @@ export function WorkOrderDetailPage() {
               Bấm <strong>Phân công</strong> và chọn <strong>KTV hiện trường</strong>{" "}
               hoặc <strong>Chuyên viên kỹ thuật số</strong>.
             </p>
-            <Link
-              to={`/checklists?assetId=${wo.assetId}`}
-              className="inline-block mt-2 text-sm font-semibold text-amber-900 underline hover:no-underline"
-            >
-              Checklist / QR — tài sản #{wo.assetId}
-            </Link>
           </div>
         </div>
       )}
@@ -797,7 +829,7 @@ export function WorkOrderDetailPage() {
           ) : (
             <span className="font-semibold">Bạn được phân công — chờ trưởng nhóm bắt đầu.</span>
           )}{" "}
-          <Link to={`/checklists?assetId=${wo.assetId}`} className="font-bold text-blue-800 underline ml-1">
+          <Link to={checklistForAssetHref} className="font-bold text-blue-800 underline ml-1">
             Tài liệu / QR — #{wo.assetId}
           </Link>
         </div>
@@ -849,7 +881,7 @@ export function WorkOrderDetailPage() {
           </ul>
           <div className="mt-4 flex justify-end">
             <Link
-              to={`/checklists?assetId=${wo.assetId}`}
+              to={checklistForAssetHref}
               className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-900"
             >
               <ClipboardList size={16} aria-hidden />

@@ -26,7 +26,7 @@ export const update = asyncHandler(async (req, res) => {
 });
 
 export const updateStatus = asyncHandler(async (req, res) => {
-  return ok(res, await service.updateStatus(req.params.id, req.body.status));
+  return ok(res, await service.updateStatus(req.params.id, req.body.status, req.user?.sub ?? null));
 });
 
 export const remove = asyncHandler(async (req, res) => {

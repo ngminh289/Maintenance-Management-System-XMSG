@@ -11,10 +11,10 @@
  * REJECT: giữ nguyên tài sản, thông báo cho người nộp.
  *
  * Liên quan: workOrder.service.js, assetCounter.service.js, notification.service.js,
- *            models/checklistResult.model.js.
+ *            models/checklistResult.model.js, models/scheduledChecklistSlot.model.js (slot lượt checklist từ lịch).
  *
  * getResultById: bổ sung checklistTemplateName, assetTypeName, locationName và threshold từng câu (màn duyệt).
- * getQRInfo: kèm runtimeCounter (đồng hồ máy, tích lũy delta, mốc LastMaintenanceTotal…) để form checklist hiển thị rõ và chặn nhập < lần trước.
+ * getQRInfo: ghi AssetQrAccessLogs (lượt mở màn hình QR); kèm runtimeCounter để form checklist hiển thị.
  *
  * Xem kết quả (positionLevel ≤ 1 = công nhân): chỉ phiếu APPROVED (mọi người) + mọi phiếu do mình nộp (mọi trạng thái).
  * NVKT+ xem toàn bộ; GET /results không cho CN lọc theo checkerId người khác.
@@ -29,6 +29,8 @@ import * as workOrderSvc from "./workOrder.service.js";
 import * as counterSvc from "./assetCounter.service.js";
 import * as counterModel from "../models/assetCounter.model.js";
 import * as notifService from "./notification.service.js";
+import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
+import * as assetQrAccessLogModel from "../models/assetQrAccessLog.model.js";
 
 /** Level ≤ 1: công nhân — giới hạn xem checklist như mô tả file header. */
 const CHECKLIST_VIEW_WORKER_MAX_LEVEL = 1;
@@ -283,6 +285,18 @@ export async function getQRInfo(assetId, viewer = {}) {
     lastUpdated: counterRow?.lastUpdated ?? null,
   };
 
+  const eid = viewer.employeeId != null ? Number(viewer.employeeId) : null;
+  if (eid && !Number.isNaN(eid)) {
+    try {
+      await assetQrAccessLogModel.insert({
+        assetId: Number(assetId),
+        employeeId: eid,
+      });
+    } catch {
+      // log không ảnh hưởng tải QR
+    }
+  }
+
   return {
     asset,
     checklistTemplate,
@@ -384,6 +398,37 @@ export async function submitResult({
   const asset = await assetModel.findById(assetId);
   if (!asset) throw createError("Không tìm thấy tài sản", 404);
 
+  // Ảnh minh chứng bắt buộc
+  if (!evidencePhoto) {
+    throw createError("Vui lòng đính kèm ảnh minh chứng khi nộp checklist.", 400);
+  }
+
+  let resolvedWoId = null;
+  if (woId != null && woId !== "") {
+    const wid = Number(woId);
+    if (!Number.isFinite(wid) || wid <= 0) {
+      throw createError("WO_ID không hợp lệ", 400);
+    }
+    const wo = await workOrderModel.findById(wid);
+    if (!wo) throw createError("Không tìm thấy phiếu việc", 404);
+    if (Number(wo.assetId) !== Number(assetId)) {
+      throw createError("Phiếu việc không thuộc tài sản này", 400);
+    }
+    if (String(wo.woSource).toUpperCase() !== "SCHEDULE") {
+      throw createError(
+        "Chỉ được gắn checklist với phiếu tạo từ lịch bảo trì (WO nguồn SCHEDULE)",
+        400,
+      );
+    }
+    if (wo.scheduleId == null) {
+      throw createError("Phiếu không gắn lịch — không hợp lệ cho checklist định kỳ", 400);
+    }
+    if (String(wo.status).toUpperCase() === "CANCELLED") {
+      throw createError("Phiếu việc đã hủy — không nộp checklist gắn phiếu này", 400);
+    }
+    resolvedWoId = wid;
+  }
+
   if (readingValue != null && readingValue !== "") {
     const rv = Number(readingValue);
     if (!Number.isFinite(rv) || rv < 0) {
@@ -403,7 +448,7 @@ export async function submitResult({
 
   const checklistId = await resultModel.create({
     assetId,
-    woId,
+    woId: resolvedWoId,
     checkerId,
     overallStatus,
     evidencePhoto,
@@ -483,6 +528,13 @@ export async function reviewChecklistResult(
     supervisorNotes,
   });
   if (!updated) throw createError("Không thể xác nhận (đã xử lý?)", 409);
+
+  if (row.woId != null) {
+    await scheduledChecklistSlotModel.fulfillByWorkOrder(
+      Number(row.woId),
+      checklistId,
+    );
+  }
 
   return { checklistId, reviewStatus: "APPROVED", newWorkOrderId };
 }

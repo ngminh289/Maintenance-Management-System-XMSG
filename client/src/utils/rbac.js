@@ -93,7 +93,44 @@ const ROLE_IDX = {
   bGD: 4,
 };
 
+/**
+ * Báo cáo hiệu suất tài sản (BFD 6.4): chỉ Trưởng phòng (L3 + PID 6) và Giám đốc (L5+).
+ * Không bao gồm Chuyên viên KTS — phân tách với báo cáo sử dụng tài nguyên.
+ */
+export function canAccessPerformanceReport(user) {
+  if (!user) return false;
+  const lvl = user.positionLevel ?? 0;
+  const pid = Number(user.positionId ?? 0);
+  return (lvl === 3 && pid === POSITION_TRUONG_PHONG) || lvl >= 5;
+}
+
+/**
+ * Báo cáo sử dụng tài nguyên: Chuyên viên KTS (L2) cùng Trưởng phòng và Ban Giám đốc.
+ */
+export function canAccessResourceUsageReport(user) {
+  if (!user) return false;
+  const lvl = user.positionLevel ?? 0;
+  const pid = Number(user.positionId ?? 0);
+  return lvl === 2 || (lvl === 3 && pid === POSITION_TRUONG_PHONG) || lvl >= 5;
+}
+
+/**
+ * Báo cáo nghiệp vụ checklist (tỷ lệ slot định kỳ, thời gian giữa bước phê duyệt, NG theo thiết bị):
+ * chỉ Trưởng phòng (L3 + PositionID 6) và Ban Giám đốc (L5+).
+ */
+export function canAccessChecklistOperationsReport(user) {
+  if (!user) return false;
+  const lvl = user.positionLevel ?? 0;
+  const pid = Number(user.positionId ?? 0);
+  return (lvl === 3 && pid === POSITION_TRUONG_PHONG) || lvl >= 5;
+}
+
 export function canAccess(user, routeKey) {
+  if (routeKey === 'report-performance') return canAccessPerformanceReport(user);
+  if (routeKey === 'report-resource-usage') return canAccessResourceUsageReport(user);
+  if (routeKey === 'report-operations') {
+    return canAccessChecklistOperationsReport(user);
+  }
   const matrix = ROUTE_ACCESS[routeKey];
   if (!matrix) return true; // route không kiểm soát → cho qua
   const idx = ROLE_IDX[getRoleKey(user)];

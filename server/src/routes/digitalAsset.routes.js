@@ -3,6 +3,7 @@
  * Phân quyền nghiêm ngặt theo RBAC.
  * Gửi duyệt: SUBMIT (NV Kỹ thuật — BFD 4). Upload/phiên bản: CREATE/UPDATE (không áp dụng khi PENDING — service).
  * GET|POST /:id/feedback — phản hồi tài liệu (CREATE trừ NV KT — migration 038).
+ * POST /:id/view-log — thống kê mở file (Báo cáo sử dụng tài nguyên).
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
@@ -28,6 +29,12 @@ digitalAssetRouter.post(
   '/:id/feedback',
   requirePermission('DOCUMENT_FEEDBACK', 'CREATE'),
   fbCtrl.createForAsset,
+);
+
+digitalAssetRouter.post(
+  '/:id/view-log',
+  requirePermission('DIGITAL_ASSET', 'READ'),
+  ctrl.logDocumentView,
 );
 
 digitalAssetRouter.get('/:id', ctrl.getById);

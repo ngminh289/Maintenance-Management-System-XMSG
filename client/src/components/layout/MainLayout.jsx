@@ -19,7 +19,10 @@ const PAGE_TITLES = {
   '/approvals':   'Phê duyệt',
   '/workflows':   'Luồng phê duyệt',
   '/employees':   'Quản lý nhân sự',
-  '/reports':     'Thống kê & Báo cáo',
+  '/reports':              'Thống kê & Báo cáo',
+  '/reports/operations':   'Báo cáo nghiệp vụ và vận hành',
+  '/reports/resource-usage': 'Báo cáo sử dụng tài nguyên',
+  '/reports/performance':  'Báo cáo hiệu suất tài sản',
   '/settings':    'Cài đặt hệ thống',
   '/profile':     'Hồ sơ cá nhân',
 };

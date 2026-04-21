@@ -6,6 +6,9 @@
  * Gợi ý đánh giá tổng thể (WARNING/NG) theo ngưỡng mẫu: Numeric/Range ngoài min-max; PassFail «Không đạt».
  * BFD mục 3: sau khi gửi → TC/TP tiếp nhận tại /checklists/review.
  * Lịch sử trên tab: theo quyền backend (CN: APPROVED mọi người + phiếu của mình); NVKT+ xem 5 bản gần nhất đầy đủ.
+ * Query ?assetId=: đồng bộ ô nhập + tự gọi getQRInfo (không cần bấm Tải thông tin).
+ * Query ?woId=: gắn checklist với WO SCHEDULE — sau khi tải xong mở thẳng tab Checklist.
+ * Mở file tài liệu: POST /digital-assets/:id/view-log (Báo cáo sử dụng tài nguyên); không chặn mở tab mới nếu log lỗi.
  */
 import { useState, useMemo, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -28,6 +31,7 @@ import {
   Lightbulb,
   Gauge,
 } from "lucide-react";
+import { api } from "../../api/index.js";
 import { checklistApi } from "../../api/checklist.api.js";
 import { assetApi } from "../../api/asset.api.js";
 import { Button } from "../../components/ui/Button.jsx";
@@ -79,11 +83,45 @@ export function ChecklistPage() {
   const [submitted, setSubmitted] = useState(null);
   const [evidencePhoto, setEvidencePhoto] = useState(null);
   const [activeTagFilter, setActiveTagFilter] = useState("ALL");
+  /** WO từ lịch — truyền từ WorkOrderDetail (?woId=) để nộp checklist gắn phiếu. */
+  const linkedWoId = searchParams.get("woId")?.trim() || "";
+  const assetIdFromUrl = searchParams.get("assetId")?.trim() || "";
 
   useEffect(() => {
-    const aid = searchParams.get("assetId")?.trim();
-    if (aid) setAssetInput(aid);
-  }, [searchParams]);
+    if (assetIdFromUrl) setAssetInput(assetIdFromUrl);
+  }, [assetIdFromUrl]);
+
+  /** Deep link: ?assetId= — tải thông tin tài sản giống bấm «Tải thông tin»; có ?woId= → tab Checklist. */
+  useEffect(() => {
+    if (!assetIdFromUrl) return;
+    let cancelled = false;
+    setScanning(true);
+    setQrData(null);
+    setSubmitted(null);
+    setAnswers({});
+    setReadingValue("");
+    setReadingInputError("");
+    (async () => {
+      try {
+        const res = await checklistApi.getQRInfo(assetIdFromUrl);
+        if (cancelled) return;
+        setQrData(res.data.data);
+        setActiveTab(linkedWoId ? "checklist" : "device");
+        setMaintHistory(null);
+        toast.success(`Đã tải thông tin: ${res.data.data.asset.assetName}`);
+      } catch (err) {
+        if (!cancelled)
+          toast.error(
+            err.response?.data?.message ?? "Không tìm thấy tài sản",
+          );
+      } finally {
+        if (!cancelled) setScanning(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assetIdFromUrl, linkedWoId]);
 
   const assetIdForMaint = qrData?.asset?.assetId;
 
@@ -168,6 +206,13 @@ export function ChecklistPage() {
 
   const handleSubmit = async () => {
     if (!qrData) return;
+
+    // Ảnh minh chứng bắt buộc
+    if (!evidencePhoto) {
+      toast.error("Vui lòng chụp và đính kèm ảnh minh chứng trước khi gửi.");
+      return;
+    }
+
     const rawRv = readingValue.trim();
     if (rawRv !== "") {
       const n = Number(rawRv.replace(",", "."));
@@ -195,26 +240,17 @@ export function ChecklistPage() {
         isOk: value !== "false" && value !== "0" && value !== "NG",
       }));
 
-      // Nếu có ảnh minh chứng → dùng FormData (multipart)
+      // Luôn dùng FormData vì ảnh bắt buộc
       let res;
-      if (evidencePhoto) {
-        const fd = new FormData();
-        fd.append("photo", evidencePhoto);
-        fd.append("assetId", qrData.asset.assetId);
-        fd.append("overallStatus", overallStatus);
-        fd.append("notes", notes);
-        if (readingValue) fd.append("readingValue", readingValue);
-        fd.append("details", JSON.stringify(details));
-        res = await checklistApi.submitWithPhoto(fd);
-      } else {
-        res = await checklistApi.submit({
-          assetId: qrData.asset.assetId,
-          overallStatus,
-          notes,
-          ...(readingValue && { readingValue: Number(readingValue) }),
-          details,
-        });
-      }
+      const fd = new FormData();
+      fd.append("photo", evidencePhoto);
+      fd.append("assetId", qrData.asset.assetId);
+      if (linkedWoId) fd.append("woId", linkedWoId);
+      fd.append("overallStatus", overallStatus);
+      fd.append("notes", notes);
+      if (readingValue) fd.append("readingValue", readingValue);
+      fd.append("details", JSON.stringify(details));
+      res = await checklistApi.submitWithPhoto(fd);
 
       setSubmitted(res.data.data);
       toast.success("Đã gửi — chờ Trưởng ca / Trưởng phòng xác nhận.");
@@ -284,6 +320,14 @@ export function ChecklistPage() {
           — KTV hiện trường chỉ thấy phiếu đã duyệt + phiếu của mình.
         </p>
       </div>
+
+      {linkedWoId ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+          <p className="font-semibold text-emerald-900">
+            Checklist gắn với WO #{linkedWoId}.
+          </p>
+        </div>
+      ) : null}
 
       {/* QR Input */}
       <Card title="Quét mã QR tài sản">
@@ -803,9 +847,11 @@ export function ChecklistPage() {
                           rows={3}
                         />
 
-                        <div>
-                          <label className="text-sm font-semibold text-gray-700 block mb-1">
-                            Ảnh minh chứng (tuỳ chọn)
+                        <div className={`rounded-xl border-2 p-4 transition-colors ${evidencePhoto ? 'border-green-400 bg-green-50/50' : 'border-red-300 bg-red-50/40'}`}>
+                          <label className="text-sm font-semibold text-gray-800 flex items-center gap-1.5 mb-2">
+                            Ảnh minh chứng
+                            <span className="text-red-500 font-bold">*</span>
+                            <span className="text-xs font-normal text-red-600 ml-1">(Bắt buộc)</span>
                           </label>
                           <input
                             type="file"
@@ -815,13 +861,18 @@ export function ChecklistPage() {
                             }
                             className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100"
                           />
-                          {evidencePhoto && (
-                            <p className="text-xs text-green-600 mt-1 font-medium">
-                              ✓ Đã chọn: {evidencePhoto.name}
+                          {evidencePhoto ? (
+                            <p className="text-xs text-green-700 mt-2 font-semibold flex items-center gap-1">
+                              <CheckCircle size={13} className="text-green-500" />
+                              Đã chọn: {evidencePhoto.name}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-red-600 mt-2 font-medium">
+                              Chưa có ảnh — bắt buộc chụp ảnh hiện trường trước khi gửi
                             </p>
                           )}
                           <p className="text-xs text-gray-400 mt-1">
-                            JPG/PNG/WEBP, tối đa 10MB
+                            Hỗ trợ: JPG / PNG / WEBP, tối đa 10 MB
                           </p>
                         </div>
 
@@ -829,9 +880,16 @@ export function ChecklistPage() {
                           className="w-full justify-center"
                           loading={submitting}
                           onClick={handleSubmit}
+                          disabled={!evidencePhoto}
+                          title={!evidencePhoto ? "Cần đính kèm ảnh minh chứng trước khi gửi" : undefined}
                         >
                           Gửi kết quả kiểm tra
                         </Button>
+                        {!evidencePhoto && (
+                          <p className="text-xs text-center text-red-500 font-medium -mt-1">
+                            Vui lòng đính kèm ảnh minh chứng để gửi
+                          </p>
+                        )}
                       </>
                     ) : (
                       <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
@@ -936,6 +994,11 @@ export function ChecklistPage() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 flex-shrink-0"
+                                onClick={() => {
+                                  const id = doc.digitalAssetId;
+                                  if (id == null) return;
+                                  void api.post(`/digital-assets/${id}/view-log`).catch(() => {});
+                                }}
                               >
                                 <ExternalLink size={15} />
                               </a>

@@ -15,9 +15,31 @@ import * as workOrderSvc from "./workOrder.service.js";
 import * as notifService from "./notification.service.js";
 import * as approvalSvc from "./approval.service.js";
 import * as approvalLogModel from "../models/approvalLog.model.js";
+import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 
 /** Số ngày cảnh báo trước khi đến hạn */
 const WARN_DAYS = 7;
+
+/**
+ * Lấy chuỗi YYYY-MM-DD hợp lệ cho SQL DATE.
+ * MySQL "zero date" 0000-00-00 (hoặc cột chưa gán) có thể trả về chuỗi đó — coi như không dùng được.
+ * Tránh INSERT DueDate=0000-00-00: báo cáo dùng `DueDate >= kỳ` sẽ loại bỏ các dòng này.
+ */
+function pickValidYmd(value) {
+  if (value == null || value === "") return null;
+  let s;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    s = value.toISOString().slice(0, 10);
+  } else {
+    s = String(value).trim().slice(0, 10);
+  }
+  if (s === "0000-00-00" || s === "0001-01-01") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const y = Number(s.slice(0, 4));
+  if (y < 1970) return null;
+  return s;
+}
 
 // ── Tiện ích tính ngày ────────────────────────────────────────────────────────
 
@@ -190,14 +212,31 @@ export async function generateWorkOrder(scheduleId, createdBy) {
       400,
     );
   }
+  const todayPlanned = new Date().toISOString().split("T")[0];
+  /**
+   * DueDate slot: ưu tiên NextDueDate/StartDate hợp lệ của lịch; nếu DB còn zero date (0000-00-00) thì
+   * trùng với ngày kế hoạch phiếu (hôm nay khi tạo) để mọi lượt đều có mốc trong kỳ báo cáo.
+   */
+  const dueDateForSlot =
+    pickValidYmd(schedule.nextDueDate) ||
+    pickValidYmd(schedule.startDate) ||
+    todayPlanned;
+
   const woId = await workOrderSvc.createFromApprovedSchedule({
     scheduleId,
     assetId: schedule.assetId,
     priority:
       schedule.priority === "URGENT" ? "HIGH" : schedule.priority || "MEDIUM",
     description: `Phiếu từ lịch "${schedule.scheduleName || `#${scheduleId}`}": ${schedule.description}`,
-    plannedDate: new Date().toISOString().split("T")[0],
+    plannedDate: todayPlanned,
     createdBy,
+  });
+
+  await scheduledChecklistSlotModel.insertForScheduleWorkOrder({
+    scheduleId,
+    assetId: schedule.assetId,
+    dueDate: dueDateForSlot,
+    workOrderId: woId,
   });
 
   // Với lịch theo ngày: cập nhật LastExecutedDate = hôm nay, tính NextDueDate mới
@@ -232,8 +271,10 @@ export async function checkCalendarSchedules() {
       // Đến hạn hoặc quá hạn → tự động tạo WO
       // Sau khi generateWorkOrder chạy: LastExecutedDate = hôm nay, NextDueDate tiến lên
       // → lần check tiếp theo days > 0 → không tạo trùng
+      let autoWorkOrderId = null;
       try {
         const { workOrderId } = await generateWorkOrder(s.scheduleId, null);
+        autoWorkOrderId = workOrderId;
         console.log(
           `[Scheduler] Auto WO #${workOrderId} ← lịch #${s.scheduleId} "${s.scheduleName}" (${Math.abs(days)} ngày ${days < 0 ? "quá hạn" : "đến hạn hôm nay"})`,
         );
@@ -244,14 +285,16 @@ export async function checkCalendarSchedules() {
         );
       }
 
-      await notifService.notifyManagers(
-        days < 0
-          ? `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — quá hạn ${Math.abs(days)} ngày.`
-          : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
-        "MAINTENANCE_DUE",
-        2,
-        { resourceType: "WORK_ORDER", resourceId: newWoId },
-      );
+      if (autoWorkOrderId != null) {
+        await notifService.notifyManagers(
+          days < 0
+            ? `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — quá hạn ${Math.abs(days)} ngày.`
+            : `[TỰ ĐỘNG] Đã tạo phiếu việc cho lịch "${s.scheduleName}" (tài sản: ${s.assetName}) — đến hạn hôm nay.`,
+          "MAINTENANCE_DUE",
+          2,
+          { resourceType: "WORK_ORDER", resourceId: autoWorkOrderId },
+        );
+      }
     } else if (days <= WARN_DAYS) {
       // Sắp đến hạn → chỉ cảnh báo, chưa tạo WO
       await notifService.notifyManagers(

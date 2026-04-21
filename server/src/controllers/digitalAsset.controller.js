@@ -1,12 +1,14 @@
 /**
  * digitalAsset.controller.js — HTTP handler: /api/digital-assets.
  * Upload dùng multer (multipart/form-data). FilePath trong DB = chỉ tên file (không lưu path tuyệt đối Windows).
+ * logDocumentView: POST /:id/view-log — ghi DigitalAssetViewLogs (mở file từ checklist / kho tài liệu).
  * Liên quan: services/digitalAsset.service.js, routes/digitalAsset.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ok, fail } from '../utils/response.js';
 import { logAction } from '../utils/audit.js';
 import * as service from '../services/digitalAsset.service.js';
+import * as viewLogModel from '../models/digitalAssetViewLog.model.js';
 import { extname } from 'path';
 
 export const getAll = asyncHandler(async (req, res) =>
@@ -14,6 +16,18 @@ export const getAll = asyncHandler(async (req, res) =>
 
 export const getById = asyncHandler(async (req, res) =>
   ok(res, await service.getById(req.params.id)));
+
+/** Ghi nhận lượt mở file tài liệu (phục vụ Báo cáo sử dụng tài nguyên). */
+export const logDocumentView = asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  if (Number.isNaN(id)) return fail(res, 'Tài liệu không hợp lệ', 400);
+  const row = await service.getById(id);
+  if (!row) return fail(res, 'Không tìm thấy tài liệu', 404);
+  const employeeId = Number(req.user.sub);
+  if (Number.isNaN(employeeId)) return fail(res, 'Phiên đăng nhập không hợp lệ', 401);
+  await viewLogModel.insert({ digitalAssetId: id, employeeId });
+  return ok(res, { ok: true, digitalAssetId: id });
+});
 
 /** POST /api/digital-assets — multipart/form-data */
 export const upload = asyncHandler(async (req, res) => {

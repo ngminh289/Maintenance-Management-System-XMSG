@@ -3,13 +3,16 @@
  * Dùng canAccess() từ utils/rbac.js để chỉ hiện item có quyền.
  * Danh sách checklist: /checklists/history (mọi role có route checklists).
  * /documents cần end:true — nếu không /documents/feedback-inbox làm cả hai NavLink active (đúp xanh).
+ * Báo cáo nghiệp vụ: /reports/operations. Tài nguyên: /reports/resource-usage (CV KTS + Trưởng phòng + GĐ).
+ * Hiệu suất: /reports/performance (chỉ Trưởng phòng + GĐ).
  */
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, ClipboardCheck, Layers, Users, ShieldCheck, ChevronRight,
   ListChecks,
-  Factory, BarChart2, GitBranch, MessageSquare, Settings,
+  Factory, BarChart2, Activity, GitBranch, MessageSquare, Settings,
+  ScrollText,
 } from 'lucide-react';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
 import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
@@ -55,7 +58,10 @@ const MENU_GROUPS = [
   {
     label: 'Báo cáo',
     items: [
-      { to: '/reports',     routeKey: 'reports',     icon: BarChart2,   label: 'Thống kê & Báo cáo' },
+      { to: '/reports',             routeKey: 'reports',            icon: BarChart2, label: 'Thống kê & Báo cáo', end: true },
+      { to: '/reports/operations', routeKey: 'report-operations', icon: ScrollText, label: 'Nghiệp vụ & vận hành' },
+      { to: '/reports/resource-usage', routeKey: 'report-resource-usage', icon: FileText, label: 'Báo cáo sử dụng tài nguyên' },
+      { to: '/reports/performance', routeKey: 'report-performance', icon: Activity,  label: 'Hiệu suất tài sản' },
     ],
   },
   {

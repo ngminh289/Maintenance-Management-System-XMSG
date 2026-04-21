@@ -4,6 +4,7 @@
  * Liên quan: models/asset.model.js, models/assetPhoto.model.js, utils/paginate.js
  * Ảnh: POST /api/assets/:id/photos — chỉ ASSET:UPDATE mới gọi được.
  * FilePath lưu dạng "uploads/assets/:filename" — nhất quán với WO photos.
+ * AssetStatusHistory: ghi mỗi khi Status thay đổi để tính Downtime chính xác (BFD 6.4).
  */
 import { unlink } from 'fs/promises';
 import { join }   from 'path';
@@ -13,6 +14,7 @@ import { createError }                    from '../utils/createError.js';
 import { getPagination, paginatedResult } from '../utils/paginate.js';
 import * as model      from '../models/asset.model.js';
 import * as photoModel from '../models/assetPhoto.model.js';
+import { getPool }     from '../config/database.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -57,9 +59,18 @@ export async function update(id, fields) {
   return getById(id);
 }
 
-export async function updateStatus(id, status) {
-  await _assertExists(id);
-  await model.updateStatus(id, status);
+export async function updateStatus(id, status, changedBy = null) {
+  const existing = await model.findById(id);
+  if (!existing) throw createError('Không tìm thấy tài sản', 404);
+  if (existing.status !== status) {
+    await model.updateStatus(id, status);
+    // Ghi lịch sử để tính Downtime chính xác (migration 050)
+    await getPool().query(
+      `INSERT INTO AssetStatusHistory (AssetID, OldStatus, NewStatus, ChangedBy)
+       VALUES (?, ?, ?, ?)`,
+      [id, existing.status, status, changedBy ?? null],
+    );
+  }
   return getById(id);
 }
 

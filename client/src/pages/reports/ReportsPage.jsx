@@ -1,12 +1,13 @@
 /**
  * ReportsPage.jsx — Báo cáo tổng hợp: hiệu suất tài sản, checklist, tài nguyên số.
  * BFD 6.1 Báo cáo hiệu suất & tình trạng tài sản.
- * BFD 6.2 Thống kê Checklist và Phê duyệt.
+ * BFD 6.2 Checklist: xu hướng 30 ngày; báo cáo nghiệp vụ chi tiết tại /reports/operations (TP + Ban GĐ).
  * BFD 6.3 Báo cáo sử dụng tài nguyên số.
- * RBAC: xuất CSV theo REPORT:EXPORT (Ban GĐ); nút In giữ cho mọi role được xem trang.
+ * RBAC: REPORT:EXPORT; CSV xu hướng checklist.
  * Liên quan: api/stats.api.js, components/ui/*, utils/rbac.js.
  */
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -16,9 +17,9 @@ import { Card }       from '../../components/ui/Card.jsx';
 import { Badge }      from '../../components/ui/Badge.jsx';
 import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { fDate }      from '../../utils/format.js';
-import { BarChart2, FileText, CheckSquare, AlertTriangle, Clock, Download, Printer } from 'lucide-react';
+import { BarChart2, FileText, CheckSquare, AlertTriangle, Clock, Download, Printer, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { canDo } from '../../utils/rbac.js';
+import { canDo, canAccessChecklistOperationsReport } from '../../utils/rbac.js';
 import toast from 'react-hot-toast';
 
 /** Chuyển array objects thành CSV blob và trigger download */
@@ -45,10 +46,10 @@ const ASSET_STATUS_COLOR = {
   broken: '#ef4444', decommissioned: '#9ca3af',
 };
 const PIE_COLORS = ['#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#9ca3af'];
-
 export function ReportsPage() {
   const { user } = useAuth();
   const canExport = canDo(user, 'REPORT:EXPORT');
+  const canChecklistOpsReport = canAccessChecklistOperationsReport(user);
   const [tab,       setTab]       = useState('assets');
   const [summary,   setSummary]   = useState(null);
   const [clTrend,   setClTrend]   = useState([]);
@@ -56,7 +57,6 @@ export function ReportsPage() {
   const [woData,    setWoData]    = useState([]);
   const [daReport,  setDaReport]  = useState(null);
   const [loading,   setLoading]   = useState(true);
-
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -146,7 +146,7 @@ export function ReportsPage() {
             })), 'bao-cao-checklist.csv')}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
           >
-            <Download size={14} /> Xuất CSV
+            <Download size={14} /> CSV xu hướng
           </button>
         )}
         <button
@@ -258,6 +258,33 @@ export function ReportsPage() {
       {/* ── Tab 6.2: Checklist ──────────────────────────────────────────────── */}
       {tab === 'checklist' && (
         <div className="space-y-5">
+          {canChecklistOpsReport ? (
+            <Link
+              to="/reports/operations"
+              className="group flex items-center justify-between gap-4 rounded-2xl border border-indigo-200/80 bg-gradient-to-r from-indigo-50 via-white to-violet-50/80 px-5 py-4 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all"
+            >
+              <div>
+                <p className="font-bold text-indigo-950">Báo cáo nghiệp vụ và vận hành</p>
+                <p className="text-sm text-indigo-900/85 mt-1 leading-relaxed">
+                  Tỷ lệ checklist định kỳ (slot), thời gian giữa các bước phê duyệt, xu hướng NG theo thiết bị — xem
+                  theo từng tab, có xuất CSV và bảng chi tiết.
+                </p>
+              </div>
+              <span className="flex items-center gap-1 text-sm font-semibold text-indigo-600 shrink-0">
+                Mở trang <ChevronRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+              </span>
+            </Link>
+          ) : (
+            <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
+              <p className="font-semibold text-amber-900">Báo cáo nghiệp vụ</p>
+              <p className="mt-1 leading-relaxed">
+                Mục <strong>Báo cáo nghiệp vụ và vận hành</strong> trên menu chỉ dành cho{' '}
+                <strong>Trưởng phòng</strong> và <strong>Ban Giám đốc</strong>. Bạn vẫn xem được tổng hợp checklist
+                30 ngày bên dưới.
+              </p>
+            </div>
+          )}
+
           {summary && (
             <div className="grid grid-cols-3 gap-4">
               {[
