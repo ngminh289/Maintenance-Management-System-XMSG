@@ -1,10 +1,12 @@
 /**
  * documentFeedback.service.js — Nghiệp vụ phản hồi tài liệu: tạo, danh sách, Chuyên viên KTS cập nhật trạng thái.
  * Thông báo: DOCUMENT_FEEDBACK_NEW → mọi Chuyên viên KTS; DOCUMENT_FEEDBACK_STATUS → người góp ý (migration 039).
- * Liên quan: models/documentFeedback.model.js, digitalAsset.model.js, notification.service.js.
+ * Gắn tài liệu: assertCanReadDigitalAsset — không xem phản hồi / gửi góp ý trên DRAFT/REJECTED của người khác.
+ * Liên quan: models/documentFeedback.model.js, digitalAsset.model.js, digitalAsset.service.js, notification.service.js.
  */
 import * as model from '../models/documentFeedback.model.js';
 import * as digitalAssetModel from '../models/digitalAsset.model.js';
+import { assertCanReadDigitalAsset } from './digitalAsset.service.js';
 import * as employeeModel from '../models/employee.model.js';
 import * as notifService from './notification.service.js';
 import { createError } from '../utils/createError.js';
@@ -30,7 +32,7 @@ function assertStatus(s) {
   }
 }
 
-export async function createForAsset(digitalAssetId, { employeeId, positionId, body }) {
+export async function createForAsset(digitalAssetId, { employeeId, positionId, positionLevel, body }) {
   const okCreate = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'CREATE');
   if (!okCreate) {
     throw createError('Chức vụ của bạn không được gửi phản hồi tài liệu (Chuyên viên KTS xử lý hàng đợi).', 403);
@@ -41,6 +43,7 @@ export async function createForAsset(digitalAssetId, { employeeId, positionId, b
 
   const da = await digitalAssetModel.findById(digitalAssetId);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
+  assertCanReadDigitalAsset(da, { sub: employeeId, positionLevel: positionLevel ?? 0 });
 
   const id = await model.insert({
     digitalAssetId: Number(digitalAssetId),
@@ -65,6 +68,7 @@ export async function listForAsset(digitalAssetId, { employeeId, positionId }) {
 
   const da = await digitalAssetModel.findById(digitalAssetId);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
+  assertCanReadDigitalAsset(da, { sub: employeeId, positionLevel: positionLevel ?? 0 });
 
   const reviewerViewAll = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'UPDATE');
   return model.listByAsset(Number(digitalAssetId), {

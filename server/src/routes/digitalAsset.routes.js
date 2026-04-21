@@ -1,14 +1,14 @@
 /**
  * digitalAsset.routes.js — /api/digital-assets.
  * Phân quyền nghiêm ngặt theo RBAC.
- * Gửi duyệt: SUBMIT (NV Kỹ thuật — BFD 4). Upload/phiên bản: CREATE/UPDATE (không áp dụng khi PENDING — service).
- * GET|POST /:id/feedback — phản hồi tài liệu (CREATE trừ NV KT — migration 038).
+ * Gửi duyệt: SUBMIT (CV KTS + PKT). Upload/phiên bản: CREATE/UPDATE — service kiểm chủ sở hữu (056).
+ * Archive: APPROVE (Trưởng/Phó PKT). Force delete: DIGITAL_ASSET DELETE (056).
+ * GET|POST /:id/feedback — phản hồi (CREATE trừ CV KTS & Trưởng/Phó PKT — 038/057).
  * POST /:id/view-log — thống kê mở file (Báo cáo sử dụng tài nguyên).
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
-import { requireLevel }      from '../middleware/requireRole.js';
 import { uploadDocument }    from '../config/upload.js';
 import * as ctrl from '../controllers/digitalAsset.controller.js';
 import * as fbCtrl from '../controllers/documentFeedback.controller.js';
@@ -19,7 +19,7 @@ digitalAssetRouter.use(requireAuth);
 
 digitalAssetRouter.get('/',    ctrl.getAll);
 
-// Phản hồi / góp ý tài liệu (READ mọi vai có quyền; CREATE trừ NV KT — migration 038)
+// Phản hồi / góp ý (READ mọi vai có quyền; CREATE trừ KTS & PKT — 038)
 digitalAssetRouter.get(
   '/:id/feedback',
   requirePermission('DOCUMENT_FEEDBACK', 'READ'),
@@ -39,7 +39,7 @@ digitalAssetRouter.post(
 
 digitalAssetRouter.get('/:id', ctrl.getById);
 
-// Upload tài liệu mới — Kỹ thuật viên trở lên
+// Upload tài liệu mới — CV KTS + Trưởng/Phó PKT (CREATE)
 digitalAssetRouter.post('/',
   requirePermission('DIGITAL_ASSET', 'CREATE'),
   uploadDocument.single('file'),
@@ -53,7 +53,7 @@ digitalAssetRouter.put('/:id',
 // Lịch sử phiên bản
 digitalAssetRouter.get('/:id/versions', ctrl.getVersions);
 
-// Upload phiên bản mới — cần UPDATE (Kỹ thuật viên+)
+// Upload phiên bản mới — CV KTS + PKT (UPDATE + chủ sở hữu ở service)
 digitalAssetRouter.post('/:id/versions',
   requirePermission('DIGITAL_ASSET', 'UPDATE'),
   uploadDocument.single('file'),
@@ -66,13 +66,13 @@ digitalAssetRouter.post('/:id/submit',
   ctrl.submitForApproval,
 );
 
-// Lưu trữ: APPROVED → ARCHIVED — Trưởng ca trở lên
+// Lưu trữ: APPROVED → ARCHIVED — Trưởng/Phó PKT
 digitalAssetRouter.post('/:id/archive',
   requirePermission('DIGITAL_ASSET', 'APPROVE'),
   ctrl.archive,
 );
 
-// Tags — Kỹ thuật viên tạo/xoá tag trên tài liệu của mình
+// Tags — CV KTS + PKT (TAG + chủ sở hữu ở service)
 digitalAssetRouter.post('/:id/tags',
   requirePermission('TAG', 'CREATE'),
   ctrl.addTag,
@@ -82,13 +82,13 @@ digitalAssetRouter.delete('/:id/tags/:tagId',
   ctrl.removeTag,
 );
 
-// Xóa cứng bất kể trạng thái — chỉ Trưởng phòng (Level >= 3)
+// Xóa cứng bất kể trạng thái — Trưởng/Phó PKT (quyền DELETE)
 digitalAssetRouter.delete('/:id/force',
-  requireLevel(3),
+  requirePermission('DIGITAL_ASSET', 'DELETE'),
   ctrl.forceRemove,
 );
 
-// Xóa (chỉ DRAFT/REJECTED) — Kỹ thuật viên xóa bản thảo của mình
+// Xóa (chỉ DRAFT/REJECTED) — CV KTS + PKT, bản thảo của mình (service)
 digitalAssetRouter.delete('/:id',
   requirePermission('DIGITAL_ASSET', 'UPDATE'),
   ctrl.remove,

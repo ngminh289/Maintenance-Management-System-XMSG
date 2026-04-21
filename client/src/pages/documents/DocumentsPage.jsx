@@ -1,5 +1,6 @@
 /**
- * DocumentsPage.jsx — Kho tài liệu số: upload, phân loại, tag, tìm kiếm, phê duyệt, phản hồi/góp ý (trừ Chuyên viên KTS gửi).
+ * DocumentsPage.jsx — Kho tài liệu số: upload/tag/danh mục (CV KTS = Trưởng/Phó PKT — 057); thêm phê duyệt + xóa cứng cho PKT/Admin.
+ * Chỉnh sửa bản nháp theo chủ sở hữu — kiểm tra thêm ở API.
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -98,7 +99,7 @@ export function DocumentsPage() {
   const canCatUpdate = canDo(user, 'DOCUMENT_CATEGORY:UPDATE');
   const canCatDelete = canDo(user, 'DOCUMENT_CATEGORY:DELETE');
   const canManageCatalog = canTagCreate || canCatCreate;
-  const canForceDelete = (user?.positionLevel ?? 0) >= 3;
+  const canForceDelete = canDo(user, 'DOCUMENT:DELETE');
 
   const [docs, setDocs] = useState([]);
   const [assets, setAssets] = useState([]);

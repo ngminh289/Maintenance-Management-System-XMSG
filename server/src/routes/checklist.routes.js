@@ -1,7 +1,7 @@
 /**
  * checklist.routes.js — /api/checklists (templates + kết quả hiện trường).
  * Phân quyền nghiêm ngặt theo RBAC.
- * Templates: NV KT + Trưởng ca/phòng C/U; APPROVE mẫu (quyền DB); xóa mẫu = DELETE (Admin).
+ * Templates: CV KTS + Trưởng/Phó PKT (056); tuyến bảo trì chỉ READ; xóa mẫu = DELETE.
  * Results: CN + Trưởng phòng nộp (CREATE); TC/TP UPDATE = tiếp nhận checklist; NV KT/TC không nộp (chỉ xem QR).
  */
 import { Router } from 'express';

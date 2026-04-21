@@ -60,14 +60,19 @@ function EditEmployeeModal({ emp, positions, departments, open, onClose, onSaved
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    if (emp) setForm({
-      fullName:        emp.fullName        ?? "",
-      phone:           emp.phone           ?? "",
-      positionId:      String(emp.positionId ?? ""),
-      craftLevel:      emp.craftLevel      ?? "",
-      specialty:       emp.specialty       ?? "",
-      experienceNotes: emp.experienceNotes ?? "",
-    });
+    if (emp) {
+      const pid = emp.positionId ?? "";
+      const dept = emp.departmentId != null ? String(emp.departmentId) : "";
+      setForm({
+        fullName:        emp.fullName        ?? "",
+        phone:           emp.phone           ?? "",
+        positionId:      String(pid),
+        departmentId:    dept,
+        craftLevel:      emp.craftLevel      ?? "",
+        specialty:       emp.specialty       ?? "",
+        experienceNotes: emp.experienceNotes ?? "",
+      });
+    }
   }, [emp]);
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -102,11 +107,37 @@ function EditEmployeeModal({ emp, positions, departments, open, onClose, onSaved
           <Select
             label="Chức vụ"
             value={form.positionId ?? ""}
-            onChange={e => setF("positionId", e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) {
+                setForm((p) => ({
+                  ...p,
+                  positionId: "",
+                  departmentId: emp?.departmentId != null ? String(emp.departmentId) : "",
+                }));
+                return;
+              }
+              const deptId = departmentIdForPosition(Number(v));
+              setForm((p) => ({
+                ...p,
+                positionId: v,
+                departmentId: deptId != null ? String(deptId) : "",
+              }));
+            }}
           >
             <option value="">— Giữ nguyên —</option>
             {positions.map(p => <option key={p.positionId} value={p.positionId}>{p.positionName}</option>)}
           </Select>
+          <Input
+            label="Phòng ban (theo chức vụ)"
+            value={
+              form.departmentId
+                ? (departments.find((d) => String(d.departmentId) === String(form.departmentId))?.departmentName ?? "—")
+                : ""
+            }
+            readOnly
+            placeholder="Chọn chức vụ"
+          />
           <Select label="Bậc thợ" value={form.craftLevel ?? ""} onChange={e => setF("craftLevel", e.target.value)}>
             <option value="">— Không có —</option>
             {CRAFT_LEVELS.map(l => <option key={l} value={l}>Bậc {l}</option>)}

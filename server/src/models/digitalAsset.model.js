@@ -2,6 +2,7 @@
  * digitalAsset.model.js — SQL thuần cho DigitalAssets + AssetVersions.
  * DAM: mỗi tài liệu — v1 ghi vào AssetVersions ngay khi create; addVersion tăng số + lưu file mới.
  * UNIQUE (DigitalAssetID, VersionNumber); migration 036 backfill + ràng buộc.
+ * Riêng tư bản nháp: buildListQuery nhận draftPrivacy (viewer + admin) — chỉ chủ DRAFT/REJECTED thấy trong list.
  * Dùng trong: services/digitalAsset.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -48,6 +49,7 @@ function buildListQuery(filters) {
     uploadedBy,
     documentCategoryId,
     q,
+    draftPrivacy,
   } = filters;
   const params = [];
   let join = BASE_JOIN;
@@ -86,6 +88,16 @@ function buildListQuery(filters) {
       )
     )`;
     params.push(like, like, like, like, like, like);
+  }
+  if (draftPrivacy && Number.isFinite(Number(draftPrivacy.viewerEmployeeId))) {
+    const isAdmin = draftPrivacy.isAdmin ? 1 : 0;
+    const vid = Number(draftPrivacy.viewerEmployeeId);
+    where += ` AND (
+      da.Status NOT IN ('DRAFT', 'REJECTED')
+      OR ? = 1
+      OR da.UploadedBy = ?
+    )`;
+    params.push(isAdmin, vid);
   }
   return { join, where, params };
 }

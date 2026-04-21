@@ -8,7 +8,8 @@
  * Duyệt WO bước cuối: có thể kèm assignEmployeeId → phân công hiện trường ngay (tuỳ chọn).
  * Trạng thái tài sản MAINTENANCE khi KTV bắt đầu thực hiện (IN_PROGRESS) — xem workOrder.service.js; không gán MAINTENANCE tại bước phê duyệt WO.
  * Phân công được validate trước khi ghi APPROVED / WAITING — tránh lỗi nghỉ phép làm “log đã xử lý”.
- * Liên quan: models/approvalLog.model.js, workOrderFieldAssign.service.js.
+ * Cùng cấp phó (8↔6, 9↔7) duyệt thay; bước Trưởng ca (3) giữ 1 bước.
+ * Liên quan: models/approvalLog.model.js, workOrderFieldAssign.service.js; migration 055.
  */
 import { getPool } from "../config/database.js";
 import { createError } from "../utils/createError.js";
@@ -19,6 +20,21 @@ import {
   assignFieldTechnicianToWorkOrder,
   validateFieldTechnicianAssignment,
 } from "./workOrderFieldAssign.service.js";
+
+const PID_TP_BAO_TRI = 6;
+const PID_TP_KT = 7;
+const PID_PHO_BAO_TRI = 8;
+const PID_PHO_KT = 9;
+
+/**
+ * Các PositionID được ghi nhận khi duyệt bước `stepPositionId` (trưởng + phó cùng tuyến).
+ */
+function approverPidsForStep(stepPositionId) {
+  const s = Number(stepPositionId);
+  if (s === PID_TP_BAO_TRI) return [PID_TP_BAO_TRI, PID_PHO_BAO_TRI];
+  if (s === PID_TP_KT) return [PID_TP_KT, PID_PHO_KT];
+  return [s];
+}
 
 // Mapping ResourceType → trạng thái khi approved/rejected/revise
 const STATUS_MAP = {
@@ -58,9 +74,11 @@ async function updateResourceStatus(resourceType, resourceId, status) {
 async function notifyApproversForStep(workflowId, level, message, ctx = {}) {
   const step = await model.getWorkflowStep(workflowId, level);
   if (!step) return;
+  const pids = approverPidsForStep(step.positionId);
   const [rows] = await getPool().query(
-    "SELECT EmployeeID AS employeeId FROM Employees WHERE PositionID = ? AND IsActive = TRUE",
-    [step.positionId],
+    `SELECT EmployeeID AS employeeId FROM Employees
+     WHERE PositionID IN (${pids.map(() => "?").join(",")}) AND IsActive = TRUE`,
+    pids,
   );
   for (const r of rows) {
     await notifService.send(r.employeeId, message, "APPROVAL_REQUEST", ctx);
@@ -161,8 +179,10 @@ async function verifyApprover(log, approverId) {
 
   const emp = await employeeModel.findById(approverId);
   if (!emp) throw createError("Không tìm thấy nhân viên", 404);
-  if (emp.positionId !== step.positionId)
+  const allowed = new Set(approverPidsForStep(step.positionId));
+  if (!allowed.has(emp.positionId)) {
     throw createError("Bạn không có quyền phê duyệt bước này", 403);
+  }
   return { emp, step };
 }
 
@@ -331,8 +351,16 @@ export async function requestChanges({ logId, approverId, comment }) {
   }
 }
 
+/** 8↔6, 9↔7 khi bước lưu ID trưởng. */
+function workflowStepPidsForViewer(positionId) {
+  const p = Number(positionId);
+  if (p === PID_PHO_BAO_TRI) return [PID_TP_BAO_TRI];
+  if (p === PID_PHO_KT) return [PID_TP_KT];
+  return [p];
+}
+
 export async function getPendingForMe(positionId) {
-  return model.findPendingForPosition(positionId);
+  return model.findPendingForAnyPosition(workflowStepPidsForViewer(positionId));
 }
 
 export async function getHistory(resourceType, resourceId) {

@@ -13,15 +13,15 @@
  * GET /api/stats/resource-usage — 6 báo cáo sử dụng tài nguyên; RBAC: CV KTS (L2), Trưởng phòng, Ban GĐ.
  * Liên quan: routes/stats.routes.js.
  */
-import { asyncHandler } from '../utils/asyncHandler.js';
-import { ok } from '../utils/response.js';
-import { getPool } from '../config/database.js';
-import * as scheduledChecklistSlotModel from '../models/scheduledChecklistSlot.model.js';
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { ok } from "../utils/response.js";
+import { getPool } from "../config/database.js";
+import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 
-const APPROVAL_TERMINAL = new Set(['APPROVED', 'REJECTED', 'REQUEST_CHANGES']);
+const APPROVAL_TERMINAL = new Set(["APPROVED", "REJECTED", "REQUEST_CHANGES"]);
 
 function sqlDateKey(v) {
-  if (v == null) return '';
+  if (v == null) return "";
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   const s = String(v);
   return s.length >= 10 ? s.slice(0, 10) : s;
@@ -30,7 +30,7 @@ function sqlDateKey(v) {
 /** Tổng hợp nhanh cho dashboard */
 export const summary = asyncHandler(async (_req, res) => {
   const pool = getPool();
-  const [[assets]]     = await pool.query(`SELECT
+  const [[assets]] = await pool.query(`SELECT
     COUNT(*) AS total,
     SUM(Status = 'AVAILABLE')     AS available,
     SUM(Status = 'MAINTENANCE')   AS maintenance,
@@ -72,7 +72,7 @@ export const summary = asyncHandler(async (_req, res) => {
     assets,
     workOrders,
     checklistsLast30Days: checklists,
-    pendingApprovals:     pendingApprovals.count,
+    pendingApprovals: pendingApprovals.count,
     digitalAssets,
   });
 });
@@ -84,18 +84,19 @@ export const summary = asyncHandler(async (_req, res) => {
 export const checklistScheduleCompliance = asyncHandler(async (req, res) => {
   const months = Math.min(Math.max(parseInt(req.query.months || 12), 1), 36);
   await scheduledChecklistSlotModel.refreshOverdueStatus();
-  const data = await scheduledChecklistSlotModel.aggregateCompliance({ months });
+  const data = await scheduledChecklistSlotModel.aggregateCompliance({
+    months,
+  });
   return ok(res, {
     ...data,
     businessDefinition: {
-      metric: 'Tỷ lệ hoàn thành checklist định kỳ',
+      metric: "Tỷ lệ hoàn thành checklist định kỳ",
       numerator:
-        'Số lượt đã hoàn thành đúng lịch: slot ScheduledChecklistSlots trạng thái FULFILLED (đã gắn ChecklistID sau khi TC/TP duyệt APPROVED).',
+        "Số lượt đã hoàn thành đúng lịch: slot ScheduledChecklistSlots trạng thái FULFILLED (đã gắn ChecklistID sau khi TC/TP duyệt APPROVED).",
       denominator:
-        'Tổng số lượt yêu cầu trong kỳ: mọi slot có DueDate trong khoảng thời gian chọn (OPEN / OVERDUE / FULFILLED / WAIVED).',
-      formula: '(fulfilledSlots / totalSlots) × 100%',
-      note:
-        'Mỗi lượt = một WO sinh từ lịch bảo trì. Không dùng trực tiếp COUNT(ChecklistResults) làm mẫu số để tránh lệch khi có checklist ngoài lịch hoặc chưa gắn slot.',
+        "Tổng số lượt yêu cầu trong kỳ: mọi slot có DueDate trong khoảng thời gian chọn (OPEN / OVERDUE / FULFILLED / WAIVED).",
+      formula: "(fulfilledSlots / totalSlots) × 100%",
+      note: "Mỗi lượt = một WO sinh từ lịch bảo trì. Không dùng trực tiếp COUNT(ChecklistResults) làm mẫu số để tránh lệch khi có checklist ngoài lịch hoặc chưa gắn slot.",
     },
   });
 });
@@ -132,7 +133,7 @@ export const approvalStepLatencies = asyncHandler(async (req, res) => {
       const a = chain[i];
       const b = chain[i + 1];
       if (Number(a.currentLevel) + 1 !== Number(b.currentLevel)) continue;
-      if (a.status !== 'APPROVED') continue;
+      if (a.status !== "APPROVED") continue;
       if (!APPROVAL_TERMINAL.has(b.status)) continue;
       const t0 = new Date(a.actionDate).getTime();
       const t1 = new Date(b.actionDate).getTime();
@@ -168,9 +169,7 @@ export const approvalStepLatencies = asyncHandler(async (req, res) => {
       resourceType,
       transitionCount: arr.length,
       avgHoursBetween:
-        Math.round(
-          (arr.reduce((x, y) => x + y, 0) / arr.length) * 100,
-        ) / 100,
+        Math.round((arr.reduce((x, y) => x + y, 0) / arr.length) * 100) / 100,
     }),
   );
 
@@ -209,16 +208,16 @@ export const checklistNgTrendByAsset = asyncHandler(async (req, res) => {
       topAssets: [],
       chartRows: [],
       businessDefinition: {
-        metric: 'Xu hướng lỗi NG theo thiết bị',
+        metric: "Xu hướng lỗi NG theo thiết bị",
         formula:
-          'Với mỗi ngày D và tài sản A: count(ChecklistResults WHERE OverallStatus = «NG» AND DATE(CheckTime)=D AND AssetID=A).',
-        note: 'Chỉ vẽ top thiết bị có tổng NG cao nhất trong kỳ để biểu đồ đọc được.',
+          "Với mỗi ngày D và tài sản A: count(ChecklistResults WHERE OverallStatus = «NG» AND DATE(CheckTime)=D AND AssetID=A).",
+        note: "Chỉ vẽ top thiết bị có tổng NG cao nhất trong kỳ để biểu đồ đọc được.",
       },
     });
   }
 
   const ids = topAssets.map((r) => r.assetId);
-  const placeholders = ids.map(() => '?').join(',');
+  const placeholders = ids.map(() => "?").join(",");
   const [daily] = await pool.query(
     `SELECT DATE(cr.CheckTime) AS d, cr.AssetID AS assetId, COUNT(*) AS ngCount
      FROM ChecklistResults cr
@@ -257,9 +256,9 @@ export const checklistNgTrendByAsset = asyncHandler(async (req, res) => {
     })),
     chartRows,
     businessDefinition: {
-      metric: 'Xu hướng lỗi NG theo thiết bị',
+      metric: "Xu hướng lỗi NG theo thiết bị",
       formula:
-        'Mỗi điểm: số phiếu ChecklistResults có OverallStatus = NG trong ngày, theo từng AssetID.',
+        "Mỗi điểm: số phiếu ChecklistResults có OverallStatus = NG trong ngày, theo từng AssetID.",
       note: `Top ${topN} thiết bị theo tổng NG trong ${months} tháng gần nhất.`,
     },
   });
@@ -287,7 +286,8 @@ export const checklistTrend = asyncHandler(async (_req, res) => {
 export const topFaultyAssets = asyncHandler(async (req, res) => {
   const pool = getPool();
   const limit = Math.min(parseInt(req.query.limit || 10), 50);
-  const [rows] = await pool.query(`
+  const [rows] = await pool.query(
+    `
     SELECT
       cr.AssetID       AS assetId,
       a.AssetName      AS assetName,
@@ -301,7 +301,9 @@ export const topFaultyAssets = asyncHandler(async (req, res) => {
     GROUP BY cr.AssetID, a.AssetName, a.Location
     ORDER BY ngCount DESC, warningCount DESC
     LIMIT ?
-  `, [limit]);
+  `,
+    [limit],
+  );
   return ok(res, rows);
 });
 
@@ -366,11 +368,12 @@ export const digitalAssetReport = asyncHandler(async (_req, res) => {
  * RBAC: CV KTS (L2), Trưởng phòng (L3, PID 6), Giám đốc (L5+) — kiểm tra tại route.
  */
 export const performanceReport = asyncHandler(async (req, res) => {
-  const pool   = getPool();
+  const pool = getPool();
   const months = Math.min(Math.max(parseInt(req.query.months || 12), 1), 36);
 
   // ── 1. MTBF — trung bình giờ chạy giữa 2 lần hỏng EMERGENCY ──────────────
-  const [mtbfRows] = await pool.query(`
+  const [mtbfRows] = await pool.query(
+    `
     SELECT
       a.AssetID       AS assetId,
       a.AssetName     AS assetName,
@@ -401,14 +404,23 @@ export const performanceReport = asyncHandler(async (req, res) => {
       AND (COALESCE(rt.totalRunHours, 0) > 0 OR COALESCE(f.failureCount, 0) > 0)
     ORDER BY f.failureCount DESC, rt.totalRunHours DESC
     LIMIT 20
-  `, [months, months]);
+  `,
+    [months, months],
+  );
 
-  const totalRunAll     = mtbfRows.reduce((s, r) => s + Number(r.totalRunHours), 0);
-  const totalFailureAll = mtbfRows.reduce((s, r) => s + Number(r.failureCount), 0);
-  const mtbfOverall     = totalFailureAll > 0 ? Math.round((totalRunAll / totalFailureAll) * 100) / 100 : null;
+  const totalRunAll = mtbfRows.reduce((s, r) => s + Number(r.totalRunHours), 0);
+  const totalFailureAll = mtbfRows.reduce(
+    (s, r) => s + Number(r.failureCount),
+    0,
+  );
+  const mtbfOverall =
+    totalFailureAll > 0
+      ? Math.round((totalRunAll / totalFailureAll) * 100) / 100
+      : null;
 
   // ── 2. MTTR — trung bình giờ sửa một phiếu CORRECTIVE ────────────────────
-  const [mttrRows] = await pool.query(`
+  const [mttrRows] = await pool.query(
+    `
     SELECT
       a.AssetID       AS assetId,
       a.AssetName     AS assetName,
@@ -435,14 +447,26 @@ export const performanceReport = asyncHandler(async (req, res) => {
     WHERE a.Status != 'DECOMMISSIONED' AND COALESCE(rp.repairCount, 0) > 0
     ORDER BY mttr DESC
     LIMIT 20
-  `, [months]);
+  `,
+    [months],
+  );
 
-  const totalRepairAll = mttrRows.reduce((s, r) => s + Number(r.totalRepairHours), 0);
-  const totalRepairCnt = mttrRows.reduce((s, r) => s + Number(r.repairCount), 0);
-  const mttrOverall    = totalRepairCnt > 0 ? Math.round((totalRepairAll / totalRepairCnt) * 100) / 100 : null;
+  const totalRepairAll = mttrRows.reduce(
+    (s, r) => s + Number(r.totalRepairHours),
+    0,
+  );
+  const totalRepairCnt = mttrRows.reduce(
+    (s, r) => s + Number(r.repairCount),
+    0,
+  );
+  const mttrOverall =
+    totalRepairCnt > 0
+      ? Math.round((totalRepairAll / totalRepairCnt) * 100) / 100
+      : null;
 
   // ── 3. Tỷ lệ dừng máy — xấp xỉ bằng giờ WO CORRECTIVE / tổng giờ chạy ──
-  const [downtimeRows] = await pool.query(`
+  const [downtimeRows] = await pool.query(
+    `
     SELECT
       a.AssetID       AS assetId,
       a.AssetName     AS assetName,
@@ -474,14 +498,24 @@ export const performanceReport = asyncHandler(async (req, res) => {
       AND COALESCE(rt.totalRunHours, 0) > 0
     ORDER BY downtimePercent DESC
     LIMIT 20
-  `, [months, months]);
+  `,
+    [months, months],
+  );
 
-  const sumRunAll     = downtimeRows.reduce((s, r) => s + Number(r.totalRunHours), 0);
-  const sumDownAll    = downtimeRows.reduce((s, r) => s + Number(r.downtimeHours), 0);
-  const downtimeOverall = sumRunAll > 0 ? Math.round(sumDownAll / sumRunAll * 10000) / 100 : 0;
+  const sumRunAll = downtimeRows.reduce(
+    (s, r) => s + Number(r.totalRunHours),
+    0,
+  );
+  const sumDownAll = downtimeRows.reduce(
+    (s, r) => s + Number(r.downtimeHours),
+    0,
+  );
+  const downtimeOverall =
+    sumRunAll > 0 ? Math.round((sumDownAll / sumRunAll) * 10000) / 100 : 0;
 
   // ── 4. Kế hoạch vs Thực tế ────────────────────────────────────────────────
-  const [[planSummary]] = await pool.query(`
+  const [[planSummary]] = await pool.query(
+    `
     SELECT
       COUNT(*)                                                           AS totalScheduled,
       SUM(Status = 'COMPLETED')                                          AS completed,
@@ -498,9 +532,12 @@ export const performanceReport = asyncHandler(async (req, res) => {
     FROM WorkOrders
     WHERE WO_Source = 'SCHEDULE'
       AND PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-  `, [months]);
+  `,
+    [months],
+  );
 
-  const [planByMonth] = await pool.query(`
+  const [planByMonth] = await pool.query(
+    `
     SELECT
       DATE_FORMAT(PlannedDate, '%Y-%m')                               AS month,
       COUNT(*)                                                         AS total,
@@ -512,10 +549,13 @@ export const performanceReport = asyncHandler(async (req, res) => {
       AND PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
     GROUP BY DATE_FORMAT(PlannedDate, '%Y-%m')
     ORDER BY month ASC
-  `, [months]);
+  `,
+    [months],
+  );
 
   // ── 5. Pareto Downtime — top thiết bị gây ra dừng máy nhiều nhất ──────────
-  const [paretoRaw] = await pool.query(`
+  const [paretoRaw] = await pool.query(
+    `
     SELECT
       a.AssetID       AS assetId,
       a.AssetName     AS assetName,
@@ -531,27 +571,35 @@ export const performanceReport = asyncHandler(async (req, res) => {
     GROUP BY a.AssetID, a.AssetName, l.LocationName
     ORDER BY downtimeHours DESC
     LIMIT 20
-  `, [months]);
+  `,
+    [months],
+  );
 
   // Tính cumulative % (Pareto)
-  const paretoTotal = paretoRaw.reduce((s, r) => s + Number(r.downtimeHours), 0);
+  const paretoTotal = paretoRaw.reduce(
+    (s, r) => s + Number(r.downtimeHours),
+    0,
+  );
   let cumulative = 0;
-  const paretoRows = paretoRaw.map(r => {
+  const paretoRows = paretoRaw.map((r) => {
     cumulative += Number(r.downtimeHours);
     return {
       ...r,
-      downtimeHours:    Math.round(Number(r.downtimeHours) * 100) / 100,
-      cumulativePercent: paretoTotal > 0 ? Math.round(cumulative / paretoTotal * 1000) / 10 : 0,
+      downtimeHours: Math.round(Number(r.downtimeHours) * 100) / 100,
+      cumulativePercent:
+        paretoTotal > 0
+          ? Math.round((cumulative / paretoTotal) * 1000) / 10
+          : 0,
     };
   });
 
   return ok(res, {
     months,
-    mtbf:    { overall: mtbfOverall,    byAsset: mtbfRows    },
-    mttr:    { overall: mttrOverall,    byAsset: mttrRows    },
-    downtime:{ overall: downtimeOverall, byAsset: downtimeRows},
+    mtbf: { overall: mtbfOverall, byAsset: mtbfRows },
+    mttr: { overall: mttrOverall, byAsset: mttrRows },
+    downtime: { overall: downtimeOverall, byAsset: downtimeRows },
     planVsActual: { summary: planSummary, byMonth: planByMonth },
-    pareto:  { total: paretoTotal, rows: paretoRows },
+    pareto: { total: paretoTotal, rows: paretoRows },
   });
 });
 
@@ -674,9 +722,10 @@ export const resourceUsageReport = asyncHandler(async (req, res) => {
   );
   const feedbackInPeriod = Number(fbRow?.feedbackInPeriod ?? 0);
   const versionAddsInPeriod = Number(verRow?.versionAddsInPeriod ?? 0);
-  const feedbackToVersionRatio = versionAddsInPeriod > 0
-    ? Math.round((feedbackInPeriod / versionAddsInPeriod) * 1000) / 1000
-    : null;
+  const feedbackToVersionRatio =
+    versionAddsInPeriod > 0
+      ? Math.round((feedbackInPeriod / versionAddsInPeriod) * 1000) / 1000
+      : null;
 
   const [feedbackUnresolved] = await pool.query(
     `SELECT
@@ -701,11 +750,16 @@ export const resourceUsageReport = asyncHandler(async (req, res) => {
   return ok(res, {
     months: m,
     logicNotes: {
-      qrVsChecklist: 'Lượt mở QR = mỗi lần gọi getQRInfo (bảng AssetQrAccessLogs). Phiếu checklist = số bản ghi nộp trong kỳ (ChecklistResults).',
-      documentViews: 'Lượt mở tài liệu = mỗi lần user bấm mở file từ checklist (DigitalAssetViewLogs; không tự động khi tải danh sách tài liệu).',
-      feedbackRatio: 'Tỷ lệ = số góp ý tạo trong kỳ / số bản ghi AssetVersions tạo trong kỳ (kể cả tải mới tạo v1; phản ánh tần cập nhật so với phản hồi).',
-      stale: 'Tài liệu APPROVED, tuổi thọ upload nằm trong khoảng 12–24 tháng, và (MAX ChangeDate) NULL hoặc cách hiện tại hơn 12 tháng — chưa được cập nhật phiên bản gần đây (proxy "review" vận hành).',
-      unresolved: 'Góp ý OPEN/IN_REVIEW mà chưa có bản ghi AssetVersions với ChangeDate sau thời điểm góp ý (coi như chưa phản ứng bằng phiên bản mới).',
+      qrVsChecklist:
+        "Lượt mở QR = mỗi lần gọi getQRInfo (bảng AssetQrAccessLogs). Phiếu checklist = số bản ghi nộp trong kỳ (ChecklistResults).",
+      documentViews:
+        "Lượt mở tài liệu = mỗi lần user bấm mở file từ checklist (DigitalAssetViewLogs; không tự động khi tải danh sách tài liệu).",
+      feedbackRatio:
+        "Tỷ lệ = số góp ý tạo trong kỳ / số bản ghi AssetVersions tạo trong kỳ (kể cả tải mới tạo v1; phản ánh tần cập nhật so với phản hồi).",
+      stale:
+        'Tài liệu APPROVED, tuổi thọ upload nằm trong khoảng 12–24 tháng, và (MAX ChangeDate) NULL hoặc cách hiện tại hơn 12 tháng — chưa được cập nhật phiên bản gần đây (proxy "review" vận hành).',
+      unresolved:
+        "Góp ý OPEN/IN_REVIEW mà chưa có bản ghi AssetVersions với ChangeDate sau thời điểm góp ý (coi như chưa phản ứng bằng phiên bản mới).",
     },
     checklistSubmissions: {
       byAssetChecker: checklistByAssetChecker,

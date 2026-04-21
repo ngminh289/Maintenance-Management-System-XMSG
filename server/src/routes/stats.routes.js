@@ -15,12 +15,15 @@ export const statsRouter = Router();
 
 statsRouter.use(requireAuth);
 
-/** Báo cáo hiệu suất tài sản: chỉ Trưởng phòng (L3+PID6) hoặc Ban GĐ (L5+). */
+const TP_BAO_TRI = [6, 8];
+const TUYEN_PKT = [7, 9];
+
+/** Báo cáo hiệu suất: Trưởng/Phó phòng Bảo trì hoặc Ban GĐ. */
 function requirePerformanceAccess(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
-  const allowed = (lvl === 3 && pid === 6) || lvl >= 5;
+  const allowed = (lvl === 3 && TP_BAO_TRI.includes(pid)) || lvl >= 5;
   if (!allowed) {
     return fail(
       res,
@@ -31,12 +34,14 @@ function requirePerformanceAccess(req, res, next) {
   return next();
 }
 
-/** Báo cáo sử dụng tài nguyên: Chuyên viên KTS (L2) + Trưởng phòng + Ban GĐ. */
+/** Báo cáo tài nguyên: L2, Trưởng/Phó (6/7/8/9) hoặc Ban GĐ. */
 function requireKTSorTruongPhongOrBGD(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
-  const allowed = lvl === 2 || (lvl === 3 && pid === 6) || lvl >= 5;
+  const l3ok =
+    lvl === 3 && (TP_BAO_TRI.includes(pid) || TUYEN_PKT.includes(pid));
+  const allowed = lvl === 2 || l3ok || lvl >= 5;
   if (!allowed) {
     return fail(
       res,
@@ -47,12 +52,12 @@ function requireKTSorTruongPhongOrBGD(req, res, next) {
   return next();
 }
 
-/** Tỷ lệ checklist định kỳ + phân tích phê duyệt / NG theo máy — chỉ Trưởng phòng (L3+PID6) hoặc Ban GĐ (L5+) */
+/** Báo cáo nghiệp vụ bảo trì: Trưởng/Phó phòng bảo trì (6,8) hoặc Ban GĐ. */
 function requireTruongPhongOrBGD(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
-  const allowed = (lvl === 3 && pid === 6) || lvl >= 5;
+  const allowed = (lvl === 3 && TP_BAO_TRI.includes(pid)) || lvl >= 5;
   if (!allowed) {
     return fail(
       res,

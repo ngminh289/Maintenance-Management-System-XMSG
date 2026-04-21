@@ -1,5 +1,5 @@
 /**
- * documentFeedback.routes.js — /api/document-feedback (hàng đợi xử lý cho NV Kỹ thuật).
+ * documentFeedback.routes.js — /api/document-feedback (inbox: CV KTS + Trưởng/Phó PKT — 057).
  * Nested GET/POST /api/digital-assets/:id/feedback khai báo trong digitalAsset.routes.js.
  */
 import { Router } from 'express';

@@ -22,7 +22,8 @@ const ROLE_BADGE = {
   admin:       { label: 'Admin',         color: 'bg-red-500' },
   bGD:         { label: 'GĐ',            color: 'bg-purple-500' },
   truongCa:    { label: 'Trưởng ca',     color: 'bg-blue-500' },
-  truongPhong: { label: 'Trưởng phòng', color: 'bg-indigo-500' },
+  truongPhong: { label: 'Trưởng/Phó BT', color: 'bg-indigo-500' },
+  headPtkT:   { label: 'Trưởng/Phó PKT', color: 'bg-teal-600' },
   kyThuat:     { label: 'CV KTS',        color: 'bg-teal-500' },
   congNhan:    { label: 'KTV HT',        color: 'bg-gray-500' },
 };

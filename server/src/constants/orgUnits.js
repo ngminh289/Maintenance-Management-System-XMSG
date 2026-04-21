@@ -1,15 +1,15 @@
 /**
  * orgUnits.js — Ánh xạ chức vụ (PositionID) ↔ phòng ban cố định (3 phòng).
- * Phòng bảo trì (1): KTV hiện trường, Trưởng ca, Trưởng phòng.
- * Phòng kỹ thuật - công nghệ (2): Chuyên viên kỹ thuật số, Admin.
+ * Phòng bảo trì (1): KTV, Trưởng ca, Trưởng/Phó phòng bảo trì (1,3,6,8).
+ * Phòng kỹ thuật - công nghệ (2): CV KTS, Admin, Trưởng/Phó PKT (2,4,7,9).
  * Ban giám đốc (3): Giám đốc.
- * Dùng trong: employee.service.js; đồng bộ với seed.sql + migration 040.
+ * Dùng trong: employee.service.js; migration 040 + 055.
  */
 export const DEPARTMENT_BAO_TRI = 1;
 export const DEPARTMENT_KY_THUAT_CN = 2;
 export const DEPARTMENT_BAN_GD = 3;
 
-/** PositionID → DepartmentID (sau migration 040 / seed mới). */
+/** PositionID → DepartmentID */
 const POSITION_TO_DEPARTMENT = {
   1: DEPARTMENT_BAO_TRI,
   2: DEPARTMENT_KY_THUAT_CN,
@@ -17,6 +17,9 @@ const POSITION_TO_DEPARTMENT = {
   4: DEPARTMENT_KY_THUAT_CN,
   5: DEPARTMENT_BAN_GD,
   6: DEPARTMENT_BAO_TRI,
+  7: DEPARTMENT_KY_THUAT_CN,
+  8: DEPARTMENT_BAO_TRI,
+  9: DEPARTMENT_KY_THUAT_CN,
 };
 
 export function departmentIdForPosition(positionId) {

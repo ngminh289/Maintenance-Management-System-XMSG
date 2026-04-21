@@ -97,6 +97,7 @@ export const reviewChecklistResult = asyncHandler(async (req, res) => {
   const decision = String(req.body.decision || '').toUpperCase();
   return ok(res, await service.reviewChecklistResult(req.params.id, {
     supervisorId: req.user.sub,
+    supervisorPositionId: req.user.positionId,
     decision,
     supervisorNotes: req.body.supervisorNotes?.trim() || null,
   }));

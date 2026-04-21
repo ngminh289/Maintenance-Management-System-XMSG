@@ -10,13 +10,23 @@
  *   5 — bGD          : Ban Giám đốc
  *
  * Liên quan: Sidebar.jsx, DashboardPage.jsx, App.jsx; migration 019 (tách TC / Trưởng phòng).
- * ACTION_ACCESS DAM: DOCUMENT:SUBMIT chỉ Chuyên viên KTS (BFD 4); migration 034 dọn SUBMIT Admin.
- * Phản hồi tài liệu: DOCUMENT_FEEDBACK:CREATE mọi vai trừ CV KTS; DOCUMENT_FEEDBACK:REVIEW chỉ CV KTS (038).
+ * ACTION_ACCESS DAM: DOCUMENT:SUBMIT — CV KTS + Trưởng/Phó PKT (057); Admin không SUBMIT (034).
+ * Phản hồi: DOCUMENT_FEEDBACK:CREATE mọi vai trừ KTS & PKT; REVIEW — KTS & PKT (cùng rule 038).
+ * 055: Trưởng/Phó bảo trì 6,8; Trưởng/Phó PKT 7,9; ma trận cột 6 = headPtkT (7/9).
+ * 056–057: Bảo trì chỉ đọc tài sản/mẫu/lịch (tạo lịch: 2,7,9). PKT = quyền KTS + duyệt DAM; 058: PKT chỉ READ WORK_ORDER.
  */
 
+import {
+  PID_TRUONG_PHONG_BAO_TRI,
+  PID_TRUONG_PHONG_KT,
+  PID_PHO_BAO_TRI,
+  PID_PHO_PHONG_KT,
+  PIDS_TUYEN_BAO_TRI,
+  PIDS_TP_KT_HEAD,
+} from '../constants/positionIds.js';
+
 // ── 1. Chuyển user thành role key ────────────────────────────────────────────
-/** PositionID Trưởng phòng trong DB (migration 019). */
-export const POSITION_TRUONG_PHONG = 6;
+export const POSITION_TRUONG_PHONG = PID_TRUONG_PHONG_BAO_TRI;
 
 export function getRoleKey(user) {
   if (!user) return "congNhan";
@@ -24,9 +34,10 @@ export function getRoleKey(user) {
   if (level >= 5) return "bGD";
   if (level >= 4) return "admin";
   if (level >= 3) {
-    return Number(user.positionId) === POSITION_TRUONG_PHONG
-      ? "truongPhong"
-      : "truongCa";
+    const pid = Number(user.positionId);
+    if (pid === PID_TRUONG_PHONG_BAO_TRI || pid === PID_PHO_BAO_TRI) return "truongPhong";
+    if (pid === PID_TRUONG_PHONG_KT || pid === PID_PHO_PHONG_KT) return "headPtkT";
+    return "truongCa";
   }
   if (level >= 2) return "kyThuat";
   return "congNhan";
@@ -35,8 +46,9 @@ export function getRoleKey(user) {
 export const ROLE_LABELS = {
   congNhan: "KTV hiện trường",
   kyThuat: "Chuyên viên KTS",
-  truongCa: "Trưởng ca",
-  truongPhong: "Trưởng phòng",
+  truongCa: "Trưởng ca bảo trì",
+  truongPhong: "Trưởng / Phó phòng Bảo trì",
+  headPtkT: "Trưởng / Phó phòng Kỹ thuật - CN",
   admin: "Admin",
   bGD: "Giám đốc",
 };
@@ -46,6 +58,7 @@ export const ROLE_COLORS = {
   kyThuat: "green",
   truongCa: "blue",
   truongPhong: "indigo",
+  headPtkT: "teal",
   admin: "red",
   bGD: "purple",
 };
@@ -57,33 +70,28 @@ export const LEVEL_TRUONG_CA = 3;
 export const TRUONG_CA_SUMMARY = {
   title: "Trưởng ca & Trưởng phòng",
   tagline:
-    "Phê duyệt lịch, phiếu việc và tài liệu; điều phối WO. WO khẩn: hai bước TC → Trưởng phòng.",
+    "Tuyến bảo trì: phê duyệt lịch, phiếu việc, checklist; WO khẩn hai bước. Tài liệu số do phòng Kỹ thuật - CN duyệt.",
   flows: [],
 };
 
 // ── 2. Quyền truy cập route (menu visibility) ────────────────────────────────
-// Thứ tự cột: [ congNhan, kyThuat, truongCa, admin, bGD ]
+// Cột: [ congNhan, kyThuat, truongCa, admin, bGD, headPtkT (Trưởng/Phó PKT 7,9) ]
 const ROUTE_ACCESS = {
-  //              KTV HT  CV KTS TC     AD     BGD
-  assets: [true, true, true, true, true], // tất cả xem tài sản
-  schedules: [false, true, true, true, false], // KT + TC + Admin: lập lịch; TC gửi duyệt + duyệt (Approvals)
-  "work-orders": [true, true, true, true, false], // Admin tạo WO chờ duyệt (4.1)
-  /** QR / xem tài sản: mọi vai (kể cả Admin, Ban GĐ) — nộp checklist tách quyền CHECKLIST_RESULT:CREATE */
-  checklists: [true, true, true, true, true],
-  /** §5.1 — chỉ Chuyên viên KTS + Trưởng ca/Trưởng phòng quản lý mẫu theo loại */
-  "checklist-manage": [false, true, true, false, false],
-  /** DAM: CN/KT/TC/Admin/BGD đọc kho; upload/SUBMIT/phiên bản chỉ KT (ACTION_ACCESS). */
-  documents: [true, true, true, true, true],
-  /** Hàng đợi phản hồi / góp ý tài liệu — chỉ Chuyên viên KTS (xem xét). */
-  'document-feedback-inbox': [false, true, false, false, false],
-  workflows: [false, false, false, true, false], // mẫu luồng phê duyệt — Admin C/U (4.1)
-  'admin-settings': [false, false, false, true, false], // cấu hình hệ thống (loại tài sản, vị trí) — Admin only
-  approvals: [false, false, true, false, false], // chỉ Trưởng ca xử lý hàng chờ duyệt; Ban GĐ chỉ R (báo cáo)
-  reports: [false, true, true, true, true], // báo cáo từ KT trở lên
-  employees: [false, false, true, true, false], // Trưởng ca/Trưởng phòng xem + Admin quản lý
+  //                        KTV HT  CV KTC TC  AD  BGD  T/P PKT
+  assets:                 [true,  true,  true,  true, true,  true],
+  schedules:              [false, true,  true,  true, false, true],
+  "work-orders":          [true,  true,  true,  true, false, true],
+  checklists:             [true,  true,  true,  true, true,  true],
+  "checklist-manage":     [false, true,  true,  false, false, true],
+  documents:              [true,  true,  true,  true, true,  true],
+  'document-feedback-inbox': [false, true, false, false, false, true],
+  workflows:              [false, false, false, true,  false, false],
+  'admin-settings':       [false, false, false, true,  false, false],
+  approvals:              [false, false, true,  false, false, true],
+  reports:                [false, true,  true,  true,  true,  true],
+  employees:              [false, false, true,  true,  false, false],
 };
 
-/** truongCa và truongPhong dùng chung cột ma trận (Level 3, quyền tương đương trên UI). */
 const ROLE_IDX = {
   congNhan: 0,
   kyThuat: 1,
@@ -91,6 +99,7 @@ const ROLE_IDX = {
   truongPhong: 2,
   admin: 3,
   bGD: 4,
+  headPtkT: 5,
 };
 
 /**
@@ -101,7 +110,7 @@ export function canAccessPerformanceReport(user) {
   if (!user) return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
-  return (lvl === 3 && pid === POSITION_TRUONG_PHONG) || lvl >= 5;
+  return (lvl === 3 && (pid === PID_TRUONG_PHONG_BAO_TRI || pid === PID_PHO_BAO_TRI)) || lvl >= 5;
 }
 
 /**
@@ -111,7 +120,17 @@ export function canAccessResourceUsageReport(user) {
   if (!user) return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
-  return lvl === 2 || (lvl === 3 && pid === POSITION_TRUONG_PHONG) || lvl >= 5;
+  if (lvl === 2) return true;
+  if (lvl >= 5) return true;
+  if (lvl === 3) {
+    return [
+      PID_TRUONG_PHONG_BAO_TRI,
+      PID_PHO_BAO_TRI,
+      PID_TRUONG_PHONG_KT,
+      PID_PHO_PHONG_KT,
+    ].includes(pid);
+  }
+  return false;
 }
 
 /**
@@ -122,7 +141,7 @@ export function canAccessChecklistOperationsReport(user) {
   if (!user) return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
-  return (lvl === 3 && pid === POSITION_TRUONG_PHONG) || lvl >= 5;
+  return (lvl === 3 && (pid === PID_TRUONG_PHONG_BAO_TRI || pid === PID_PHO_BAO_TRI)) || lvl >= 5;
 }
 
 export function canAccess(user, routeKey) {
@@ -137,87 +156,88 @@ export function canAccess(user, routeKey) {
   return idx !== undefined ? matrix[idx] : false;
 }
 
-// ── 3. Quyền hành động (UI button visibility) ────────────────────────────────
-// Thứ tự cột: [ congNhan, kyThuat, truongCa, admin, bGD ]
+// ── 3. Quyền hành động (UI) — 6 cột, cột 5 = headPtkT (7/9). APPROVE tuyến tách ở canDo theo positionId.
 const ACTION_ACCESS = {
-  //                              KTV HT  CV KTS TC     AD     BGD
-  "ASSET:CREATE": [false, false, true, false, false],
-  "ASSET:UPDATE": [false, true, true, false, false],
-  "ASSET:DELETE": [false, false, true, false, false],
-  "RUNTIME_LOG:CREATE": [true, false, false, false, false],
-  "SCHEDULE:CREATE": [false, true, true, false, false],
-  "SCHEDULE:UPDATE": [false, true, true, false, false],
-  /** Gửi lịch vào duyệt: Chuyên viên KTS + Trưởng ca/Trưởng phòng (cùng cột TC) + Admin. */
-  "SCHEDULE:SUBMIT": [false, true, true, true, false],
-  "SCHEDULE:APPROVE": [false, false, true, false, false],
-  /** DB chưa gán DELETE MAINTENANCE_PLAN cho role nào — ẩn nút xóa lịch. */
-  "SCHEDULE:DELETE": [false, false, false, false, false],
-  "WORK_ORDER:CREATE": [false, true, true, true, false],
-  "WORK_ORDER:UPDATE": [true, true, true, false, false],
-  /** Phân công WO: service yêu cầu actorLevel >= 3 (Trưởng ca). */
-  "WORK_ORDER:ASSIGN": [false, false, true, false, false],
-  "WORK_ORDER:APPROVE": [false, false, true, false, false], // TC (3) + Trưởng phòng (6): server kiểm tra đúng bước workflow
-  "WORK_ORDER:DELETE": [false, false, false, false, false],
-  "DOCUMENT:CREATE": [false, true, false, false, false],
-  /** Gửi bản nháp vào phê duyệt — SUBMIT API (BFD 4; chỉ Chuyên viên KTS). */
-  "DOCUMENT:SUBMIT": [false, true, false, false, false],
-  /** Phiên bản mới sau duyệt — UPDATE API (chỉ Chuyên viên KTS; Admin DAM chỉ READ). */
-  "DOCUMENT:UPDATE": [false, true, false, false, false],
-  "DOCUMENT:APPROVE": [false, false, true, false, false],
-  /** Danh mục tag (CRUD): chỉ Chuyên viên KTS (migration 035: DELETE TAG). */
-  "TAG:CREATE": [false, true, false, false, false],
-  "TAG:UPDATE": [false, true, false, false, false],
-  "TAG:DELETE": [false, true, false, false, false],
-  /** Phân loại tài liệu DAM — đọc danh mục: mọi role vào trang tài liệu; C/U/D: Chuyên viên KTS. */
-  "DOCUMENT_CATEGORY:READ": [true, true, true, true, true],
-  "DOCUMENT_CATEGORY:CREATE": [false, true, false, false, false],
-  "DOCUMENT_CATEGORY:UPDATE": [false, true, false, false, false],
-  "DOCUMENT_CATEGORY:DELETE": [false, true, false, false, false],
-  "CHECKLIST_TEMPLATE:CREATE": [false, true, true, false, false],
-  "CHECKLIST_TEMPLATE:UPDATE": [false, true, true, false, false],
-  /** §5.1 (A) — phê duyệt mẫu trong DB; UI mở rộng luồng sau */
-  "CHECKLIST_TEMPLATE:APPROVE": [false, false, true, false, false],
-  /** Ma trận không dùng cho CREATE — xử lý trong canDo (chỉ CN + Trưởng phòng). */
-  "CHECKLIST_RESULT:CREATE": [false, false, false, false, false],
-  "EMPLOYEE:CREATE": [false, false, false, true, false],
-  "EMPLOYEE:UPDATE": [false, false, false, true, false],
-  "EMPLOYEE:DELETE": [false, false, false, true, false], // PATCH activate/deactivate
-  "REPORT:EXPORT": [false, false, false, false, true],
-  /** Nhóm bảo trì: routes requireLevel(2) CRUD thành viên, xóa nhóm requireLevel(3). */
-  "MAINTENANCE_GROUP:WRITE": [false, true, true, true, false],
-  "MAINTENANCE_GROUP:DELETE": [false, false, true, true, false],
-  /** Cấu hình mẫu WorkflowTemplates (Admin — 4.1 C/U). */
-  "WORKFLOW:CREATE": [false, false, false, true, false],
-  "WORKFLOW:UPDATE": [false, false, false, true, false],
-  "WORKFLOW:DELETE": [false, false, false, true, false],
-  /** Góp ý tài liệu: KTV HT/TC/TP/Admin/BGD gửi; Chuyên viên KTS không gửi (server chặn CREATE). */
-  "DOCUMENT_FEEDBACK:CREATE": [true, false, true, true, true],
-  /** Chuyên viên KTS cập nhật trạng thái / ghi chú xử lý. */
-  "DOCUMENT_FEEDBACK:REVIEW": [false, true, false, false, false],
+  "ASSET:CREATE":            [false, true,  false, false, false, true],
+  "ASSET:UPDATE":            [false, true,  false, false, false, true],
+  "ASSET:DELETE":            [false, false, false, false, false, false],
+  "RUNTIME_LOG:CREATE":      [true,  false, false, false, false, false],
+  "SCHEDULE:CREATE":         [false, true,  false, false, false, true],
+  "SCHEDULE:UPDATE":         [false, true,  false, false, false, true],
+  "SCHEDULE:SUBMIT":         [false, true,  false, false, false, true],
+  "SCHEDULE:APPROVE":        [false, false, true,  false, false, false],
+  "SCHEDULE:DELETE":         [false, true,  false, false, false, true],
+  "WORK_ORDER:CREATE":       [false, true,  true,  true,  false, false],
+  "WORK_ORDER:UPDATE":       [true,  true,  true,  false, false, false],
+  "WORK_ORDER:ASSIGN":       [false, false, true,  false, false, false],
+  "WORK_ORDER:APPROVE":      [false, false, true,  false, false, false],
+  "WORK_ORDER:DELETE":       [false, false, false, false, false, false],
+  "DOCUMENT:CREATE":         [false, true,  false, false, false, true],
+  "DOCUMENT:SUBMIT":         [false, true,  false, false, false, true],
+  "DOCUMENT:UPDATE":         [false, true,  false, false, false, true],
+  "DOCUMENT:APPROVE":        [false, false, false, false, false, true],
+  "DOCUMENT:DELETE":         [false, false, false, true,  false, true],
+  "TAG:CREATE":              [false, true,  false, false, false, true],
+  "TAG:UPDATE":              [false, true,  false, false, false, true],
+  "TAG:DELETE":              [false, true,  false, false, false, true],
+  "DOCUMENT_CATEGORY:READ":  [true,  true,  true,  true,  true,  true],
+  "DOCUMENT_CATEGORY:CREATE":[false, true,  false, false, false, true],
+  "DOCUMENT_CATEGORY:UPDATE":[false, true,  false, false, false, true],
+  "DOCUMENT_CATEGORY:DELETE":[false, true,  false, false, false, true],
+  "CHECKLIST_TEMPLATE:CREATE":[false, true,  false, false, false, true],
+  "CHECKLIST_TEMPLATE:UPDATE": [false, true,  false, false, false, true],
+  "CHECKLIST_TEMPLATE:DELETE": [false, true,  false, false, false, true],
+  "CHECKLIST_TEMPLATE:APPROVE": [false, false, false, false, false, false],
+  "CHECKLIST_RESULT:CREATE": [false, false, false, false, false, false],
+  "EMPLOYEE:CREATE":         [false, false, false, true,  false, false],
+  "EMPLOYEE:UPDATE":         [false, false, false, true,  false, false],
+  "EMPLOYEE:DELETE":         [false, false, false, true,  false, false],
+  "REPORT:EXPORT":         [false, false, false, false, true,  false],
+  "MAINTENANCE_GROUP:WRITE": [false, true,  true,  true,  false, true],
+  "MAINTENANCE_GROUP:DELETE":[false, false, true,  true,  false, false],
+  "WORKFLOW:CREATE":         [false, false, false, true,  false, false],
+  "WORKFLOW:UPDATE":         [false, false, false, true,  false, false],
+  "WORKFLOW:DELETE":         [false, false, false, true,  false, false],
+  "DOCUMENT_FEEDBACK:CREATE": [true,  false, true,  true,  true,  false],
+  "DOCUMENT_FEEDBACK:REVIEW": [false, true,  false, false, false, true],
 };
 
+function canApproveByPid(pid, list) {
+  return list.includes(Number(pid));
+}
+
 export function canDo(user, action) {
-  /** Nộp checklist quét QR: chỉ KTV hiện trường + Trưởng phòng (Trưởng ca / CV KTS / Admin / BGD chỉ xem). */
+  const pid = Number(user?.positionId ?? 0);
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);
     return k === "congNhan" || k === "truongPhong";
   }
-  /** Tiếp nhận kết quả: Trưởng ca hoặc Trưởng phòng */
-  if (action === "CHECKLIST_RESULT:APPROVE") {
-    const k = getRoleKey(user);
-    return k === "truongCa" || k === "truongPhong";
+  if (action === "CHECKLIST_RESULT:APPROVE" || action === "CHECKLIST_REVIEW:WRITE") {
+    return canApproveByPid(pid, PIDS_TUYEN_BAO_TRI);
+  }
+  if (action === "SCHEDULE:APPROVE" || action === "WORK_ORDER:APPROVE") {
+    return canApproveByPid(pid, PIDS_TUYEN_BAO_TRI);
+  }
+  if (action === "CHECKLIST_TEMPLATE:APPROVE") {
+    return false;
+  }
+  if (action === "DOCUMENT:APPROVE" || action === "DIGITAL_ASSET:APPROVE") {
+    return canApproveByPid(pid, PIDS_TP_KT_HEAD) || user?.positionLevel === 4;
   }
   const matrix = ACTION_ACCESS[action];
   if (!matrix) return false;
-  const idx = ROLE_IDX[getRoleKey(user)];
-  return idx !== undefined ? matrix[idx] : false;
+  const r = getRoleKey(user);
+  const idx = ROLE_IDX[r];
+  return idx !== undefined && matrix[idx] === true;
 }
 
 // ── 4. Dashboard type cho mỗi role ────────────────────────────────────────────
 export function getDashboardType(user) {
   const role = getRoleKey(user);
-  if (role === "bGD") return "director"; // báo cáo tổng thể, KPI
-  if (role === "admin") return "admin"; // quản lý hệ thống, user
-  if (role === "truongCa" || role === "truongPhong") return "supervisor";
-  return "field"; // KT/CN: WO của mình, QR nhanh
+  if (role === "bGD") return "director";
+  if (role === "admin") return "admin";
+  if (role === "truongCa" || role === "truongPhong" || role === "headPtkT") {
+    return "supervisor";
+  }
+  return "field";
 }

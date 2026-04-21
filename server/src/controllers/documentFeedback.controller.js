@@ -10,6 +10,7 @@ export const createForAsset = asyncHandler(async (req, res) => {
   const row = await service.createForAsset(req.params.id, {
     employeeId: req.user.sub,
     positionId: req.user.positionId,
+    positionLevel: req.user.positionLevel ?? 0,
     body: req.body?.body,
   });
   return ok(res, row, 201);
@@ -19,6 +20,7 @@ export const listForAsset = asyncHandler(async (req, res) => {
   const rows = await service.listForAsset(req.params.id, {
     employeeId: req.user.sub,
     positionId: req.user.positionId,
+    positionLevel: req.user.positionLevel ?? 0,
   });
   return ok(res, rows);
 });

@@ -1,6 +1,6 @@
 /**
  * ChecklistTemplatesPage.jsx — BFD §5.1: Quản lý mẫu checklist theo loại tài sản (AssetType).
- * Chuyên viên KTS + Trưởng ca/Trưởng phòng: tạo/sửa mẫu và câu hỏi (một loại — tối đa một mẫu).
+ * Chuyên viên KTS + Trưởng/Phó phòng Kỹ thuật - CN: CRUD mẫu; tuyến bảo trì chỉ đọc (056).
  * Ngưỡng an toàn (Numeric/Range) + gợi ý OK/WARNING/NG khi vi phạm; PassFail: gợi ý khi «Không đạt».
  * KTV hiện trường không vào trang này; kiểm tra hiện trường tại Checklist / QR.
  */
