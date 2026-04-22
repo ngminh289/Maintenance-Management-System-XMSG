@@ -1,7 +1,7 @@
 /**
  * checklist.routes.js — /api/checklists (templates + kết quả hiện trường).
  * Phân quyền nghiêm ngặt theo RBAC.
- * Templates: CV KTS + Trưởng/Phó PKT (056); tuyến bảo trì chỉ READ; xóa mẫu = DELETE.
+ * Templates: CV KTS + Trưởng/Phó PKT (2,7,9) CRUD; các vị trí còn lại chỉ READ.
  * Results: CN + Trưởng phòng nộp (CREATE); TC/TP UPDATE = tiếp nhận checklist; NV KT/TC không nộp (chỉ xem QR).
  */
 import { Router } from 'express';
@@ -19,8 +19,14 @@ export const checklistRouter = Router();
 checklistRouter.use(requireAuth);
 
 // ── Templates ──────────────────────────────────────────────────────────────
-checklistRouter.get('/templates',     ctrl.getTemplates);
-checklistRouter.get('/templates/:id', ctrl.getTemplateById);
+checklistRouter.get('/templates',
+  requirePermission('CHECKLIST_TEMPLATE', 'READ'),
+  ctrl.getTemplates,
+);
+checklistRouter.get('/templates/:id',
+  requirePermission('CHECKLIST_TEMPLATE', 'READ'),
+  ctrl.getTemplateById,
+);
 
 checklistRouter.post('/templates',
   requirePermission('CHECKLIST_TEMPLATE', 'CREATE'),

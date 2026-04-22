@@ -25,6 +25,13 @@ import { Input, Select, Textarea } from "../../components/ui/Input.jsx";
 import { Pagination } from "../../components/ui/Pagination.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
+import {
+  EMPTY_SCHEDULE_FORM,
+  ScheduleFormFields as SharedScheduleFormFields,
+  buildSchedulePayload,
+  mapScheduleToForm,
+  validateScheduleForm as validateSharedScheduleForm,
+} from "../../components/schedules/ScheduleFormFields.jsx";
 import { fDate } from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo } from "../../utils/rbac.js";
@@ -64,13 +71,6 @@ const STATUS_LABEL = {
   OVERDUE: "Quá hạn",
   CANCELLED: "Hủy",
   REJECTED: "Từ chối",
-};
-
-const EMPTY_FORM = {
-  scheduleKind: "periodic",
-  maintenanceType: "PREVENTIVE",
-  frequencyValue: 30,
-  frequencyUnit: "DAYS",
 };
 
 function daysUntil(dateStr) {
@@ -291,7 +291,7 @@ export function SchedulesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState(null); // lịch đang sửa
   const [deleteItem, setDeleteItem] = useState(null); // lịch đang xóa
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(EMPTY_SCHEDULE_FORM);
   const [saving, setSaving] = useState(false);
   const LIMIT = 15;
 
@@ -360,27 +360,13 @@ export function SchedulesPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!validateForm(form)) return;
+    if (!validateSharedScheduleForm(form, toast.error)) return;
     setSaving(true);
     try {
-      const { scheduleKind: _sk, ...formRest } = form;
-      await scheduleApi.create({
-        ...formRest,
-        maintenanceType:
-          form.scheduleKind === "predictive" ? "PREDICTIVE" : "PREVENTIVE",
-        frequencyValue: Number(
-          form.frequencyValue ||
-            (form.scheduleKind === "predictive" ? 720 : 30),
-        ),
-        frequencyUnit: (
-          form.scheduleKind === "predictive"
-            ? "HOURS"
-            : form.frequencyUnit || "DAYS"
-        ).toUpperCase(),
-      });
+      await scheduleApi.create(buildSchedulePayload(form));
       toast.success("Đã tạo lịch bảo trì");
       setCreateOpen(false);
-      setForm(EMPTY_FORM);
+      setForm(EMPTY_SCHEDULE_FORM);
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? "Lỗi tạo lịch");
@@ -390,45 +376,16 @@ export function SchedulesPage() {
   };
 
   const openEdit = (s) => {
-    const predictive = s.frequencyUnit === "HOURS";
-    setForm({
-      scheduleKind: predictive ? "predictive" : "periodic",
-      assetId: String(s.assetId ?? ""),
-      scheduleName: s.scheduleName ?? "",
-      maintenanceType: s.maintenanceType ?? "PREVENTIVE",
-      description: s.description ?? "",
-      frequencyValue: s.frequencyValue ?? (predictive ? 720 : 30),
-      frequencyUnit: s.frequencyUnit ?? "DAYS",
-      startDate: s.startDate ? s.startDate.split("T")[0] : "",
-      endDate: s.endDate ? s.endDate.split("T")[0] : "",
-    });
+    setForm(mapScheduleToForm(s));
     setEditItem(s);
   };
 
   const handleEdit = async (e) => {
     e.preventDefault();
-    if (!validateForm(form)) return;
+    if (!validateSharedScheduleForm(form, toast.error)) return;
     setSaving(true);
     try {
-      const { scheduleKind: _sk, ...formRest } = form;
-      await scheduleApi.update(editItem.scheduleId, {
-        ...formRest,
-        maintenanceType:
-          form.scheduleKind === "predictive"
-            ? "PREDICTIVE"
-            : form.maintenanceType === "CORRECTIVE"
-              ? "CORRECTIVE"
-              : "PREVENTIVE",
-        frequencyValue: Number(
-          form.frequencyValue ||
-            (form.scheduleKind === "predictive" ? 720 : 30),
-        ),
-        frequencyUnit: (
-          form.scheduleKind === "predictive"
-            ? "HOURS"
-            : form.frequencyUnit || "DAYS"
-        ).toUpperCase(),
-      });
+      await scheduleApi.update(editItem.scheduleId, buildSchedulePayload(form));
       toast.success("Đã cập nhật lịch bảo trì");
       setEditItem(null);
       load();
@@ -554,7 +511,7 @@ export function SchedulesPage() {
         <div className="flex justify-end">
           <Button
             onClick={() => {
-              setForm(EMPTY_FORM);
+              setForm(EMPTY_SCHEDULE_FORM);
               setCreateOpen(true);
             }}
           >
@@ -718,7 +675,7 @@ export function SchedulesPage() {
         size="lg"
       >
         <form onSubmit={handleCreate} className="space-y-4">
-          <ScheduleForm
+          <SharedScheduleFormFields
             form={form}
             setF={setF}
             patchForm={patchForm}
@@ -747,7 +704,7 @@ export function SchedulesPage() {
         size="lg"
       >
         <form onSubmit={handleEdit} className="space-y-4">
-          <ScheduleForm
+          <SharedScheduleFormFields
             form={form}
             setF={setF}
             patchForm={patchForm}

@@ -5,8 +5,9 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, QrCode, AlertTriangle, Filter } from 'lucide-react';
+import { Plus, Search, QrCode, AlertTriangle, Filter, Calendar } from 'lucide-react';
 import { assetApi }          from '../../api/asset.api.js';
+import { scheduleApi }       from '../../api/schedule.api.js';
 import { assetTypeApi }      from '../../api/assetType.api.js';
 import { productionLineApi } from '../../api/productionLine.api.js';
 import { Button }   from '../../components/ui/Button.jsx';
@@ -16,6 +17,12 @@ import { Pagination } from '../../components/ui/Pagination.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
 import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { Modal }    from '../../components/ui/Modal.jsx';
+import {
+  ScheduleFormFields,
+  buildScheduleFormForAsset,
+  buildSchedulePayload,
+  validateScheduleForm,
+} from '../../components/schedules/ScheduleFormFields.jsx';
 import { ASSET_STATUS_LABEL, ASSET_STATUS_COLOR, fDate } from '../../utils/format.js';
 import { AssetForm } from './AssetForm.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -33,6 +40,10 @@ export function AssetListPage() {
   const [page,    setPage]    = useState(1);
   const [filters, setFilters] = useState({ search: '', status: '', assetTypeId: '', productionLine: '' });
   const [createOpen, setCreateOpen] = useState(false);
+  const [quickScheduleOpen, setQuickScheduleOpen] = useState(false);
+  const [quickScheduleAsset, setQuickScheduleAsset] = useState(null);
+  const [quickScheduleSaving, setQuickScheduleSaving] = useState(false);
+  const [quickScheduleForm, setQuickScheduleForm] = useState(buildScheduleFormForAsset(null));
   const [qrAsset,    setQrAsset]    = useState(null);
   const LIMIT = 15;
 
@@ -74,6 +85,29 @@ export function AssetListPage() {
       toast.success('Đã loại biên tài sản');
       load();
     } catch { toast.error('Lỗi loại biên'); }
+  };
+  const canCreateSchedule = canDo(user, 'SCHEDULE:CREATE') || (user?.positionLevel ?? 0) >= 4;
+
+  const openQuickSchedule = (asset) => {
+    setQuickScheduleAsset(asset);
+    setQuickScheduleForm(buildScheduleFormForAsset(asset));
+    setQuickScheduleOpen(true);
+  };
+
+  const submitQuickSchedule = async (e) => {
+    e.preventDefault();
+    if (!quickScheduleAsset) return;
+    if (!validateScheduleForm(quickScheduleForm, toast.error)) return;
+    setQuickScheduleSaving(true);
+    try {
+      await scheduleApi.create(buildSchedulePayload(quickScheduleForm));
+      toast.success('Đã tạo lịch bảo trì từ tài sản');
+      setQuickScheduleOpen(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Lỗi tạo lịch bảo trì');
+    } finally {
+      setQuickScheduleSaving(false);
+    }
   };
 
   return (
@@ -162,6 +196,16 @@ export function AssetListPage() {
                                 <AlertTriangle size={16} />
                               </button>
                             )}
+                            {canCreateSchedule && (
+                              <button
+                                type="button"
+                                onClick={() => openQuickSchedule(a)}
+                                className="p-1.5 rounded-lg hover:bg-emerald-100 text-emerald-600 transition-colors"
+                                title="Tạo lịch bảo trì cho tài sản này"
+                              >
+                                <Calendar size={16} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -182,6 +226,31 @@ export function AssetListPage() {
           onSuccess={() => { setCreateOpen(false); load(); toast.success('Đã thêm tài sản'); }}
           onCancel={() => setCreateOpen(false)}
         />
+      </Modal>
+
+      <Modal
+        open={quickScheduleOpen}
+        onClose={() => setQuickScheduleOpen(false)}
+        title={`Tạo lịch bảo trì — ${quickScheduleAsset?.assetName ?? ''}`}
+        size="lg"
+      >
+        <form onSubmit={submitQuickSchedule} className="space-y-4">
+          <ScheduleFormFields
+            form={quickScheduleForm}
+            setF={(key, value) =>
+              setQuickScheduleForm((prev) => ({ ...prev, [key]: value }))
+            }
+            patchForm={(patch) =>
+              setQuickScheduleForm((prev) => ({ ...prev, ...patch }))
+            }
+            assets={assets}
+            fixedAsset={quickScheduleAsset}
+          />
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={() => setQuickScheduleOpen(false)}>Hủy</Button>
+            <Button type="submit" loading={quickScheduleSaving}>Tạo lịch</Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!qrAsset} onClose={() => setQrAsset(null)} title={`QR Code — ${qrAsset?.assetName}`} size="sm">

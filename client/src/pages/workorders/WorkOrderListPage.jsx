@@ -57,7 +57,14 @@ export function WorkOrderListPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
+  const [woSource, setWoSource] = useState("");
+  const [assetId, setAssetId] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [resourceType, setResourceType] = useState("");
+  const [period, setPeriod] = useState("");
+  const [q, setQ] = useState("");
   const [assets, setAssets] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
   const LIMIT = 15;
 
@@ -69,18 +76,38 @@ export function WorkOrderListPage() {
         limit: LIMIT,
         ...(status && { status }),
         ...(priority && { priority }),
+        ...(woSource && { woSource }),
+        ...(assetId && { assetId }),
+        ...(locationId && { locationId }),
+        ...(resourceType && { resourceType }),
+        ...(q.trim() && { q: q.trim() }),
+        ...(period && {
+          plannedFrom:
+            period === "week"
+              ? new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
+              : period === "month"
+                ? new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
+                : period === "quarter"
+                  ? new Date(Date.now() - 89 * 86400000).toISOString().slice(0, 10)
+                  : undefined,
+          plannedTo: new Date().toISOString().slice(0, 10),
+        }),
       });
       setOrders(res.data.data?.items ?? []);
       setTotal(res.data.data?.total ?? 0);
     } finally {
       setLoading(false);
     }
-  }, [page, status, priority]);
+  }, [page, status, priority, woSource, assetId, locationId, resourceType, period, q]);
 
   useEffect(() => {
     assetApi
       .getAll({ limit: 200 })
       .then((r) => setAssets(r.data.data?.items ?? []))
+      .catch(() => {});
+    assetApi
+      .getLocations()
+      .then((r) => setLocations(r.data.data ?? []))
       .catch(() => {});
   }, []);
   useEffect(() => {
@@ -147,6 +174,100 @@ export function WorkOrderListPage() {
         </Select>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <input
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setPage(1);
+          }}
+          placeholder="Tìm WO-ID, mô tả, tài sản..."
+          className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-lg text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none bg-white"
+        />
+        <Select
+          value={woSource}
+          onChange={(e) => {
+            setWoSource(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Mọi nguồn</option>
+          <option value="MANUAL">Thủ công</option>
+          <option value="SCHEDULE">Từ lịch</option>
+          <option value="PREDICTIVE">Dự báo</option>
+          <option value="CORRECTIVE">Sự cố</option>
+          <option value="EMERGENCY">Khẩn cấp</option>
+        </Select>
+        <Select
+          value={assetId}
+          onChange={(e) => {
+            setAssetId(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả tài sản</option>
+          {assets.map((a) => (
+            <option key={a.assetId} value={a.assetId}>
+              {a.assetName}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={locationId}
+          onChange={(e) => {
+            setLocationId(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả khu vực</option>
+          {locations.map((l) => (
+            <option key={l.locationId} value={l.locationId}>
+              {l.parentLocationName ? `${l.parentLocationName} › ${l.locationName}` : l.locationName}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={resourceType}
+          onChange={(e) => {
+            setResourceType(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Nguồn lực: tất cả</option>
+          <option value="UNASSIGNED">Chưa phân công</option>
+          <option value="INDIVIDUAL">Nhân viên (1 người)</option>
+          <option value="GROUP">Nhóm (&gt;=2 người)</option>
+        </Select>
+        <Select
+          value={period}
+          onChange={(e) => {
+            setPeriod(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Thời gian: tất cả</option>
+          <option value="week">7 ngày gần đây</option>
+          <option value="month">30 ngày gần đây</option>
+          <option value="quarter">90 ngày gần đây</option>
+        </Select>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setStatus("");
+            setPriority("");
+            setWoSource("");
+            setAssetId("");
+            setLocationId("");
+            setResourceType("");
+            setPeriod("");
+            setQ("");
+            setPage(1);
+          }}
+        >
+          Xóa bộ lọc
+        </Button>
+      </div>
+
       <div className="rounded-2xl border border-slate-200/90 bg-white shadow-sm shadow-slate-200/50 overflow-hidden min-h-[200px]">
         {loading ? (
           <PageLoader />
@@ -194,6 +315,13 @@ export function WorkOrderListPage() {
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 py-0.5 rounded bg-slate-100">
                           {wo.woSource}
                         </span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-1.5 py-0.5 rounded bg-slate-100">
+                          {Number(wo.assignmentCount ?? 0) === 0
+                            ? "Chưa phân công"
+                            : Number(wo.assignmentCount ?? 0) === 1
+                              ? "Nhân viên"
+                              : "Nhóm"}
+                        </span>
                       </div>
                       <p className="text-sm text-slate-700 leading-snug line-clamp-2">
                         {wo.description?.trim() || (
@@ -213,8 +341,12 @@ export function WorkOrderListPage() {
                           <Calendar size={12} className="text-slate-400 shrink-0" />
                           {fDate(wo.plannedDate)}
                         </span>
+                        {wo.actualDate && <span>Hoàn tất: {fDate(wo.actualDate)}</span>}
                         {wo.estimatedHours != null && Number(wo.estimatedHours) > 0 && (
                           <span>Ước tính ~{wo.estimatedHours}h</span>
+                        )}
+                        {wo.actualHours != null && Number(wo.actualHours) > 0 && (
+                          <span>Thực tế {wo.actualHours}h</span>
                         )}
                       </div>
                       {resubmit && (

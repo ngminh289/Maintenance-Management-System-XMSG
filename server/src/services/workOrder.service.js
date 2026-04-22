@@ -70,9 +70,14 @@ export async function getAll(query) {
   const filters = {
     status: query.status || undefined,
     assetId: query.assetId ? Number(query.assetId) : undefined,
+    locationId: query.locationId ? Number(query.locationId) : undefined,
     priority: query.priority || undefined,
     woSource: query.woSource || undefined,
     assignedTo: query.assignedTo ? Number(query.assignedTo) : undefined,
+    resourceType: query.resourceType || undefined,
+    plannedFrom: query.plannedFrom || undefined,
+    plannedTo: query.plannedTo || undefined,
+    q: query.q || undefined,
   };
   const [items, total] = await Promise.all([
     model.findAll({ ...filters, limit, offset }),

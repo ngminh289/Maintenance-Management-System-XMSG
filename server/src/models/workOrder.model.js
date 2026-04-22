@@ -35,7 +35,8 @@ const COLS = `
   wo.WO_Source      AS woSource,
   wo.Priority       AS priority,
   wo.CreatedBy      AS createdBy,
-  wo.CreatedAt      AS createdAt`;
+  wo.CreatedAt      AS createdAt,
+  (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) AS assignmentCount`;
 
 const BASE_JOIN = `
   FROM WorkOrders wo
@@ -64,9 +65,14 @@ const APPROVAL_LIST_FLAGS = `
 export async function findAll({
   status,
   assetId,
+  locationId,
   priority,
   woSource,
   assignedTo,
+  resourceType,
+  plannedFrom,
+  plannedTo,
+  q,
   limit,
   offset,
 } = {}) {
@@ -81,6 +87,10 @@ export async function findAll({
     where += " AND wo.AssetID = ?";
     params.push(assetId);
   }
+  if (locationId) {
+    where += " AND a.LocationID = ?";
+    params.push(locationId);
+  }
   if (priority) {
     where += " AND wo.Priority = ?";
     params.push(priority);
@@ -93,6 +103,29 @@ export async function findAll({
     join += " JOIN WO_Assignments wa ON wa.WO_ID = wo.WO_ID";
     where += " AND wa.EmployeeID = ?";
     params.push(assignedTo);
+  }
+  if (resourceType === "UNASSIGNED") {
+    where += " AND (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) = 0";
+  }
+  if (resourceType === "INDIVIDUAL") {
+    where += " AND (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) = 1";
+  }
+  if (resourceType === "GROUP") {
+    where += " AND (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) >= 2";
+  }
+  if (plannedFrom) {
+    where += " AND wo.PlannedDate >= ?";
+    params.push(plannedFrom);
+  }
+  if (plannedTo) {
+    where += " AND wo.PlannedDate <= ?";
+    params.push(plannedTo);
+  }
+  const qTrim = q != null ? String(q).trim() : "";
+  if (qTrim) {
+    const like = `%${qTrim}%`;
+    where += " AND (a.AssetName LIKE ? OR l.LocationName LIKE ? OR IFNULL(wo.Description,'') LIKE ? OR CAST(wo.WO_ID AS CHAR) LIKE ?)";
+    params.push(like, like, like, like);
   }
   const pagination = limit != null ? "LIMIT ? OFFSET ?" : "";
   if (limit != null) params.push(limit, offset);
@@ -106,12 +139,17 @@ export async function findAll({
 export async function count({
   status,
   assetId,
+  locationId,
   priority,
   woSource,
   assignedTo,
+  resourceType,
+  plannedFrom,
+  plannedTo,
+  q,
 } = {}) {
   const params = [];
-  let join = "FROM WorkOrders wo";
+  let join = "FROM WorkOrders wo JOIN Assets a ON a.AssetID = wo.AssetID JOIN Locations l ON l.LocationID = a.LocationID";
   let where = "WHERE 1=1";
   if (status) {
     where += " AND wo.Status = ?";
@@ -120,6 +158,10 @@ export async function count({
   if (assetId) {
     where += " AND wo.AssetID = ?";
     params.push(assetId);
+  }
+  if (locationId) {
+    where += " AND a.LocationID = ?";
+    params.push(locationId);
   }
   if (priority) {
     where += " AND wo.Priority = ?";
@@ -133,6 +175,29 @@ export async function count({
     join += " JOIN WO_Assignments wa ON wa.WO_ID = wo.WO_ID";
     where += " AND wa.EmployeeID = ?";
     params.push(assignedTo);
+  }
+  if (resourceType === "UNASSIGNED") {
+    where += " AND (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) = 0";
+  }
+  if (resourceType === "INDIVIDUAL") {
+    where += " AND (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) = 1";
+  }
+  if (resourceType === "GROUP") {
+    where += " AND (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) >= 2";
+  }
+  if (plannedFrom) {
+    where += " AND wo.PlannedDate >= ?";
+    params.push(plannedFrom);
+  }
+  if (plannedTo) {
+    where += " AND wo.PlannedDate <= ?";
+    params.push(plannedTo);
+  }
+  const qTrim = q != null ? String(q).trim() : "";
+  if (qTrim) {
+    const like = `%${qTrim}%`;
+    where += " AND (a.AssetName LIKE ? OR l.LocationName LIKE ? OR IFNULL(wo.Description,'') LIKE ? OR CAST(wo.WO_ID AS CHAR) LIKE ?)";
+    params.push(like, like, like, like);
   }
   const [rows] = await getPool().query(
     `SELECT COUNT(*) AS cnt ${join} ${where}`,
