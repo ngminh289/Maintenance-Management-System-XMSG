@@ -73,6 +73,24 @@ const STATUS_LABEL = {
   REJECTED: "Từ chối",
 };
 
+const MAINTENANCE_TYPE_LABEL = {
+  PREVENTIVE: "Định kỳ",
+  PREDICTIVE: "Dự báo",
+  CORRECTIVE: "Khắc phục",
+};
+
+function dueRangeByPeriod(period) {
+  if (!period) return {};
+  const today = new Date();
+  const end = today.toISOString().slice(0, 10);
+  let startDate = null;
+  if (period === "week") startDate = new Date(today.getTime() - 6 * 86400000);
+  if (period === "month") startDate = new Date(today.getTime() - 29 * 86400000);
+  if (period === "quarter") startDate = new Date(today.getTime() - 89 * 86400000);
+  if (!startDate) return {};
+  return { dueFrom: startDate.toISOString().slice(0, 10), dueTo: end };
+}
+
 function daysUntil(dateStr) {
   if (!dateStr) return null;
   return Math.round(
@@ -285,9 +303,18 @@ export function SchedulesPage() {
   const { user } = useAuth();
   const [schedules, setSchedules] = useState([]);
   const [assets, setAssets] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState({
+    assetId: "",
+    locationId: "",
+    status: "",
+    maintenanceType: "",
+    priority: "",
+    period: "",
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState(null); // lịch đang sửa
   const [deleteItem, setDeleteItem] = useState(null); // lịch đang xóa
@@ -298,13 +325,23 @@ export function SchedulesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await scheduleApi.getAll({ page, limit: LIMIT });
+      const periodRange = dueRangeByPeriod(filters.period);
+      const res = await scheduleApi.getAll({
+        page,
+        limit: LIMIT,
+        ...(filters.assetId && { assetId: filters.assetId }),
+        ...(filters.locationId && { locationId: filters.locationId }),
+        ...(filters.status && { status: filters.status }),
+        ...(filters.maintenanceType && { maintenanceType: filters.maintenanceType }),
+        ...(filters.priority && { priority: filters.priority }),
+        ...periodRange,
+      });
       setSchedules(res.data.data?.items ?? []);
       setTotal(res.data.data?.total ?? 0);
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, filters]);
 
   useEffect(() => {
     load();
@@ -312,7 +349,16 @@ export function SchedulesPage() {
       .getAll({ limit: 200 })
       .then((r) => setAssets(r.data.data?.items ?? []))
       .catch(() => {});
+    assetApi
+      .getLocations()
+      .then((r) => setLocations(r.data.data ?? []))
+      .catch(() => {});
   }, [load]);
+
+  const setFilter = (k, v) => {
+    setFilters((p) => ({ ...p, [k]: v }));
+    setPage(1);
+  };
 
   const handleGenerateWO = async (id) => {
     try {
@@ -506,6 +552,64 @@ export function SchedulesPage() {
           )}
         </div>
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Select value={filters.assetId} onChange={(e) => setFilter("assetId", e.target.value)}>
+          <option value="">Tất cả tài sản</option>
+          {assets.map((a) => (
+            <option key={a.assetId} value={a.assetId}>{a.assetName}</option>
+          ))}
+        </Select>
+        <Select value={filters.locationId} onChange={(e) => setFilter("locationId", e.target.value)}>
+          <option value="">Tất cả khu vực</option>
+          {locations.map((l) => (
+            <option key={l.locationId} value={l.locationId}>
+              {l.parentLocationName ? `${l.parentLocationName} › ${l.locationName}` : l.locationName}
+            </option>
+          ))}
+        </Select>
+        <Select value={filters.status} onChange={(e) => setFilter("status", e.target.value)}>
+          <option value="">Tất cả trạng thái</option>
+          {Object.entries(STATUS_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </Select>
+        <Select value={filters.maintenanceType} onChange={(e) => setFilter("maintenanceType", e.target.value)}>
+          <option value="">Tất cả loại bảo trì</option>
+          {Object.entries(MAINTENANCE_TYPE_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </Select>
+        <Select value={filters.priority} onChange={(e) => setFilter("priority", e.target.value)}>
+          <option value="">Tất cả ưu tiên</option>
+          <option value="LOW">Thấp</option>
+          <option value="MEDIUM">Trung bình</option>
+          <option value="HIGH">Cao</option>
+          <option value="EMERGENCY">Khẩn cấp</option>
+        </Select>
+        <Select value={filters.period} onChange={(e) => setFilter("period", e.target.value)}>
+          <option value="">Thời gian: tất cả</option>
+          <option value="week">Tuần này (7 ngày)</option>
+          <option value="month">Tháng này (30 ngày)</option>
+          <option value="quarter">3 tháng gần đây</option>
+        </Select>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setFilters({
+              assetId: "",
+              locationId: "",
+              status: "",
+              maintenanceType: "",
+              priority: "",
+              period: "",
+            });
+            setPage(1);
+          }}
+        >
+          Xóa bộ lọc
+        </Button>
+      </div>
 
       {canCreateSch && (
         <div className="flex justify-end">

@@ -82,9 +82,12 @@ export async function getAll(query) {
   const { page, limit, offset } = getPagination(query);
   const filters = {
     assetId: query.assetId ? Number(query.assetId) : undefined,
+    locationId: query.locationId ? Number(query.locationId) : undefined,
     status: query.status || undefined,
     maintenanceType: query.maintenanceType || undefined,
     priority: query.priority || undefined,
+    dueFrom: query.dueFrom || undefined,
+    dueTo: query.dueTo || undefined,
   };
   const [items, total] = await Promise.all([
     model.findAll({ ...filters, limit, offset }),

@@ -9,6 +9,8 @@ const COLS = `
   ms.ScheduleID        AS scheduleId,
   ms.AssetID           AS assetId,
   a.AssetName          AS assetName,
+  a.LocationID         AS locationId,
+  l.LocationName       AS locationName,
   at.TypeName          AS assetTypeName,
   ms.ScheduleName      AS scheduleName,
   ms.MaintenanceType   AS maintenanceType,
@@ -29,13 +31,17 @@ const COLS = `
 const BASE_JOIN = `
   FROM MaintenanceSchedules ms
   JOIN Assets a    ON a.AssetID       = ms.AssetID
+  JOIN Locations l ON l.LocationID    = a.LocationID
   JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID`;
 
 export async function findAll({
   assetId,
+  locationId,
   status,
   maintenanceType,
   priority,
+  dueFrom,
+  dueTo,
   limit,
   offset,
 } = {}) {
@@ -44,6 +50,10 @@ export async function findAll({
   if (assetId) {
     where += " AND ms.AssetID = ?";
     params.push(assetId);
+  }
+  if (locationId) {
+    where += " AND a.LocationID = ?";
+    params.push(locationId);
   }
   if (status) {
     where += " AND ms.Status = ?";
@@ -56,6 +66,14 @@ export async function findAll({
   if (priority) {
     where += " AND ms.Priority = ?";
     params.push(priority);
+  }
+  if (dueFrom) {
+    where += " AND ms.NextDueDate >= ?";
+    params.push(dueFrom);
+  }
+  if (dueTo) {
+    where += " AND ms.NextDueDate <= ?";
+    params.push(dueTo);
   }
   const pagination = limit != null ? "LIMIT ? OFFSET ?" : "";
   if (limit != null) {
@@ -70,30 +88,46 @@ export async function findAll({
 
 export async function count({
   assetId,
+  locationId,
   status,
   maintenanceType,
   priority,
+  dueFrom,
+  dueTo,
 } = {}) {
   const params = [];
   let where = "WHERE 1=1";
+  let join = "FROM MaintenanceSchedules ms JOIN Assets a ON a.AssetID = ms.AssetID";
   if (assetId) {
-    where += " AND AssetID = ?";
+    where += " AND ms.AssetID = ?";
     params.push(assetId);
   }
+  if (locationId) {
+    where += " AND a.LocationID = ?";
+    params.push(locationId);
+  }
   if (status) {
-    where += " AND Status = ?";
+    where += " AND ms.Status = ?";
     params.push(status);
   }
   if (maintenanceType) {
-    where += " AND MaintenanceType = ?";
+    where += " AND ms.MaintenanceType = ?";
     params.push(maintenanceType);
   }
   if (priority) {
-    where += " AND Priority = ?";
+    where += " AND ms.Priority = ?";
     params.push(priority);
   }
+  if (dueFrom) {
+    where += " AND ms.NextDueDate >= ?";
+    params.push(dueFrom);
+  }
+  if (dueTo) {
+    where += " AND ms.NextDueDate <= ?";
+    params.push(dueTo);
+  }
   const [rows] = await getPool().query(
-    `SELECT COUNT(*) AS cnt FROM MaintenanceSchedules ${where}`,
+    `SELECT COUNT(*) AS cnt ${join} ${where}`,
     params,
   );
   return Number(rows[0].cnt);
