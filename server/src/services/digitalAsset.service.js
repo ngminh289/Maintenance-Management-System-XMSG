@@ -4,7 +4,7 @@
  *               APPROVED → (new-version) → DRAFT
  * Phiên bản: create → AssetVersions v1 + DigitalAssets; addVersion → v2+ và trỏ file hiện tại.
  * 056+: Chỉ tác giả (UploadedBy) hoặc Admin (Level ≥ 4) được sửa / gửi duyệt / phiên bản / xóa nháp / tag.
- * Đọc danh sách & chi tiết: DRAFT/REJECTED chỉ chủ sở hữu + Admin (Trưởng/Phó PKT không xem nháp người khác).
+ * Đọc danh sách: DRAFT/REJECTED/PENDING chỉ chủ + Admin; APPROVED/ARCHIVED công khai trong kho. Người duyệt xem PENDING ở tab Phê duyệt.
  * Liên quan: models/digitalAsset.model.js, migration 036, 056.
  */
 import { createError } from '../utils/createError.js';
@@ -27,13 +27,16 @@ function assertOwnerOrAdmin(da, ctx, actionLabel) {
   }
 }
 
-/** DRAFT / REJECTED: chỉ người upload hoặc Admin được đọc (404 nếu không). Dùng từ documentFeedback.service.js. */
+/**
+ * Đọc chi tiết: APPROVED/ARCHIVED — công khai trong phạm vi có quyền READ.
+ * DRAFT/REJECTED/PENDING — CHỈ người upload mới thấy, không có ngoại lệ.
+ * Người duyệt xem PENDING ở tab Phê duyệt, không phải mục Tài liệu số.
+ */
 export function assertCanReadDigitalAsset(da, viewer) {
   if (!da) return;
   const st = da.status;
-  if (st !== 'DRAFT' && st !== 'REJECTED') return;
-  const lvl = Number(viewer?.positionLevel ?? 0);
-  if (lvl >= 4) return;
+  if (st === 'APPROVED' || st === 'ARCHIVED') return;
+  // Chỉ người upload mới thấy — không ai khác kể cả Admin / Giám đốc
   const eid = viewer?.sub != null ? Number(viewer.sub) : Number(viewer?.employeeId);
   if (!Number.isFinite(eid)) {
     throw createError('Không tìm thấy tài liệu', 404);
@@ -80,7 +83,7 @@ export async function getAll(query, viewer) {
     q:                    query.q || undefined,
     draftPrivacy: {
       viewerEmployeeId: viewerId,
-      isAdmin: (viewer?.positionLevel ?? 0) >= 4,
+      isAdmin: false, // Chỉ người upload thấy DRAFT/PENDING/REJECTED — không ngoại lệ
     },
   };
   const [items, total] = await Promise.all([

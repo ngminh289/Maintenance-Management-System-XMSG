@@ -1,5 +1,5 @@
 /**
- * OperationsReportsPage.jsx — Báo cáo nghiệp vụ & vận hành (Trưởng phòng + Ban Giám đốc).
+ * OperationsReportsPage.jsx — Báo cáo nghiệp vụ & vận hành (Trưởng/Phó hai phòng + Admin + Ban GĐ).
  * Tab 1: Tỷ lệ hoàn thành checklist định kỳ (ScheduledChecklistSlots / FULFILLED).
  * Tab 2: Thời gian giữa các bước phê duyệt (ApprovalLogs, ActionDate).
  * Tab 3: Xu hướng NG theo thiết bị (ChecklistResults).
@@ -168,10 +168,10 @@ export function OperationsReportsPage() {
         <div className="relative flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
             <Link
-              to="/reports"
+              to="/"
               className="inline-flex items-center gap-1 text-xs font-medium text-indigo-200 hover:text-white mb-3"
             >
-              <ArrowLeft size={14} /> Thống kê & Báo cáo
+              <ArrowLeft size={14} /> Trang chủ
             </Link>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
               Báo cáo nghiệp vụ và vận hành

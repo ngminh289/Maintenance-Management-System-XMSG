@@ -317,7 +317,14 @@ function EmployeesTab({ me }) {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setSaving(true);
     try {
-      await employeeApi.create(form);
+      const pid = Number(form.positionId);
+      const departmentId = departmentIdForPosition(pid);
+      if (departmentId == null) {
+        setErrors({ _: "Chức vụ không gắn được phòng ban" });
+        setSaving(false);
+        return;
+      }
+      await employeeApi.create({ ...form, positionId: pid, departmentId });
       toast.success("Đã thêm nhân viên");
       setCreateOpen(false);
       setForm({});

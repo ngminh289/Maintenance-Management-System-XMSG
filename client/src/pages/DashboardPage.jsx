@@ -28,11 +28,13 @@ import { StatCard }     from '../components/ui/Card.jsx';
 import { Badge }        from '../components/ui/Badge.jsx';
 import { PageLoader }   from '../components/ui/Spinner.jsx';
 import { useAuth }      from '../contexts/AuthContext.jsx';
-import { getDashboardType, TRUONG_CA_SUMMARY } from '../utils/rbac.js';
+import { getDashboardType, TRUONG_CA_SUMMARY, getFirstAllowedReportPath } from '../utils/rbac.js';
 import { fDate, WO_STATUS_LABEL, WO_STATUS_COLOR, WO_PRIORITY_COLOR, WO_PRIORITY_LABEL } from '../utils/format.js';
 
 // ─── OPERATIONAL DASHBOARD (Trưởng ca / Trưởng phòng) ─────────────────────────
 function OperationalDashboard() {
+  const { user } = useAuth();
+  const reportPath = getFirstAllowedReportPath(user);
   const [summary,  setSummary]  = useState(null);
   const [trend,    setTrend]    = useState([]);
   const [faulty,   setFaulty]   = useState([]);
@@ -78,7 +80,9 @@ function OperationalDashboard() {
             { to: '/work-orders', label: 'Phiếu việc', icon: Wrench, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
             { to: '/schedules', label: 'Lịch bảo trì', icon: ClipboardList, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
             { to: '/checklists', label: 'Checklist', icon: CheckCircle, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
-            { to: '/reports', label: 'Báo cáo', icon: BarChart2, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+            ...(reportPath
+              ? [{ to: reportPath, label: 'Báo cáo', icon: BarChart2, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' }]
+              : []),
           ].map(({ to, label, icon: Icon, className }) => (
             <Link
               key={to}
@@ -203,6 +207,8 @@ function OperationalDashboard() {
 
 // ─── DIRECTOR DASHBOARD (Ban Giám đốc) ───────────────────────────────────────
 function DirectorDashboard() {
+  const { user } = useAuth();
+  const reportPath = getFirstAllowedReportPath(user) ?? '/reports/operations';
   const [summary, setSummary] = useState(null);
   const [trend,   setTrend]   = useState([]);
   const [loading, setLoading] = useState(true);
@@ -284,11 +290,11 @@ function DirectorDashboard() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-gray-900 text-sm">Xem báo cáo chi tiết</h3>
-          <Link to="/reports" className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:underline">
-            Báo cáo đầy đủ <ArrowRight size={14} />
+          <Link to={reportPath} className="flex items-center gap-1 text-sm font-semibold text-blue-600 hover:underline">
+            Mở báo cáo <ArrowRight size={14} />
           </Link>
         </div>
-        <p className="text-sm text-gray-500 mt-2">Truy cập trang Thống kê & Báo cáo để xem chi tiết downtime, hiệu suất và tuân thủ kế hoạch bảo trì.</p>
+        <p className="text-sm text-gray-500 mt-2">Báo cáo nghiệp vụ, tài nguyên và hiệu suất tài sản — từ menu Báo cáo hoặc liên kết trên.</p>
       </div>
     </div>
   );

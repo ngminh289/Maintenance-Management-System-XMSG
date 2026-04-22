@@ -19,7 +19,9 @@ export function createEmployeeSchema(body) {
   if (!email?.trim() || !EMAIL_RE.test(email)) return 'Email không hợp lệ';
   if (!password || password.length < 8) return 'Mật khẩu phải có ít nhất 8 ký tự';
   if (!positionId || isNaN(Number(positionId))) return 'Chức vụ không hợp lệ';
-  if (!departmentId || isNaN(Number(departmentId))) return 'Phòng ban không hợp lệ';
+  if (departmentId != null && departmentId !== '' && isNaN(Number(departmentId))) {
+    return 'Phòng ban không hợp lệ';
+  }
   const craftErr = validateCraftLevel(craftLevel);
   if (craftErr) return craftErr;
   return null;

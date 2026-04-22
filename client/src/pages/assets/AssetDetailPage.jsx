@@ -5,13 +5,16 @@
  *         ≠ mốc sau PM (LastMaintenanceTotal — reset khi PM theo giờ xong).
  * Liên quan: AssetForm.jsx, asset.model.js, asset.api.js
  * Ảnh: chỉ role ASSET:UPDATE mới upload/xóa được.
+ * Tài liệu số: GET /digital-assets?assetId=… (kho chỉ hiện đã duyệt + nháp của user — server).
  */
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Pencil, QrCode, ArrowLeft, Gauge, Bell, Wrench,
   Info, Settings, Clock, Images, Trash2, ImagePlus, X,
+  FileText, ExternalLink,
 } from 'lucide-react';
+import { api }        from '../../api/index.js';
 import { assetApi }   from '../../api/asset.api.js';
 import { Badge }      from '../../components/ui/Badge.jsx';
 import { Card }       from '../../components/ui/Card.jsx';
@@ -26,7 +29,10 @@ import {
 } from '../../utils/format.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { canDo }   from '../../utils/rbac.js';
+import { documentFilePublicUrl } from '../../utils/documentUrl.js';
 import toast from 'react-hot-toast';
+
+const FILE_API_BASE = import.meta.env.VITE_API_BASE;
 
 const PREDICTIVE_EVENT_LABEL = {
   WARN_DUE_SOON:             'Cảnh báo sắp tới ngưỡng PM',
@@ -68,6 +74,7 @@ export function AssetDetailPage() {
   const [maintHistory,    setMaintHistory]    = useState([]);
   const [types,           setTypes]           = useState([]);
   const [locs,            setLocs]            = useState([]);
+  const [linkedDocs,      setLinkedDocs]      = useState([]);
   const [loading,         setLoading]         = useState(true);
 
   const [editOpen,    setEditOpen]    = useState(false);
@@ -110,6 +117,19 @@ export function AssetDetailPage() {
       setTypes(t.data.data ?? []);
       setLocs(l.data.data  ?? []);
     }).catch(() => {});
+  }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get('/digital-assets', { params: { assetId: id, limit: 100 } });
+        if (!cancelled) setLinkedDocs(res.data.data?.items ?? []);
+      } catch {
+        if (!cancelled) setLinkedDocs([]);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [id]);
 
   const handleRecordReading = async () => {
@@ -326,6 +346,53 @@ export function AssetDetailPage() {
           )}
         </Card>
       </div>
+
+      <Card title={<span className="flex items-center gap-2"><FileText size={16} /> Tài liệu số liên quan</span>}>
+        {linkedDocs.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-6">Chưa có tài liệu đính kèm (hoặc bạn chưa có quyền xem trong kho).</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-gray-100">
+                <tr>
+                  {['Tài liệu', 'Trạng thái', ''].map((h) => (
+                    <th key={h} className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {linkedDocs.map((d) => {
+                  const href = documentFilePublicUrl(d.filePath, FILE_API_BASE);
+                  const canOpen = href && (d.status === 'APPROVED' || d.status === 'ARCHIVED');
+                  return (
+                    <tr key={d.digitalAssetId}>
+                      <td className="py-2 pr-3 font-medium text-gray-900">{d.fileName}</td>
+                      <td className="py-2 pr-3 text-gray-600">{d.status === 'APPROVED' ? 'Đã duyệt' : d.status === 'ARCHIVED' ? 'Lưu trữ' : d.status === 'DRAFT' ? 'Bản nháp' : d.status === 'REJECTED' ? 'Từ chối' : d.status}</td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {canOpen ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+                            onClick={() => { void api.post(`/digital-assets/${d.digitalAssetId}/view-log`).catch(() => {}); }}
+                          >
+                            Mở file <ExternalLink size={12} />
+                          </a>
+                        ) : (
+                          <Link to="/documents" className="text-xs font-semibold text-blue-600 hover:underline">
+                            Kho tài liệu
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* ── Ảnh thiết bị ── */}
       <Card

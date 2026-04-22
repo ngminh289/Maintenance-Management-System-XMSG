@@ -2,7 +2,8 @@
  * digitalAsset.model.js — SQL thuần cho DigitalAssets + AssetVersions.
  * DAM: mỗi tài liệu — v1 ghi vào AssetVersions ngay khi create; addVersion tăng số + lưu file mới.
  * UNIQUE (DigitalAssetID, VersionNumber); migration 036 backfill + ràng buộc.
- * Riêng tư bản nháp: buildListQuery nhận draftPrivacy (viewer + admin) — chỉ chủ DRAFT/REJECTED thấy trong list.
+ * Kho (draftPrivacy): APPROVED/ARCHIVED mọi người; DRAFT/REJECTED/PENDING chỉ chủ + Admin.
+ * Người duyệt (Trưởng/Phó PKT) xem PENDING ở tab Phê duyệt, không phải mục Tài liệu số.
  * Dùng trong: services/digitalAsset.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -93,13 +94,30 @@ function buildListQuery(filters) {
     const isAdmin = draftPrivacy.isAdmin ? 1 : 0;
     const vid = Number(draftPrivacy.viewerEmployeeId);
     where += ` AND (
-      da.Status NOT IN ('DRAFT', 'REJECTED')
+      da.Status IN ('APPROVED', 'ARCHIVED')
       OR ? = 1
-      OR da.UploadedBy = ?
+      OR (da.Status IN ('DRAFT', 'REJECTED', 'PENDING') AND da.UploadedBy = ?)
     )`;
     params.push(isAdmin, vid);
   }
   return { join, where, params };
+}
+
+/** Tra cứu tài liệu theo basename file (GET /uploads/documents/:filename) — ghi view-log. */
+export async function findDigitalAssetIdByDocumentBasename(basename) {
+  const bn = basename != null ? String(basename).trim() : '';
+  if (!bn) return null;
+  const likeEnd = `%/${bn}`;
+  const likeWin = `%\\\\${bn}`;
+  const likeUploads = `uploads/documents/${bn}`;
+  const [rows] = await getPool().query(
+    `SELECT da.DigitalAssetID AS id
+     FROM DigitalAssets da
+     WHERE da.FilePath = ? OR da.FilePath LIKE ? OR da.FilePath LIKE ? OR da.FilePath = ?
+     LIMIT 1`,
+    [bn, likeEnd, likeWin, likeUploads],
+  );
+  return rows[0]?.id ?? null;
 }
 
 export async function findAll(filters = {}) {

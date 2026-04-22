@@ -1,6 +1,6 @@
 /**
  * DocumentsPage.jsx — Kho tài liệu số: upload/tag/danh mục (CV KTS = Trưởng/Phó PKT — 057); thêm phê duyệt + xóa cứng cho PKT/Admin.
- * Chỉnh sửa bản nháp theo chủ sở hữu — kiểm tra thêm ở API.
+ * Danh sách: PENDING/DRAFT/REJECTED của chính user; APPROVED/ARCHIVED công khai; PENDING người khác không hiện.
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -462,7 +462,7 @@ export function DocumentsPage() {
             >
               <option value="">— Tất cả —</option>
               <option value="DRAFT">Bản nháp</option>
-              <option value="PENDING">Chờ duyệt</option>
+              <option value="PENDING">Chờ duyệt (của tôi)</option>
               <option value="APPROVED">Đã duyệt</option>
               <option value="REJECTED">Từ chối</option>
               <option value="ARCHIVED">Lưu trữ</option>

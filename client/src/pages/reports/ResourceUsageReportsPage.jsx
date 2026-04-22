@@ -1,6 +1,6 @@
 /**
  * ResourceUsageReportsPage.jsx — Báo cáo sử dụng tài nguyên (6 tab).
- * RBAC: Chuyên viên KTS (L2), Trưởng phòng (L3+PID6), Giám đốc (L5+).
+ * RBAC: CV KTS (L2), Trưởng/Phó hai phòng (L3), Admin (L4+), Ban GĐ.
  * Dữ liệu: ChecklistResults, AssetQrAccessLogs, DigitalAssetViewLogs, DigitalAssetFeedback, AssetVersions.
  * Liên quan: api/stats.api.js, rbac (report-resource-usage).
  */
@@ -121,9 +121,9 @@ export function ResourceUsageReportsPage() {
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3 min-w-0">
             <Link
-              to="/reports"
+              to="/"
               className="mt-0.5 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 border border-white/10 transition-colors flex-shrink-0"
-              title="Về thống kê tổng hợp"
+              title="Về Dashboard"
             >
               <ArrowLeft size={18} />
             </Link>

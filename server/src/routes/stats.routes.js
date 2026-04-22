@@ -1,9 +1,9 @@
 /**
  * stats.routes.js — /api/stats (Dashboard & Báo cáo).
  * project.rule Phân hệ 6: thống kê tài sản, phiếu việc, checklist.
- * /performance — BFD 6.4: chỉ Trưởng phòng (L3, PID 6) và Giám đốc (L5+).
- * /resource-usage — CV KTS (L2), Trưởng phòng, Giám đốc.
- * /checklist-schedule-compliance, /approval-step-latencies, /checklist-ng-by-asset — chỉ Trưởng phòng + Ban GĐ.
+ * /performance — Trưởng/Phó bảo trì + Trưởng/Phó PKT (L3, PID 6/8/7/9), Admin (L4+), Ban GĐ.
+ * /resource-usage — thêm CV KTS (L2).
+ * /checklist-schedule-compliance, /approval-step-latencies, /checklist-ng-by-asset — cùng tuyến TP hai phòng + Admin + GĐ.
  * Liên quan: controllers/stats.controller.js.
  */
 import { Router } from 'express';
@@ -17,51 +17,51 @@ statsRouter.use(requireAuth);
 
 const TP_BAO_TRI = [6, 8];
 const TUYEN_PKT = [7, 9];
+const TP_HEAD_BOTH = [...TP_BAO_TRI, ...TUYEN_PKT];
 
-/** Báo cáo hiệu suất: Trưởng/Phó phòng Bảo trì hoặc Ban GĐ. */
+/** Báo cáo hiệu suất: Trưởng/Phó hai phòng (L3), Admin (L4+), Ban GĐ. */
 function requirePerformanceAccess(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
-  const allowed = (lvl === 3 && TP_BAO_TRI.includes(pid)) || lvl >= 5;
+  const allowed = lvl >= 4 || (lvl === 3 && TP_HEAD_BOTH.includes(pid));
   if (!allowed) {
     return fail(
       res,
-      'Chỉ Trưởng phòng hoặc Ban Giám đốc được xem báo cáo hiệu suất tài sản',
+      'Chỉ Trưởng/Phó phòng (Bảo trì hoặc Kỹ thuật-CN), Quản trị hoặc Ban Giám đốc được xem báo cáo hiệu suất tài sản',
       403,
     );
   }
   return next();
 }
 
-/** Báo cáo tài nguyên: L2, Trưởng/Phó (6/7/8/9) hoặc Ban GĐ. */
+/** Báo cáo tài nguyên: L2 (CV KTS), Trưởng/Phó (6/7/8/9), Admin, Ban GĐ. */
 function requireKTSorTruongPhongOrBGD(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
-  const l3ok =
-    lvl === 3 && (TP_BAO_TRI.includes(pid) || TUYEN_PKT.includes(pid));
-  const allowed = lvl === 2 || l3ok || lvl >= 5;
+  const l3ok = lvl === 3 && TP_HEAD_BOTH.includes(pid);
+  const allowed = lvl === 2 || l3ok || lvl >= 4;
   if (!allowed) {
     return fail(
       res,
-      'Chỉ Chuyên viên KTS, Trưởng phòng hoặc Ban Giám đốc được xem báo cáo này',
+      'Chỉ Chuyên viên KTS, Trưởng/Phó phòng (hai tuyến), Quản trị hoặc Ban Giám đốc được xem báo cáo này',
       403,
     );
   }
   return next();
 }
 
-/** Báo cáo nghiệp vụ bảo trì: Trưởng/Phó phòng bảo trì (6,8) hoặc Ban GĐ. */
+/** Báo cáo nghiệp vụ checklist: Trưởng/Phó hai phòng, Admin, Ban GĐ. */
 function requireTruongPhongOrBGD(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
-  const allowed = (lvl === 3 && TP_BAO_TRI.includes(pid)) || lvl >= 5;
+  const allowed = lvl >= 4 || (lvl === 3 && TP_HEAD_BOTH.includes(pid));
   if (!allowed) {
     return fail(
       res,
-      'Chỉ Trưởng phòng hoặc Ban Giám đốc được xem báo cáo nghiệp vụ checklist này',
+      'Chỉ Trưởng/Phó phòng (Bảo trì hoặc Kỹ thuật-CN), Quản trị hoặc Ban Giám đốc được xem báo cáo nghiệp vụ checklist này',
       403,
     );
   }

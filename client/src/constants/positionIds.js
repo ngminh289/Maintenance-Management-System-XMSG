@@ -4,6 +4,9 @@
  * 056–058: PKT 7,9 — KTS + duyệt DAM; WO chỉ READ (058).
  * Liên quan: utils/rbac.js, server/approval.
  */
+/** Giám đốc / Ban GĐ — gắn DepartmentID 3 (Ban giám đốc), migration 040. */
+export const PID_GIAM_DOC = 5;
+
 export const PID_TRUONG_CA = 3;
 export const PID_TRUONG_PHONG_BAO_TRI = 6;
 export const PID_TRUONG_PHONG_KT = 7;

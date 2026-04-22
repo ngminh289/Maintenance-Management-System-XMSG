@@ -3,8 +3,7 @@
  * RoleGuard bảo vệ từng nhóm route theo RBAC (utils/rbac.js).
  * /checklists/history — danh sách + modal chi tiết kết quả checklist.
  * /documents/feedback-inbox — hàng đợi phản hồi tài liệu (chỉ Chuyên viên KTS).
- * /reports/operations — báo cáo nghiệp vụ & vận hành (Trưởng phòng + Ban GĐ).
- * /reports/resource-usage — CV KTS, Trưởng phòng, GĐ. /reports/performance — chỉ Trưởng phòng, GĐ.
+ * /reports → chuyển hướng /reports/operations. Ba tab báo cáo: operations, resource-usage, performance (rbac.js + stats.routes).
  */
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster }          from 'react-hot-toast';
@@ -30,7 +29,6 @@ import { EmployeesPage }        from './pages/employees/EmployeesPage.jsx';
 import { SchedulesPage }        from './pages/schedules/SchedulesPage.jsx';
 import { DocumentsPage }        from './pages/documents/DocumentsPage.jsx';
 import { DocumentFeedbackInboxPage } from './pages/documents/DocumentFeedbackInboxPage.jsx';
-import { ReportsPage }             from './pages/reports/ReportsPage.jsx';
 import { ReportPerformancePage }  from './pages/reports/ReportPerformancePage.jsx';
 import { OperationsReportsPage }  from './pages/reports/OperationsReportsPage.jsx';
 import { ResourceUsageReportsPage } from './pages/reports/ResourceUsageReportsPage.jsx';
@@ -107,12 +105,9 @@ export default function App() {
               <Route path="/approvals" element={<ApprovalsPage />} />
             </Route>
 
-            {/* Báo cáo tổng hợp — CV KTS, TC, Trưởng phòng, Admin, Ban GĐ */}
-            <Route element={<RoleGuard routeKey="reports" />}>
-              <Route path="/reports" element={<ReportsPage />} />
-            </Route>
+            <Route path="/reports" element={<Navigate to="/reports/operations" replace />} />
 
-            {/* Báo cáo hiệu suất BFD 6.4 — CV KTS, Trưởng phòng, Giám đốc */}
+            {/* Báo cáo hiệu suất — Trưởng/Phó hai phòng, Admin, Ban GĐ */}
             <Route element={<RoleGuard routeKey="report-performance" />}>
               <Route path="/reports/performance" element={<ReportPerformancePage />} />
             </Route>

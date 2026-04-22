@@ -58,11 +58,9 @@ export async function create({ fullName, username, email, phone, password, posit
   const existing = await model.findByUsernameOrEmail(username, email);
   if (existing) throw createError("Username hoặc email đã tồn tại", 409);
 
+  // Phòng ban chỉ theo chức vụ (orgUnits.js) — không tin body.departmentId.
   const resolvedDept = departmentIdForPosition(Number(positionId));
   if (resolvedDept == null) throw createError("Chức vụ không hợp lệ.", 400);
-  if (departmentId != null && Number(departmentId) !== resolvedDept) {
-    throw createError("Phòng ban không khớp với chức vụ đã chọn.", 400);
-  }
 
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const id = await model.create({
@@ -89,10 +87,8 @@ export async function update(id, fields) {
   if (expectedDept == null) throw createError("Chức vụ không hợp lệ.", 400);
 
   const payload = { ...fields };
-  if (fields.positionId !== undefined) payload.departmentId = expectedDept;
-  if (fields.departmentId !== undefined && Number(fields.departmentId) !== expectedDept) {
-    throw createError("Phòng ban không khớp với chức vụ đã chọn.", 400);
-  }
+  delete payload.departmentId;
+  payload.departmentId = expectedDept;
   if (payload.craftLevel !== undefined) payload.craftLevel = payload.craftLevel ? Number(payload.craftLevel) : null;
 
   await model.update(id, payload);

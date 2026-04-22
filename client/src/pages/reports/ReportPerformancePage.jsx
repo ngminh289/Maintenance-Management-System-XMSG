@@ -1,7 +1,7 @@
 /**
  * ReportPerformancePage.jsx — BFD 6.4: Báo cáo hiệu suất & tình trạng tài sản.
  * Gồm: MTBF, MTTR, Tỷ lệ dừng máy, Kế hoạch vs Thực tế, Pareto Downtime.
- * RBAC: chỉ Trưởng phòng (L3, PID 6) và Giám đốc (L5+).
+ * RBAC: Trưởng/Phó bảo trì & PKT (L3), Quản trị (L4+), Ban GĐ — không gồm CV KTS.
  * Liên quan: api/stats.api.js, utils/rbac.js (canAccessPerformanceReport), routes stats.routes.js.
  */
 import { useEffect, useState, useCallback } from 'react';

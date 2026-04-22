@@ -192,7 +192,11 @@ export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuc
           error={errors.locationId}
         >
           <option value="">— Chọn vị trí —</option>
-          {locations.map(l => <option key={l.locationId} value={l.locationId}>{l.locationName}</option>)}
+          {locations.map((l) => (
+            <option key={l.locationId} value={l.locationId}>
+              {l.parentLocationName ? `${l.parentLocationName} › ${l.locationName}` : l.locationName}
+            </option>
+          ))}
         </Select>
         <Select
           label="Trạng thái"
