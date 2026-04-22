@@ -41,8 +41,8 @@ export const remove = asyncHandler(async (req, res) => {
  */
 export const generateQR = asyncHandler(async (req, res) => {
   const asset = await service.getById(req.params.id);
-  const baseUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-  const qrPayload = `${baseUrl}/checklist/scan/${asset.assetId}`;
+  const baseUrl = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
+  const qrPayload = `${baseUrl}/checklists/scan/${asset.assetId}`;
   const format = req.query.format || 'png';
 
   if (format === 'svg') {

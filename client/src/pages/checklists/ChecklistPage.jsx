@@ -11,7 +11,7 @@
  * Mở file tài liệu: POST /digital-assets/:id/view-log (Báo cáo sử dụng tài nguyên); không chặn mở tab mới nếu log lỗi.
  */
 import { useState, useMemo, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   QrCode,
   FileText,
@@ -65,6 +65,7 @@ const INPUT_TYPE_LABEL = {
 
 export function ChecklistPage() {
   const { user } = useAuth();
+  const { assetId: assetIdFromPath } = useParams();
   const [searchParams] = useSearchParams();
   const canSubmitChecklist = canDo(user, "CHECKLIST_RESULT:CREATE");
   const canOpenAssetPage = canAccess(user, "assets");
@@ -85,7 +86,8 @@ export function ChecklistPage() {
   const [activeTagFilter, setActiveTagFilter] = useState("ALL");
   /** WO từ lịch — truyền từ WorkOrderDetail (?woId=) để nộp checklist gắn phiếu. */
   const linkedWoId = searchParams.get("woId")?.trim() || "";
-  const assetIdFromUrl = searchParams.get("assetId")?.trim() || "";
+  const assetIdFromQuery = searchParams.get("assetId")?.trim() || "";
+  const assetIdFromUrl = (assetIdFromPath || assetIdFromQuery || "").trim();
 
   useEffect(() => {
     if (assetIdFromUrl) setAssetInput(assetIdFromUrl);
