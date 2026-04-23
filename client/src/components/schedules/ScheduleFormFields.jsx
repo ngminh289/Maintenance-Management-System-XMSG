@@ -14,6 +14,7 @@ export const EMPTY_SCHEDULE_FORM = {
   startDate: '',
   endDate: '',
   priority: 'MEDIUM',
+  checklistTemplateId: '',
 };
 
 const UNIT_LABEL = {
@@ -51,6 +52,10 @@ export function mapScheduleToForm(schedule) {
     startDate: schedule?.startDate ? schedule.startDate.split('T')[0] : '',
     endDate: schedule?.endDate ? schedule.endDate.split('T')[0] : '',
     priority: schedule?.priority ?? 'MEDIUM',
+    checklistTemplateId:
+      schedule?.checklistTemplateId != null
+        ? String(schedule.checklistTemplateId)
+        : '',
   };
 }
 
@@ -89,6 +94,9 @@ export function buildSchedulePayload(form) {
     startDate: form.startDate,
     endDate: form.endDate || undefined,
     priority: (form.priority || 'MEDIUM').toUpperCase(),
+    checklistTemplateId: form.checklistTemplateId
+      ? Number(form.checklistTemplateId)
+      : undefined,
   };
 }
 
@@ -97,6 +105,7 @@ export function ScheduleFormFields({
   setF,
   patchForm,
   assets,
+  checklistTemplates = [],
   fixedAsset = null,
 }) {
   const isPredictive = form.scheduleKind === 'predictive';
@@ -105,6 +114,20 @@ export function ScheduleFormFields({
     if (fixedAsset) return [fixedAsset];
     return assets;
   }, [assets, fixedAsset]);
+
+  const selectedAssetTypeId = useMemo(() => {
+    const selectedAsset = visibleAssets.find(
+      (a) => String(a.assetId) === String(form.assetId),
+    );
+    return Number(selectedAsset?.assetTypeId) || null;
+  }, [visibleAssets, form.assetId]);
+
+  const templateOptions = useMemo(() => {
+    if (!selectedAssetTypeId) return [];
+    return checklistTemplates.filter(
+      (tpl) => Number(tpl.assetTypeId) === Number(selectedAssetTypeId),
+    );
+  }, [checklistTemplates, selectedAssetTypeId]);
 
   const handleAssetChange = async (assetId) => {
     setF('assetId', assetId);
@@ -247,6 +270,19 @@ export function ScheduleFormFields({
           <option value="MEDIUM">Trung bình</option>
           <option value="HIGH">Cao</option>
           <option value="URGENT">Khẩn</option>
+        </Select>
+        <Select
+          label="Checklist template (tuỳ chọn)"
+          value={form.checklistTemplateId ?? ''}
+          onChange={(e) => setF('checklistTemplateId', e.target.value)}
+          disabled={!selectedAssetTypeId}
+        >
+          <option value="">-- Không gắn template cố định --</option>
+          {templateOptions.map((tpl) => (
+            <option key={tpl.templateId} value={tpl.templateId}>
+              {tpl.templateName}
+            </option>
+          ))}
         </Select>
       </div>
 

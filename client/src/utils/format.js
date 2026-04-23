@@ -80,6 +80,7 @@ export const WO_PRIORITY_COLOR = {
 export const WO_SOURCE_LABEL = {
   SCHEDULE: "Theo lịch",
   PREDICTIVE: "Dự báo giờ",
+  PREDICTIVE_SCHEDULE: "Dự báo từ lịch",
   MANUAL: "Thủ công",
   CORRECTIVE: "Sự cố / khắc phục",
 };

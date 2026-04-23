@@ -18,6 +18,7 @@ import {
 import { scheduleApi }    from "../../api/schedule.api.js";
 import { assetApi }       from "../../api/asset.api.js";
 import { assetTypeApi }   from "../../api/assetType.api.js";
+import { checklistApi }   from "../../api/checklist.api.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
@@ -303,6 +304,7 @@ export function SchedulesPage() {
   const { user } = useAuth();
   const [schedules, setSchedules] = useState([]);
   const [assets, setAssets] = useState([]);
+  const [checklistTemplates, setChecklistTemplates] = useState([]);
   const [locations, setLocations] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -352,6 +354,10 @@ export function SchedulesPage() {
     assetApi
       .getLocations()
       .then((r) => setLocations(r.data.data ?? []))
+      .catch(() => {});
+    checklistApi
+      .getTemplates()
+      .then((r) => setChecklistTemplates(r.data.data ?? []))
       .catch(() => {});
   }, [load]);
 
@@ -638,6 +644,7 @@ export function SchedulesPage() {
                     "Tên lịch",
                     "Tài sản",
                     "Kiểu",
+                    "Checklist",
                     "Trạng thái",
                     "Tần suất",
                     "Ngày bắt đầu",
@@ -681,6 +688,13 @@ export function SchedulesPage() {
                           const b = SCHEDULE_KIND_BADGE[sk];
                           return <Badge color={b.color}>{b.label}</Badge>;
                         })()}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {s.checklistTemplateName ? (
+                          <Badge color="indigo">{s.checklistTemplateName}</Badge>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">Chưa gắn template</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <Badge color={STATUS_COLOR[s.status] ?? "gray"}>
@@ -784,6 +798,7 @@ export function SchedulesPage() {
             setF={setF}
             patchForm={patchForm}
             assets={assets}
+            checklistTemplates={checklistTemplates}
           />
           <div className="flex justify-end gap-3 pt-2">
             <Button
@@ -813,6 +828,7 @@ export function SchedulesPage() {
             setF={setF}
             patchForm={patchForm}
             assets={assets}
+            checklistTemplates={checklistTemplates}
           />
           <div className="flex justify-end gap-3 pt-2">
             <Button

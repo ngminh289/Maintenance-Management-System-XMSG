@@ -418,8 +418,13 @@ export function WorkOrderDetailPage() {
   const checklistForAssetHref = useMemo(() => {
     if (!wo) return "/checklists";
     const q = new URLSearchParams({ assetId: String(wo.assetId) });
+    const source = String(wo.woSource || "").toUpperCase();
+    const scheduleChecklistSource =
+      source === "SCHEDULE" ||
+      source === "PREDICTIVE_SCHEDULE" ||
+      (source === "PREDICTIVE" && wo.scheduleId != null);
     if (
-      String(wo.woSource || "").toUpperCase() === "SCHEDULE" &&
+      scheduleChecklistSource &&
       wo.scheduleId != null
     ) {
       q.set("woId", String(wo.woId));
@@ -472,6 +477,16 @@ export function WorkOrderDetailPage() {
     ["IN_PROGRESS", "PAUSED"].includes(wo.status) &&
     canUpdate &&
     (amGroupLeader || isTcPlus);
+  const source = String(wo.woSource || "").toUpperCase();
+  const hasChecklistRequirement =
+    (source === "SCHEDULE" ||
+      source === "PREDICTIVE_SCHEDULE" ||
+      (source === "PREDICTIVE" && wo.scheduleId != null)) &&
+    wo.scheduleId != null &&
+    !["COMPLETED", "CANCELLED"].includes(wo.status);
+  const checklistSlotStatus = String(wo.checklistSlot?.status || "").toUpperCase();
+  const checklistDueDate = wo.checklistSlot?.dueDate || null;
+  const checklistDone = checklistSlotStatus === "FULFILLED";
 
   const twoStepApproval = Number(pendingApprovalLog?.totalLevels) === 2;
   const tpStepName =
@@ -623,9 +638,7 @@ export function WorkOrderDetailPage() {
         </div>
       </div>
 
-      {String(wo.woSource || "").toUpperCase() === "SCHEDULE" &&
-        wo.scheduleId != null &&
-        !["COMPLETED", "CANCELLED"].includes(wo.status) && (
+      {hasChecklistRequirement && (
           <div className="flex gap-3 rounded-xl border border-teal-200 bg-teal-50/90 px-4 py-3 text-sm text-teal-950">
             <ClipboardList
               size={18}
@@ -633,11 +646,25 @@ export function WorkOrderDetailPage() {
               aria-hidden
             />
             <div>
-              <p className="font-bold text-teal-900">Checklist định kỳ đính kèm</p>
-              <p className="mt-1 leading-relaxed">
-                Phiếu này có checklist đính kèm, vui lòng thực hiện checklist hiện
-                trường.
+              <p className="font-bold text-teal-900">
+                {String(wo.woSource || "").toUpperCase() === "PREDICTIVE_SCHEDULE"
+                || (String(wo.woSource || "").toUpperCase() === "PREDICTIVE" && wo.scheduleId != null)
+                  ? "Checklist dự báo đính kèm"
+                  : "Checklist định kỳ đính kèm"}
               </p>
+              <p className="mt-1 leading-relaxed">
+                {checklistDone
+                  ? "Checklist đã được thực hiện và xác nhận."
+                  : "Checklist chưa được thực hiện. Vui lòng hoàn tất checklist hiện trường cho phiếu này."}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge color={checklistDone ? "green" : "yellow"}>
+                  {checklistDone ? "Đã thực hiện" : "Chưa thực hiện"}
+                </Badge>
+                {checklistDueDate && (
+                  <Badge color="blue">Hạn checklist: {fDate(checklistDueDate)}</Badge>
+                )}
+              </div>
               <Link
                 to={checklistForAssetHref}
                 className="inline-block mt-2 text-sm font-semibold text-teal-900 underline hover:no-underline"

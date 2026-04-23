@@ -16,6 +16,7 @@ import * as notifService from "./notification.service.js";
 import * as approvalSvc from "./approval.service.js";
 import * as approvalLogModel from "../models/approvalLog.model.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
+import * as checklistTemplateModel from "../models/checklistTemplate.model.js";
 
 /** Số ngày cảnh báo trước khi đến hạn */
 const WARN_DAYS = 7;
@@ -105,12 +106,27 @@ export async function getById(id) {
 export async function create(data, createdBy) {
   const asset = await assetModel.findById(data.assetId);
   if (!asset) throw createError("Không tìm thấy tài sản", 404);
+  const checklistTemplateId =
+    data.checklistTemplateId == null || data.checklistTemplateId === ""
+      ? null
+      : Number(data.checklistTemplateId);
+  if (checklistTemplateId != null) {
+    const tpl = await checklistTemplateModel.findById(checklistTemplateId);
+    if (!tpl) throw createError("Không tìm thấy checklist template", 404);
+    if (Number(tpl.assetTypeId) !== Number(asset.assetTypeId)) {
+      throw createError(
+        "Checklist template không thuộc loại tài sản của lịch bảo trì này.",
+        400,
+      );
+    }
+  }
   const normalized = {
     ...data,
     scheduleName: data.scheduleName?.trim() || "",
     maintenanceType: data.maintenanceType?.toUpperCase(),
     frequencyUnit: data.frequencyUnit?.toUpperCase(),
     priority: data.priority?.toUpperCase(),
+    checklistTemplateId,
     status: "DRAFT", // Phải được phê duyệt trước khi kích hoạt
     createdBy,
   };
@@ -172,6 +188,25 @@ export async function update(id, data, opts = {}) {
   }
   const payload = { ...data };
   delete payload.status;
+  if (payload.checklistTemplateId !== undefined) {
+    if (payload.checklistTemplateId === "" || payload.checklistTemplateId == null) {
+      payload.checklistTemplateId = null;
+    } else {
+      const tid = Number(payload.checklistTemplateId);
+      if (!Number.isFinite(tid) || tid <= 0) {
+        throw createError("ChecklistTemplateID không hợp lệ", 400);
+      }
+      const tpl = await checklistTemplateModel.findById(tid);
+      if (!tpl) throw createError("Không tìm thấy checklist template", 404);
+      if (Number(tpl.assetTypeId) !== Number(schedule.assetTypeId)) {
+        throw createError(
+          "Checklist template không thuộc loại tài sản của lịch bảo trì này.",
+          400,
+        );
+      }
+      payload.checklistTemplateId = tid;
+    }
+  }
   await model.update(id, payload);
   return model.findById(id);
 }

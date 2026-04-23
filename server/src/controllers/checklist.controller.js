@@ -46,6 +46,7 @@ export const getQRInfo = asyncHandler(async (req, res) =>
     await service.getQRInfo(req.params.assetId, {
       employeeId: req.user.sub,
       positionLevel: req.user.positionLevel,
+      woId: req.query.woId,
     }),
   ));
 

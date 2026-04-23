@@ -76,6 +76,7 @@ export function ChecklistPage() {
   const [maintHistory, setMaintHistory] = useState(null);
   const [maintLoading, setMaintLoading] = useState(false);
   const [overallStatus, setOverallStatus] = useState("OK");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [notes, setNotes] = useState("");
   const [readingValue, setReadingValue] = useState("");
   const [readingInputError, setReadingInputError] = useState("");
@@ -105,9 +106,18 @@ export function ChecklistPage() {
     setReadingInputError("");
     (async () => {
       try {
-        const res = await checklistApi.getQRInfo(assetIdFromUrl);
+        const res = await checklistApi.getQRInfo(assetIdFromUrl, {
+          ...(linkedWoId ? { woId: linkedWoId } : {}),
+        });
         if (cancelled) return;
         setQrData(res.data.data);
+        setSelectedTemplateId(
+          String(
+            res.data.data?.preferredTemplateId ??
+              res.data.data?.checklistTemplate?.templateId ??
+              "",
+          ),
+        );
         setActiveTab(linkedWoId ? "checklist" : "device");
         setMaintHistory(null);
         toast.success(`Đã tải thông tin: ${res.data.data.asset.assetName}`);
@@ -166,13 +176,25 @@ export function ChecklistPage() {
     );
   }, [qrData, activeTagFilter]);
 
+  const activeChecklistTemplate = useMemo(() => {
+    const allTemplates = qrData?.checklistTemplates;
+    if (Array.isArray(allTemplates) && allTemplates.length > 0) {
+      return (
+        allTemplates.find(
+          (tpl) => Number(tpl.templateId) === Number(selectedTemplateId),
+        ) || allTemplates[0]
+      );
+    }
+    return qrData?.checklistTemplate ?? null;
+  }, [qrData, selectedTemplateId]);
+
   const overallSuggestion = useMemo(
     () =>
       deriveChecklistOverallSuggestion(
-        qrData?.checklistTemplate?.items,
+        activeChecklistTemplate?.items,
         answers,
       ),
-    [qrData, answers],
+    [activeChecklistTemplate, answers],
   );
 
   /** Ngưỡng tối thiểu chỉ số đồng hồ (đồng bộ AssetCounters.LastReadingValue) */
@@ -193,6 +215,13 @@ export function ChecklistPage() {
     try {
       const res = await checklistApi.getQRInfo(assetInput.trim());
       setQrData(res.data.data);
+      setSelectedTemplateId(
+        String(
+          res.data.data?.preferredTemplateId ??
+            res.data.data?.checklistTemplate?.templateId ??
+            "",
+        ),
+      );
       setActiveTab("device");
       setMaintHistory(null);
       toast.success(`Đã tải thông tin: ${res.data.data.asset.assetName}`);
@@ -208,6 +237,10 @@ export function ChecklistPage() {
 
   const handleSubmit = async () => {
     if (!qrData) return;
+    if (!activeChecklistTemplate?.templateId) {
+      toast.error("Thiết bị chưa có mẫu checklist để nộp.");
+      return;
+    }
 
     // Ảnh minh chứng bắt buộc
     if (!evidencePhoto) {
@@ -247,6 +280,7 @@ export function ChecklistPage() {
       const fd = new FormData();
       fd.append("photo", evidencePhoto);
       fd.append("assetId", qrData.asset.assetId);
+      if (selectedTemplateId) fd.append("templateId", selectedTemplateId);
       if (linkedWoId) fd.append("woId", linkedWoId);
       fd.append("overallStatus", overallStatus);
       fd.append("notes", notes);
@@ -264,8 +298,16 @@ export function ChecklistPage() {
       try {
         const refresh = await checklistApi.getQRInfo(
           String(qrData.asset.assetId),
+          { ...(linkedWoId ? { woId: linkedWoId } : {}) },
         );
         setQrData(refresh.data.data);
+        setSelectedTemplateId(
+          String(
+            refresh.data.data?.preferredTemplateId ??
+              refresh.data.data?.checklistTemplate?.templateId ??
+              "",
+          ),
+        );
       } catch {
         /* giữ qrData cũ */
       }
@@ -690,12 +732,28 @@ export function ChecklistPage() {
                     </div>
 
                     {/* Danh sách câu hỏi */}
-                    {qrData.checklistTemplate?.items?.length > 0 ? (
+                    {activeChecklistTemplate?.items?.length > 0 ? (
                       <div className="space-y-4">
+                        {(qrData.checklistTemplates?.length ?? 0) > 1 && (
+                          <Select
+                            label="Mẫu checklist áp dụng"
+                            value={selectedTemplateId}
+                            onChange={(e) => {
+                              setSelectedTemplateId(e.target.value);
+                              setAnswers({});
+                            }}
+                          >
+                            {(qrData.checklistTemplates || []).map((tpl) => (
+                              <option key={tpl.templateId} value={tpl.templateId}>
+                                {tpl.templateName}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
                         <h4 className="font-semibold text-gray-800 text-sm">
-                          {qrData.checklistTemplate.templateName}
+                          {activeChecklistTemplate.templateName}
                         </h4>
-                        {qrData.checklistTemplate.items.map((item) => (
+                        {activeChecklistTemplate.items.map((item) => (
                           <div
                             key={item.itemId}
                             className="border border-gray-100 rounded-xl p-4"

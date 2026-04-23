@@ -18,6 +18,10 @@ export function templateItemSchema(body) {
 
 export function submitChecklistSchema(body) {
   if (!body.assetId || isNaN(Number(body.assetId))) return 'AssetID không hợp lệ';
+  if (body.templateId !== undefined && body.templateId !== '' && body.templateId != null) {
+    const t = Number(body.templateId);
+    if (!Number.isFinite(t) || t <= 0) return 'TemplateID không hợp lệ';
+  }
   if (body.woId !== undefined && body.woId !== '' && body.woId != null) {
     const w = Number(body.woId);
     if (!Number.isFinite(w) || w <= 0) return 'WO_ID không hợp lệ';

@@ -41,11 +41,12 @@ export async function notifyManagers(message, type = "SYSTEM_ALERT", minLevel = 
 export async function getMyNotifications(recipientId, query) {
   const { limit, offset } = getPagination(query);
   const onlyUnread = query.unread === "true";
-  const [items, unreadCount] = await Promise.all([
+  const [items, unreadCount, total] = await Promise.all([
     model.findByRecipient(recipientId, { onlyUnread, limit, offset }),
     model.countUnread(recipientId),
+    model.countByRecipient(recipientId, { onlyUnread }),
   ]);
-  return { items, unreadCount };
+  return { items, unreadCount, total };
 }
 
 export async function markRead(notiId, recipientId) {

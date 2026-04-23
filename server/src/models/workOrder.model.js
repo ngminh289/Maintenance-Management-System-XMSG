@@ -218,7 +218,7 @@ export async function findById(id) {
 export async function findOpenPredictiveIdByAsset(assetId) {
   const [rows] = await getPool().query(
     `SELECT WO_ID AS woId FROM WorkOrders
-     WHERE AssetID = ? AND WO_Source = 'PREDICTIVE'
+     WHERE AssetID = ? AND WO_Source IN ('PREDICTIVE','PREDICTIVE_SCHEDULE')
        AND Status NOT IN ('COMPLETED','CANCELLED')
      ORDER BY WO_ID DESC LIMIT 1`,
     [assetId],

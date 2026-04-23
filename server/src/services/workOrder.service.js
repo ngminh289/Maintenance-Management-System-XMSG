@@ -26,6 +26,7 @@ import * as assetCounterForecast from "./assetCounterForecast.service.js";
 import { assignFieldTechnicianToWorkOrder, assignGroupToWorkOrder } from "./workOrderFieldAssign.service.js";
 import * as employeeModel from "../models/employee.model.js";
 import * as checklistResultModel from "../models/checklistResult.model.js";
+import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 
 /** Thư mục gốc server (…/server) — resolve đường dẫn file ảnh WO */
 const SERVER_ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -101,6 +102,7 @@ export async function getById(id, viewer = null) {
     ? (model.computeSuggestedActualHours(wo) ?? null)
     : null;
   const base = { ...wo, assignments, photos, suggestedActualHours };
+  const checklistSlot = await scheduledChecklistSlotModel.findByWorkOrderId(id);
   let recentChecklists = [];
   let recentChecklistsEligible = false;
   if (viewer?.employeeId != null) {
@@ -118,6 +120,7 @@ export async function getById(id, viewer = null) {
   }
   return {
     ...base,
+    checklistSlot,
     recentChecklists,
     recentChecklistsEligible,
   };
@@ -149,12 +152,15 @@ export async function create(data, createdBy) {
 /** Tạo WorkOrder tự động (từ checklist NG/WARNING, dự báo, khẩn — vẫn qua phê duyệt + routing TC/TP) */
 export async function createAutomatic({
   assetId,
+  scheduleId,
   woSource,
   priority,
   description,
   createdBy,
+  checklistDueDate,
 }) {
   const woId = await model.create({
+    scheduleId: scheduleId || null,
     assetId,
     woSource,
     priority,
@@ -163,6 +169,17 @@ export async function createAutomatic({
     description: description || `Phiếu tự động (${woSource})`,
     createdBy: createdBy || null,
   });
+  if (scheduleId) {
+    const dueDate =
+      String(checklistDueDate || "").trim() ||
+      new Date().toISOString().split("T")[0];
+    await scheduledChecklistSlotModel.insertForScheduleWorkOrder({
+      scheduleId: Number(scheduleId),
+      assetId,
+      dueDate,
+      workOrderId: woId,
+    });
+  }
   await approvalSvc.submit({
     resourceType: "WORK_ORDER",
     resourceId: woId,

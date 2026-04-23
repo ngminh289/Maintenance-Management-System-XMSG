@@ -79,6 +79,10 @@ export function ChecklistHistoryPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const filterAssetId = searchParams.get("assetId")?.trim() || undefined;
+  const focusChecklistId =
+    searchParams.get("checklistId")?.trim() ||
+    searchParams.get("focus")?.trim() ||
+    "";
 
   const canOpenAsset = canAccess(user, "assets");
   const isWorker = (user?.positionLevel ?? 0) <= 1;
@@ -121,7 +125,7 @@ export function ChecklistHistoryPage() {
 
   const totalPages = Math.max(1, Math.ceil(payload.total / PAGE_SIZE));
 
-  const openDetail = async (checklistId) => {
+  const openDetail = useCallback(async (checklistId) => {
     setModalOpen(true);
     setDetail(null);
     setDetailLoading(true);
@@ -134,7 +138,14 @@ export function ChecklistHistoryPage() {
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!focusChecklistId || loading || modalOpen) return;
+    const focusIdNum = Number(focusChecklistId);
+    if (!Number.isFinite(focusIdNum) || focusIdNum <= 0) return;
+    openDetail(focusIdNum);
+  }, [focusChecklistId, loading, modalOpen, openDetail]);
 
   const photoHref = detail?.evidencePhoto
     ? evidencePhotoUrl(detail.evidencePhoto)

@@ -2,6 +2,7 @@
  * checklist.routes.js — /api/checklists (templates + kết quả hiện trường).
  * Phân quyền nghiêm ngặt theo RBAC.
  * Templates: CV KTS + Trưởng/Phó PKT (2,7,9) CRUD; các vị trí còn lại chỉ READ.
+ * Nghiệp vụ hiện tại: mỗi loại tài sản có thể có N template checklist.
  * Results: CN + Trưởng phòng nộp (CREATE); TC/TP UPDATE = tiếp nhận checklist; NV KT/TC không nộp (chỉ xem QR).
  */
 import { Router } from 'express';

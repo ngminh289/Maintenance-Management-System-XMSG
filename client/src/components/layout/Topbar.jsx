@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { notificationApi } from '../../api/notification.api.js';
 import { fFromNow } from '../../utils/format.js';
+import { buildNotificationResourceUrl } from '../../utils/notificationLink.js';
 
 const TYPE_META = {
   MAINTENANCE_DUE:        { label: 'Lịch bảo trì',            color: 'text-amber-700 bg-amber-50' },
@@ -23,20 +24,6 @@ const TYPE_META = {
   MAINTENANCE_GROUP_JOINED:{ label: 'Nhóm bảo trì',           color: 'text-indigo-700 bg-indigo-50' },
   MAINTENANCE_GROUP_LEADER:{ label: 'Trưởng nhóm',            color: 'text-indigo-700 bg-indigo-100' },
 };
-
-/** Ánh xạ resourceType → URL frontend */
-function buildResourceUrl(resourceType, resourceId) {
-  if (!resourceType || resourceId == null) return null;
-  switch (resourceType) {
-    case 'WORK_ORDER':       return `/work-orders/${resourceId}`;
-    case 'DIGITAL_ASSET':    return `/documents`;
-    case 'MAINTENANCE_PLAN': return `/schedules`;
-    case 'CHECKLIST':        return `/checklists`;
-    case 'MAINTENANCE_GROUP':return `/employees`;
-    case 'ASSET':            return `/assets/${resourceId}`;
-    default:                 return null;
-  }
-}
 
 function NotificationDropdown({ onClose, onUnreadChange }) {
   const navigate = useNavigate();
@@ -85,7 +72,7 @@ function NotificationDropdown({ onClose, onUnreadChange }) {
       setItems(prev => prev.map(x => (x.notiId === id ? { ...x, isRead: true } : x)));
       onUnreadChange(prev => Math.max(0, prev - 1));
     }
-    const url = buildResourceUrl(n.resourceType, n.resourceId);
+    const url = buildNotificationResourceUrl(n);
     if (url) {
       navigate(url);
       onClose();
@@ -128,7 +115,7 @@ function NotificationDropdown({ onClose, onUnreadChange }) {
         {!loading && items.map(n => {
           const id = n.notiId;
           const meta = TYPE_META[n.type] ?? { label: n.type ?? 'Thông báo', color: 'text-gray-700 bg-gray-100' };
-          const url  = buildResourceUrl(n.resourceType, n.resourceId);
+          const url  = buildNotificationResourceUrl(n);
           return (
             <div
               key={id}

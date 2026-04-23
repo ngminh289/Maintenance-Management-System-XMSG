@@ -118,10 +118,12 @@ export async function recordReading({
       } else {
         const woId = await workOrderSvc.createAutomatic({
           assetId,
+          scheduleId: schedules[0]?.scheduleId ?? null,
           woSource: "PREDICTIVE",
           priority: "HIGH",
           description: `Đã vượt ngưỡng ${threshold}h chạy — cần bảo trì dự báo`,
           createdBy: null,
+          checklistDueDate: new Date().toISOString().split("T")[0],
         });
         await predEvtModel.create({
           assetId,

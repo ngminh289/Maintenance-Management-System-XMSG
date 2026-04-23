@@ -52,6 +52,21 @@ export async function findByAssetTypeId(assetTypeId) {
   return rows[0] || null;
 }
 
+/** Lấy toàn bộ template của một loại tài sản (dùng cho chọn mẫu lúc nộp checklist). */
+export async function findAllByAssetTypeId(assetTypeId) {
+  const [rows] = await getPool().query(
+    `SELECT TemplateID AS templateId,
+            AssetTypeID AS assetTypeId,
+            TemplateName AS templateName,
+            Description AS description
+     FROM ChecklistTemplates
+     WHERE AssetTypeID = ?
+     ORDER BY TemplateName ASC, TemplateID ASC`,
+    [assetTypeId],
+  );
+  return rows;
+}
+
 export async function createTemplate({ assetTypeId, templateName, description }) {
   const [result] = await getPool().query(
     'INSERT INTO ChecklistTemplates (AssetTypeID, TemplateName, Description) VALUES (?, ?, ?)',

@@ -36,6 +36,15 @@ export async function countUnread(recipientId) {
   return Number(rows[0].cnt);
 }
 
+export async function countByRecipient(recipientId, { onlyUnread = false } = {}) {
+  const where = onlyUnread ? "AND IsRead = FALSE" : "";
+  const [rows] = await getPool().query(
+    `SELECT COUNT(*) AS cnt FROM Notifications WHERE RecipientID = ? ${where}`,
+    [recipientId],
+  );
+  return Number(rows[0].cnt);
+}
+
 export async function markRead(notiId, recipientId) {
   const [result] = await getPool().query(
     'UPDATE Notifications SET IsRead = TRUE WHERE NotiID = ? AND RecipientID = ?',

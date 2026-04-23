@@ -10,6 +10,7 @@ import { getPool } from '../config/database.js';
 export async function create({
   assetId,
   woId,
+  templateId,
   checkerId,
   overallStatus,
   evidencePhoto,
@@ -17,11 +18,12 @@ export async function create({
   readingValue,
 }) {
   const [result] = await getPool().query(
-    `INSERT INTO ChecklistResults (AssetID, WO_ID, CheckerID, OverallStatus, EvidencePhoto, Notes, ReadingValue, ReviewStatus)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+    `INSERT INTO ChecklistResults (AssetID, WO_ID, TemplateID, CheckerID, OverallStatus, EvidencePhoto, Notes, ReadingValue, ReviewStatus)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
     [
       assetId,
       woId || null,
+      templateId ?? null,
       checkerId,
       overallStatus,
       evidencePhoto || null,
@@ -46,6 +48,7 @@ export async function findById(id) {
     getPool().query(
       `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
               cr.WO_ID AS woId, cr.CheckerID AS checkerId, e.FullName AS checkerName,
+              cr.TemplateID AS templateId, ct.TemplateName AS templateName,
               cr.OverallStatus AS overallStatus, cr.EvidencePhoto AS evidencePhoto,
               cr.Notes AS notes, cr.ReadingValue AS readingValue, cr.CheckTime AS checkTime,
               cr.ReviewStatus AS reviewStatus, cr.ReviewedBy AS reviewedBy,
@@ -54,6 +57,7 @@ export async function findById(id) {
        FROM ChecklistResults cr
        JOIN Assets a    ON a.AssetID       = cr.AssetID
        JOIN Employees e ON e.EmployeeID    = cr.CheckerID
+       LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
        LEFT JOIN Employees er ON er.EmployeeID = cr.ReviewedBy
        WHERE cr.ChecklistID = ?`,
       [id],
@@ -74,9 +78,10 @@ export async function findByAsset(assetId, limit = 20) {
     `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
             cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
             cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus,
-            cr.CheckerID AS checkerId
+            cr.CheckerID AS checkerId, cr.TemplateID AS templateId, ct.TemplateName AS templateName
      FROM ChecklistResults cr
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
      WHERE cr.AssetID = ? ORDER BY cr.CheckTime DESC LIMIT ?`,
     [assetId, limit],
   );
@@ -101,9 +106,10 @@ export async function findByAssetVisibleTo(
     `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
             cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
             cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus,
-            cr.CheckerID AS checkerId
+            cr.CheckerID AS checkerId, cr.TemplateID AS templateId, ct.TemplateName AS templateName
      FROM ChecklistResults cr
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
      WHERE cr.AssetID = ?
        AND (cr.ReviewStatus = 'APPROVED' OR cr.CheckerID = ?)
      ORDER BY cr.CheckTime DESC
@@ -119,9 +125,10 @@ export async function findRecentApprovedByAsset(assetId, limit = 3) {
   const [rows] = await getPool().query(
     `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
             cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
-            cr.ReadingValue AS readingValue
+            cr.ReadingValue AS readingValue, cr.TemplateID AS templateId, ct.TemplateName AS templateName
      FROM ChecklistResults cr
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
      WHERE cr.AssetID = ? AND cr.ReviewStatus = 'APPROVED'
      ORDER BY cr.CheckTime DESC
      LIMIT ?`,
@@ -145,10 +152,12 @@ export async function findPendingReview(limit = 50) {
     `SELECT cr.ChecklistID AS checklistId, cr.AssetID AS assetId, a.AssetName AS assetName,
             cr.OverallStatus AS overallStatus, cr.CheckTime AS checkTime,
             cr.Notes AS notes, cr.ReadingValue AS readingValue,
-            cr.CheckerID AS checkerId, e.FullName AS checkerName
+            cr.CheckerID AS checkerId, e.FullName AS checkerName,
+            cr.TemplateID AS templateId, ct.TemplateName AS templateName
      FROM ChecklistResults cr
      JOIN Assets a ON a.AssetID = cr.AssetID
      JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
      WHERE cr.ReviewStatus = 'PENDING'
      ORDER BY cr.CheckTime ASC
      LIMIT ?`,

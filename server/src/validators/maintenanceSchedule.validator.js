@@ -24,6 +24,15 @@ export function createScheduleSchema(body) {
     return `FrequencyUnit không hợp lệ. Hợp lệ: ${VALID_UNIT.join(", ")}`;
   if (body.priority && !VALID_PRIORITY.includes(up(body.priority)))
     return `Priority không hợp lệ. Hợp lệ: ${VALID_PRIORITY.join(", ")}`;
+  if (
+    body.checklistTemplateId !== undefined &&
+    body.checklistTemplateId !== null &&
+    body.checklistTemplateId !== "" &&
+    (!Number.isFinite(Number(body.checklistTemplateId)) ||
+      Number(body.checklistTemplateId) <= 0)
+  ) {
+    return "ChecklistTemplateID không hợp lệ";
+  }
   return null;
 }
 
@@ -34,5 +43,14 @@ export function updateScheduleSchema(body) {
     return "FrequencyUnit không hợp lệ";
   if (body.priority && !VALID_PRIORITY.includes(up(body.priority)))
     return "Priority không hợp lệ";
+  if (
+    body.checklistTemplateId !== undefined &&
+    body.checklistTemplateId !== null &&
+    body.checklistTemplateId !== "" &&
+    (!Number.isFinite(Number(body.checklistTemplateId)) ||
+      Number(body.checklistTemplateId) <= 0)
+  ) {
+    return "ChecklistTemplateID không hợp lệ";
+  }
   return null;
 }

@@ -46,6 +46,7 @@ export function ChecklistTemplatesPage() {
   const [templateRows, setTemplateRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTypeId, setSelectedTypeId] = useState(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
@@ -94,35 +95,40 @@ export function ChecklistTemplatesPage() {
     return map;
   }, [templateRows]);
 
-  const openType = async (assetTypeId) => {
-    setCreateOpen(false);
-    const list = byType.get(Number(assetTypeId)) || [];
-    if (list.length === 0) {
-      setSelectedTypeId(assetTypeId);
+  const openTemplate = async (templateId) => {
+    if (!templateId) {
       setDetail(null);
+      setSelectedTemplateId(null);
       return;
     }
-
-    setSelectedTypeId(assetTypeId);
     setDetailLoading(true);
     setDetail(null);
+    setSelectedTemplateId(Number(templateId));
     try {
-      const primary = [...list].sort(
-        (a, b) => Number(a.templateId) - Number(b.templateId),
-      )[0];
-      const res = await checklistApi.getTemplateById(primary.templateId);
+      const res = await checklistApi.getTemplateById(templateId);
       setDetail(res.data.data);
-      if (list.length > 1) {
-        toast(
-          `Loại này đang có ${list.length} mẫu trong CSDL. Hệ thống đang mở mẫu #${primary.templateId}; nên gộp lại còn một mẫu cho mỗi loại.`,
-        );
-      }
     } catch {
       toast.error('Không tải được chi tiết mẫu');
-      setSelectedTypeId(null);
+      setSelectedTemplateId(null);
+      setDetail(null);
     } finally {
       setDetailLoading(false);
     }
+  };
+
+  const openType = async (assetTypeId) => {
+    setCreateOpen(false);
+    const list = byType.get(Number(assetTypeId)) || [];
+    setSelectedTypeId(Number(assetTypeId));
+    setDetail(null);
+    setSelectedTemplateId(null);
+    if (list.length === 0) {
+      return;
+    }
+    const primary = [...list].sort(
+      (a, b) => Number(a.templateId) - Number(b.templateId),
+    )[0];
+    await openTemplate(primary.templateId);
   };
 
   const saveMeta = async () => {
@@ -155,6 +161,7 @@ export function ChecklistTemplatesPage() {
         description: createDesc.trim() || undefined,
       });
       setDetail(res.data.data);
+      setSelectedTemplateId(Number(res.data.data?.templateId));
       setCreateOpen(false);
       setCreateName('');
       setCreateDesc('');
@@ -213,6 +220,28 @@ export function ChecklistTemplatesPage() {
     }
   };
 
+  const removeTemplate = async () => {
+    if (!detail || !canDelete) return;
+    if (!window.confirm('Xóa toàn bộ mẫu checklist này?')) return;
+    try {
+      await checklistApi.deleteTemplate(detail.templateId);
+      await loadAll();
+      const nextList = byType.get(Number(selectedTypeId)) || [];
+      const remain = nextList.filter(
+        (row) => Number(row.templateId) !== Number(detail.templateId),
+      );
+      if (remain.length > 0) {
+        await openTemplate(remain[0].templateId);
+      } else {
+        setDetail(null);
+        setSelectedTemplateId(null);
+      }
+      toast.success('Đã xóa mẫu checklist');
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Lỗi xóa mẫu checklist');
+    }
+  };
+
   const removeItem = async (itemId) => {
     if (!detail || !canDelete) return;
     if (!window.confirm('Xóa câu hỏi này?')) return;
@@ -255,8 +284,8 @@ export function ChecklistTemplatesPage() {
               Mẫu checklist theo loại tài sản
             </p>
             <p className="max-w-3xl text-sm leading-relaxed text-slate-700">
-              Mỗi loại tài sản nên có một mẫu checklist chuẩn để dùng thống nhất
-              khi quét QR và ghi nhận hiện trường. Người có quyền chỉnh sửa có
+              Mỗi loại tài sản có thể có nhiều mẫu checklist theo ngữ cảnh vận hành
+              (đầu ca, cuối ca, định kỳ, sau sự cố). Người có quyền chỉnh sửa có
               thể cập nhật tên mẫu, câu hỏi và ngưỡng an toàn; các bộ phận còn
               lại dùng trang này để tra cứu nội dung vận hành.
             </p>
@@ -341,23 +370,32 @@ export function ChecklistTemplatesPage() {
               </p>
             )}
 
-            {selectedTypeId &&
-              !detail &&
-              !detailLoading &&
-              (byType.get(Number(selectedTypeId)) || []).length === 0 && (
-                <div className="space-y-4 py-4">
-                  <p className="text-sm text-slate-600">
-                    Loại tài sản này chưa có mẫu checklist.
+            {selectedTypeId && (
+              <div className="space-y-4 py-1">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                    Danh sách mẫu của loại #{selectedTypeId}
                   </p>
+                  {(byType.get(Number(selectedTypeId)) || []).length > 0 ? (
+                    <Select
+                      value={selectedTemplateId ?? ''}
+                      onChange={(e) => openTemplate(Number(e.target.value))}
+                    >
+                      {(byType.get(Number(selectedTypeId)) || []).map((tpl) => (
+                        <option key={tpl.templateId} value={tpl.templateId}>
+                          #{tpl.templateId} — {tpl.templateName}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-slate-600">Loại tài sản này chưa có mẫu checklist.</p>
+                  )}
 
                   {canCreate && (
                     <>
                       {!createOpen ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => setCreateOpen(true)}
-                        >
-                          <Plus size={16} /> Tạo mẫu checklist
+                        <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+                          <Plus size={16} /> Tạo thêm template
                         </Button>
                       ) : (
                         <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
@@ -365,7 +403,7 @@ export function ChecklistTemplatesPage() {
                             label="Tên mẫu *"
                             value={createName}
                             onChange={(e) => setCreateName(e.target.value)}
-                            placeholder="Ví dụ: Kiểm tra hằng ngày - Máy nén"
+                            placeholder="Ví dụ: Kiểm tra đầu ca - Máy nén"
                           />
                           <Textarea
                             label="Mô tả"
@@ -374,13 +412,8 @@ export function ChecklistTemplatesPage() {
                             rows={2}
                           />
                           <div className="flex gap-2">
-                            <Button onClick={createTemplate}>
-                              Lưu mẫu mới
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              onClick={() => setCreateOpen(false)}
-                            >
+                            <Button onClick={createTemplate}>Lưu mẫu mới</Button>
+                            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
                               Hủy
                             </Button>
                           </div>
@@ -389,7 +422,8 @@ export function ChecklistTemplatesPage() {
                     </>
                   )}
                 </div>
-              )}
+              </div>
+            )}
 
             {detailLoading && (
               <div className="flex justify-center py-12">
@@ -426,14 +460,25 @@ export function ChecklistTemplatesPage() {
                       disabled={!canUpdate}
                     />
                     {canUpdate && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={savingMeta}
-                        onClick={saveMeta}
-                      >
-                        <Save size={14} /> Lưu tên và mô tả
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={savingMeta}
+                          onClick={saveMeta}
+                        >
+                          <Save size={14} /> Lưu tên và mô tả
+                        </Button>
+                        {canDelete && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={removeTemplate}
+                          >
+                            <Trash2 size={14} /> Xóa template
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

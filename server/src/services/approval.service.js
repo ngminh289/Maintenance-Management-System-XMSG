@@ -214,6 +214,7 @@ export async function approve({
       log.workflowId,
       log.currentLevel + 1,
       `Yêu cầu phê duyệt cấp ${log.currentLevel + 1} (${log.resourceType} #${log.resourceId})`,
+      { resourceType: log.resourceType, resourceId: log.resourceId },
     );
     return { nextLogId };
   }

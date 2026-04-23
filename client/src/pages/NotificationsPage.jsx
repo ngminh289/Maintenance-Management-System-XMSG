@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, Check, CheckCheck, ExternalLink } from 'lucide-react';
 import { notificationApi } from '../api/notification.api.js';
 import { fFromNow } from '../utils/format.js';
+import { buildNotificationResourceUrl } from '../utils/notificationLink.js';
 
 const TYPE_META = {
   MAINTENANCE_DUE:         { label: 'Lịch bảo trì',          color: 'text-amber-700 bg-amber-50 border-amber-200' },
@@ -20,19 +21,6 @@ const TYPE_META = {
   MAINTENANCE_GROUP_JOINED:{ label: 'Nhóm bảo trì',           color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
   MAINTENANCE_GROUP_LEADER:{ label: 'Trưởng nhóm',            color: 'text-indigo-700 bg-indigo-100 border-indigo-300' },
 };
-
-function buildResourceUrl(resourceType, resourceId) {
-  if (!resourceType || resourceId == null) return null;
-  switch (resourceType) {
-    case 'WORK_ORDER':        return `/work-orders/${resourceId}`;
-    case 'DIGITAL_ASSET':     return `/documents`;
-    case 'MAINTENANCE_PLAN':  return `/schedules`;
-    case 'CHECKLIST':         return `/checklists`;
-    case 'MAINTENANCE_GROUP': return `/employees`;
-    case 'ASSET':             return `/assets/${resourceId}`;
-    default:                  return null;
-  }
-}
 
 export function NotificationsPage() {
   const navigate = useNavigate();
@@ -55,7 +43,7 @@ export function NotificationsPage() {
       const data = res.data.data;
       setItems(data?.items ?? []);
       setUnread(data?.unreadCount ?? 0);
-      setTotal(data?.unreadCount ?? 0); // total chưa đọc
+      setTotal(Number(data?.total) || 0);
     } catch {
       //
     } finally {
@@ -79,7 +67,7 @@ export function NotificationsPage() {
 
   const handleClick = async (n) => {
     if (!n.isRead) await handleMarkOne(n.notiId);
-    const url = buildResourceUrl(n.resourceType, n.resourceId);
+    const url = buildNotificationResourceUrl(n);
     if (url) navigate(url);
   };
 

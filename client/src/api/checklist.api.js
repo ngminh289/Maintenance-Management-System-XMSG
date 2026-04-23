@@ -3,7 +3,7 @@
  */
 import { api } from './index.js';
 export const checklistApi = {
-  getQRInfo:       (assetId) => api.get(`/checklists/qr/${assetId}`),
+  getQRInfo:       (assetId, params) => api.get(`/checklists/qr/${assetId}`, { params }),
   submit:          (data)    => api.post('/checklists/results', data),
   submitWithPhoto: (formData) => api.post('/checklists/results', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

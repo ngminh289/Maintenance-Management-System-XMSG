@@ -3,7 +3,7 @@
  * Nghiệm thu: ghi chú hiện trường, giờ chạy, ảnh minh chứng, từng câu checklist (vật tư ghi trên phiếu việc, không trên checklist).
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Navigate, Link } from 'react-router-dom';
+import { Navigate, Link, useSearchParams } from 'react-router-dom';
 import {
   ClipboardCheck, CheckCircle, XCircle, Loader2, Building2, MapPin, User, Clock,
   SlidersHorizontal, ImageIcon, Package,
@@ -51,6 +51,8 @@ function rowShellClass(tone) {
 
 export function ChecklistReviewPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const focusChecklistId = searchParams.get("checklistId")?.trim() || "";
   const canReview = canDo(user, 'CHECKLIST_RESULT:APPROVE');
   const canOpenAsset = canAccess(user, 'assets');
   const [list, setList] = useState([]);
@@ -76,7 +78,7 @@ export function ChecklistReviewPage() {
 
   useEffect(() => { loadPending(); }, [loadPending]);
 
-  const openDetail = async (row) => {
+  const openDetail = useCallback(async (row) => {
     setSelected(row);
     setSupervisorNotes('');
     setDetailLoading(true);
@@ -90,7 +92,15 @@ export function ChecklistReviewPage() {
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!focusChecklistId || loading || list.length === 0 || selected) return;
+    const focusIdNum = Number(focusChecklistId);
+    if (!Number.isFinite(focusIdNum) || focusIdNum <= 0) return;
+    const row = list.find((x) => Number(x.checklistId) === focusIdNum);
+    if (row) openDetail(row);
+  }, [focusChecklistId, loading, list, selected, openDetail]);
 
   const submitReview = async (decision) => {
     if (!selected) return;

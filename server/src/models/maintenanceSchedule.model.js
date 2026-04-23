@@ -25,6 +25,8 @@ const COLS = `
   ms.Priority          AS priority,
   ms.Status            AS status,
   ms.DigitalAssetID    AS digitalAssetId,
+  ms.ChecklistTemplateID AS checklistTemplateId,
+  ct.TemplateName      AS checklistTemplateName,
   ms.CreatedBy         AS createdBy,
   ms.CreatedAt         AS createdAt`;
 
@@ -32,7 +34,8 @@ const BASE_JOIN = `
   FROM MaintenanceSchedules ms
   JOIN Assets a    ON a.AssetID       = ms.AssetID
   JOIN Locations l ON l.LocationID    = a.LocationID
-  JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID`;
+  JOIN AssetTypes at ON at.AssetTypeID = a.AssetTypeID
+  LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = ms.ChecklistTemplateID`;
 
 export async function findAll({
   assetId,
@@ -167,13 +170,14 @@ export async function create(data) {
     estimatedTime,
     priority,
     digitalAssetId,
+    checklistTemplateId,
     createdBy,
     status,
   } = data;
   const [result] = await getPool().query(
     `INSERT INTO MaintenanceSchedules
-     (AssetID, ScheduleName, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, NextDueDate, EndDate, EstimatedTime, Priority, DigitalAssetID, CreatedBy, Status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (AssetID, ScheduleName, MaintenanceType, Description, FrequencyValue, FrequencyUnit, StartDate, NextDueDate, EndDate, EstimatedTime, Priority, DigitalAssetID, ChecklistTemplateID, CreatedBy, Status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       assetId,
       scheduleName || "",
@@ -187,6 +191,7 @@ export async function create(data) {
       estimatedTime || null,
       priority || "MEDIUM",
       digitalAssetId || null,
+      checklistTemplateId || null,
       createdBy || null,
       status || "DRAFT",
     ],
@@ -254,6 +259,7 @@ export async function update(id, data) {
     endDate: "EndDate",
     estimatedTime: "EstimatedTime",
     priority: "Priority",
+    checklistTemplateId: "ChecklistTemplateID",
     status: "Status",
   };
   const setClauses = [];

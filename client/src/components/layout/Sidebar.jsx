@@ -1,19 +1,19 @@
 /**
  * Sidebar.jsx — Dark sidebar, lọc menu theo role người dùng.
- * Dùng canAccess() từ utils/rbac.js để chỉ hiện item có quyền.
- * Danh sách checklist: /checklists/history (mọi role có route checklists).
- * /documents cần end:true — nếu không /documents/feedback-inbox làm cả hai NavLink active (đúp xanh).
- * Nhóm Báo cáo: /reports/operations, /reports/resource-usage (thêm CV KTS), /reports/performance — RBAC trong rbac.js.
+ * Cấu trúc menu 3 cấp theo UX mới:
+ *   Cấp 1: Nhóm lớn (Tổng quan/Vận hành/...)
+ *   Cấp 2: Mục cùng hàng (vd. Tài sản thiết bị, Bảo trì, Checklist)
+ *   Cấp 3: Mục con thu gọn trong mục cha (vd. Bảo trì -> Lịch bảo trì, Phiếu việc)
  */
-import { NavLink } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, ClipboardCheck, Layers, Users, ShieldCheck, ChevronRight,
-  ListChecks,
-  Factory, Activity, GitBranch, MessageSquare, Settings,
-  ScrollText,
+  ListChecks, Factory, Activity, GitBranch, MessageSquare, Settings,
+  ScrollText, ChevronsUpDown,
 } from 'lucide-react';
-import { useAuth }     from '../../contexts/AuthContext.jsx';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
 
 // roleKey → badge label hiển thị cạnh tên (TC / Trưởng phòng tách PositionID — rbac.js)
@@ -27,48 +27,115 @@ const ROLE_BADGE = {
   congNhan:    { label: 'KTV HT',        color: 'bg-gray-500' },
 };
 
-// Định nghĩa menu — routeKey phải khớp với key trong ROUTE_ACCESS (rbac.js)
+// Định nghĩa menu 3 cấp — routeKey/action bám rbac.js
 const MENU_GROUPS = [
   {
     label: 'Tổng quan',
     items: [
-      { to: '/', routeKey: null, icon: LayoutDashboard, label: 'Dashboard' },
+      {
+        to: '/',
+        routeKey: null,
+        icon: LayoutDashboard,
+        label: 'Dashboard',
+        end: true,
+      },
     ],
   },
   {
     label: 'Vận hành',
     items: [
-      { to: '/assets',      routeKey: 'assets',      icon: Cpu,           label: 'Tài sản thiết bị' },
-      { to: '/schedules',   routeKey: 'schedules',   icon: ClipboardList, label: 'Lịch bảo trì' },
-      { to: '/work-orders', routeKey: 'work-orders', icon: Wrench,        label: 'Phiếu việc' },
-      { to: '/checklists',  routeKey: 'checklists',  icon: CheckSquare,   label: 'Checklist / QR', end: true },
-      { to: '/checklists/history', routeKey: 'checklists', icon: ListChecks, label: 'Danh sách checklist' },
-      { to: '/checklists/review', routeKey: 'checklists', icon: ClipboardCheck, label: 'Tiếp nhận checklist', action: 'CHECKLIST_RESULT:APPROVE' },
-      { to: '/checklists/templates', routeKey: 'checklist-manage', icon: Layers, label: 'Mẫu checklist (theo loại)' },
+      {
+        to: '/assets',
+        routeKey: 'assets',
+        icon: Cpu,
+        label: 'Tài sản thiết bị',
+      },
+      {
+        key: 'maint',
+        icon: ClipboardList,
+        label: 'Bảo trì',
+        children: [
+          { to: '/schedules', routeKey: 'schedules', icon: ClipboardList, label: 'Lịch bảo trì' },
+          { to: '/work-orders', routeKey: 'work-orders', icon: Wrench, label: 'Phiếu việc' },
+        ],
+      },
+      {
+        key: 'checklist',
+        icon: CheckSquare,
+        label: 'Checklist',
+        children: [
+          { to: '/checklists', routeKey: 'checklists', icon: CheckSquare, label: 'Quét mã QR', end: true },
+          { to: '/checklists/history', routeKey: 'checklists', icon: ListChecks, label: 'Danh sách checklist' },
+          { to: '/checklists/review', routeKey: 'checklists', icon: ClipboardCheck, label: 'Tiếp nhận checklist', action: 'CHECKLIST_RESULT:APPROVE' },
+          { to: '/checklists/templates', routeKey: 'checklist-manage', icon: Layers, label: 'Mẫu checklist' },
+        ],
+      },
     ],
   },
   {
-    label: 'Tài liệu & Phê duyệt',
+    label: 'Tài liệu và phê duyệt',
     items: [
-      { to: '/documents',   routeKey: 'documents',   icon: FileText,    label: 'Kho tài liệu số', end: true },
-      { to: '/documents/feedback-inbox', routeKey: 'document-feedback-inbox', icon: MessageSquare, label: 'Phản hồi tài liệu (KT)' },
-      { to: '/approvals',   routeKey: 'approvals',   icon: ShieldCheck, label: 'Phê duyệt' },
+      {
+        key: 'docs',
+        icon: FileText,
+        label: 'Tài liệu',
+        children: [
+          { to: '/documents', routeKey: 'documents', icon: FileText, label: 'Kho tài liệu', end: true },
+          { to: '/documents/feedback-inbox', routeKey: 'document-feedback-inbox', icon: MessageSquare, label: 'Phản hồi tài liệu' },
+        ],
+      },
+      {
+        to: '/approvals',
+        routeKey: 'approvals',
+        icon: ShieldCheck,
+        label: 'Phê duyệt',
+      },
     ],
   },
   {
     label: 'Báo cáo',
     items: [
-      { to: '/reports/operations', routeKey: 'report-operations', icon: ScrollText, label: 'Nghiệp vụ & vận hành' },
-      { to: '/reports/resource-usage', routeKey: 'report-resource-usage', icon: FileText, label: 'Báo cáo sử dụng tài nguyên' },
-      { to: '/reports/performance', routeKey: 'report-performance', icon: Activity,  label: 'Hiệu suất tài sản' },
+      {
+        to: '/reports/operations',
+        routeKey: 'report-operations',
+        icon: ScrollText,
+        label: 'Nghiệp vụ và vận hành',
+      },
+      {
+        to: '/reports/resource-usage',
+        routeKey: 'report-resource-usage',
+        icon: FileText,
+        label: 'Sử dụng tài nguyên',
+      },
+      {
+        to: '/reports/performance',
+        routeKey: 'report-performance',
+        icon: Activity,
+        label: 'Hiệu suất & tình trạng',
+      },
     ],
   },
   {
     label: 'Quản trị',
     items: [
-      { to: '/employees',   routeKey: 'employees',      icon: Users,      label: 'Nhân sự' },
-      { to: '/workflows',   routeKey: 'workflows',      icon: GitBranch,  label: 'Luồng phê duyệt' },
-      { to: '/admin',       routeKey: 'admin-settings', icon: Settings,   label: 'Cấu hình hệ thống' },
+      {
+        to: '/employees',
+        routeKey: 'employees',
+        icon: Users,
+        label: 'Nhân sự',
+      },
+      {
+        to: '/workflows',
+        routeKey: 'workflows',
+        icon: GitBranch,
+        label: 'Luồng phê duyệt',
+      },
+      {
+        to: '/admin',
+        routeKey: 'admin-settings',
+        icon: Settings,
+        label: 'Cấu hình hệ thống',
+      },
     ],
   },
 ];
@@ -90,20 +157,109 @@ function NavItem({ to, icon: Icon, label, end }) {
   );
 }
 
+function ExpandableNavItem({
+  icon: Icon,
+  label,
+  childrenItems,
+  pathname,
+  isOpen,
+  onToggle,
+}) {
+  const hasActiveChild = childrenItems.some((c) => pathname.startsWith(c.to));
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+          ${hasActiveChild || isOpen
+            ? 'bg-slate-700/70 text-white'
+            : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+      >
+        <Icon size={17} />
+        <span className="flex-1 text-left">{label}</span>
+        <ChevronsUpDown size={14} className={`transition-transform ${isOpen ? 'rotate-180 text-sky-300' : 'text-slate-500'}`} />
+      </button>
+      <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-72 opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div className="pl-8 space-y-0.5">
+          {childrenItems.map(({ routeKey: _rk, action: _ac, ...item }) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end === true}
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] transition-colors
+                ${isActive ? 'text-sky-300 bg-slate-800/80' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`
+              }
+            >
+              <item.icon size={13} />
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar({ open, onClose }) {
+  const { pathname } = useLocation();
   const { user } = useAuth();
   const roleKey  = getRoleKey(user);
   const badge    = roleKey ? ROLE_BADGE[roleKey] : null;
 
-  // Lọc menu: chỉ giữ group có ít nhất 1 item user được xem
-  const visibleGroups = MENU_GROUPS.map(group => ({
-    ...group,
-    items: group.items.filter(item => {
-      if (item.routeKey !== null && !canAccess(user, item.routeKey)) return false;
-      if (item.action && !canDo(user, item.action)) return false;
-      return true;
-    }),
-  })).filter(g => g.items.length > 0);
+  const visibleGroups = useMemo(() => MENU_GROUPS.map((group) => {
+    const items = (group.items ?? [])
+      .map((item) => {
+        if (item.children) {
+          const children = item.children.filter((ch) => {
+            if (ch.routeKey !== null && !canAccess(user, ch.routeKey)) return false;
+            if (ch.action && !canDo(user, ch.action)) return false;
+            return true;
+          });
+          return { ...item, children };
+        }
+        return item;
+      })
+      .filter((item) => {
+        if (item.children) return item.children.length > 0;
+        if (item.routeKey !== null && !canAccess(user, item.routeKey)) return false;
+        if (item.action && !canDo(user, item.action)) return false;
+        return true;
+      });
+    return { ...group, items };
+  }).filter((g) => g.items.length > 0), [user]);
+
+  const [expanded, setExpanded] = useState(() => {
+    const state = {};
+    visibleGroups.forEach((g) => {
+      g.items.forEach((it) => {
+        if (it.children) {
+          state[it.key] = it.children.some((c) => pathname.startsWith(c.to));
+        }
+      });
+    });
+    return state;
+  });
+
+  const toggleExpand = (key) => {
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Lọc menu: chỉ giữ group/item user có quyền xem
+  const _legacyVisibleGroups = MENU_GROUPS.map((group) => {
+    const sections = (group.sections ?? [])
+      .map((section) => ({
+        ...section,
+        items: (section.items ?? []).filter((item) => {
+          if (item.routeKey !== null && !canAccess(user, item.routeKey)) return false;
+          if (item.action && !canDo(user, item.action)) return false;
+          return true;
+        }),
+      }))
+      .filter((s) => s.items.length > 0);
+    return { ...group, sections };
+  }).filter((g) => g.sections.length > 0);
 
   return (
     <>
@@ -133,10 +289,24 @@ export function Sidebar({ open, onClose }) {
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">
                 {group.label}
               </p>
-              <div className="space-y-0.5">
-                {group.items.map(({ routeKey: _rk, action: _ac, ...item }) => (
-                  <NavItem key={item.to} {...item} />
-                ))}
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  if (item.children) {
+                    return (
+                      <ExpandableNavItem
+                        key={item.key}
+                        icon={item.icon}
+                        label={item.label}
+                        childrenItems={item.children}
+                        pathname={pathname}
+                        isOpen={Boolean(expanded[item.key])}
+                        onToggle={() => toggleExpand(item.key)}
+                      />
+                    );
+                  }
+                  const { routeKey: _rk, action: _ac, ...leaf } = item;
+                  return <NavItem key={leaf.to} {...leaf} />;
+                })}
               </div>
             </div>
           ))}

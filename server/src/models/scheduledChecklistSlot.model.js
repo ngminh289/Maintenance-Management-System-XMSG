@@ -22,6 +22,25 @@ export async function insertForScheduleWorkOrder({
   return result.affectedRows;
 }
 
+/** Lấy slot requirement theo phiếu việc để kiểm tra trạng thái checklist. */
+export async function findByWorkOrderId(workOrderId) {
+  const [rows] = await getPool().query(
+    `SELECT SlotID AS slotId,
+            ScheduleID AS scheduleId,
+            AssetID AS assetId,
+            DueDate AS dueDate,
+            WorkOrderID AS workOrderId,
+            ChecklistID AS checklistId,
+            FulfilledAt AS fulfilledAt,
+            Status AS status
+     FROM ScheduledChecklistSlots
+     WHERE WorkOrderID = ?
+     LIMIT 1`,
+    [workOrderId],
+  );
+  return rows[0] || null;
+}
+
 /**
  * Đánh dấu hoàn thành khi checklist được duyệt APPROVE và khớp WO slot.
  */
