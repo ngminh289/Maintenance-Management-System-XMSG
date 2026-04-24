@@ -25,12 +25,12 @@ export const fNumber = (n) =>
   n == null ? "—" : Number(n).toLocaleString("vi-VN");
 
 export const ASSET_STATUS_LABEL = {
-  AVAILABLE: "Sẵn sàng",
-  MONITORING: "Theo dõi",
-  CAUTION: "Cảnh báo",
+  AVAILABLE: "Hoạt động bình thường",
+  MONITORING: "Đang giám sát",
+  CAUTION: "Cần chú ý",
   MAINTENANCE: "Đang bảo trì",
-  BROKEN: "Hỏng",
-  DECOMMISSIONED: "Loại biên",
+  BROKEN: "Hỏng hóc",
+  DECOMMISSIONED: "Ngưng hoạt động",
 };
 
 export const ASSET_STATUS_COLOR = {
