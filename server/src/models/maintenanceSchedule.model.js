@@ -1,5 +1,6 @@
 /**
  * maintenanceSchedule.model.js — SQL thuần cho bảng MaintenanceSchedules.
+ * COLS: assetTypeId từ Assets — dùng API/UI và đồng bộ validate checklist với loại tài sản thực tế.
  * patchLastExecutedDate / findCalendarOperationalByAsset: đồng bộ với WO hoàn thành (workOrderMaintenanceSync).
  * Dùng trong: maintenanceSchedule.service.js, workOrderMaintenanceSync.service.js.
  */
@@ -9,6 +10,7 @@ const COLS = `
   ms.ScheduleID        AS scheduleId,
   ms.AssetID           AS assetId,
   a.AssetName          AS assetName,
+  a.AssetTypeID      AS assetTypeId,
   a.LocationID         AS locationId,
   l.LocationName       AS locationName,
   at.TypeName          AS assetTypeName,

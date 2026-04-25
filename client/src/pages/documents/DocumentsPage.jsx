@@ -1,12 +1,14 @@
 /**
  * DocumentsPage.jsx — Kho tài liệu số: upload/tag/danh mục (CV KTS = Trưởng/Phó PKT — 057); thêm phê duyệt + xóa cứng cho PKT/Admin.
  * Danh sách: PENDING/DRAFT/REJECTED của chính user; APPROVED/ARCHIVED công khai; PENDING người khác không hiện.
+ * Chọn tài sản khi upload/sửa: AssetIdSearchPicker (tìm server), không giới hạn 200 bản ghi.
+ * Deep link: /documents?upload=1&assetId=… — mở modal upload với tài sản gắn sẵn (từ trang chi tiết tài sản).
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api }         from '../../api/index.js';
-import { assetApi }    from '../../api/asset.api.js';
+import { AssetIdSearchPicker } from '../../components/AssetIdSearchPicker.jsx';
 import { Badge }       from '../../components/ui/Badge.jsx';
 import { Button }      from '../../components/ui/Button.jsx';
 import { Modal }       from '../../components/ui/Modal.jsx';
@@ -102,7 +104,6 @@ export function DocumentsPage() {
   const canForceDelete = canDo(user, 'DOCUMENT:DELETE');
 
   const [docs, setDocs] = useState([]);
-  const [assets, setAssets] = useState([]);
   const [tags, setTags] = useState([]);
   const [categories, setCategories] = useState([]);
   const [total, setTotal] = useState(0);
@@ -156,6 +157,7 @@ export function DocumentsPage() {
   const [fbSending, setFbSending] = useState(false);
 
   const LIMIT = 15;
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const refreshTags = useCallback(() => {
     api.get('/tags').then(r => setTags(r.data.data?.items ?? r.data.data ?? [])).catch(() => {});
@@ -189,10 +191,28 @@ export function DocumentsPage() {
   }, [load]);
 
   useEffect(() => {
-    assetApi.getAll({ limit: 200 }).then(r => setAssets(r.data.data?.items ?? [])).catch(() => {});
     refreshTags();
     refreshCategories();
   }, [refreshTags, refreshCategories]);
+
+  /** Mở upload từ URL (?upload=1&assetId=) — ví dụ từ AssetDetailPage */
+  useEffect(() => {
+    if (searchParams.get('upload') !== '1') return;
+    const aid = searchParams.get('assetId');
+    if (canUpload) {
+      setUploadOpen(true);
+      if (aid && /^\d+$/.test(aid)) setMeta((m) => ({ ...m, assetId: aid }));
+    }
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        n.delete('upload');
+        n.delete('assetId');
+        return n;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams, canUpload]);
 
   const handleUpload = async (e) => {
     e.preventDefault();
@@ -650,10 +670,11 @@ export function DocumentsPage() {
               ))}
             </Select>
           )}
-          <Select label="Gắn với tài sản" value={meta.assetId} onChange={e => setMeta(p => ({ ...p, assetId: e.target.value }))}>
-            <option value="">— Không gắn —</option>
-            {assets.map(a => <option key={a.assetId} value={a.assetId}>{a.assetName}</option>)}
-          </Select>
+          <AssetIdSearchPicker
+            id="doc-upload-asset"
+            value={meta.assetId}
+            onChange={(assetId) => setMeta((p) => ({ ...p, assetId }))}
+          />
           <Input label="Mô tả" value={meta.description} onChange={e => setMeta(p => ({ ...p, description: e.target.value }))} placeholder="VD: Bản vẽ kỹ thuật lò nung #1" />
           {tags.length > 0 && (
             <div>
@@ -815,16 +836,12 @@ export function DocumentsPage() {
               value={editDoc.description}
               onChange={e => setEditDoc(d => ({ ...d, description: e.target.value }))}
             />
-            <Select
-              label="Tài sản"
+            <AssetIdSearchPicker
+              id="doc-edit-asset"
               value={editDoc.assetId === null || editDoc.assetId === undefined ? '' : String(editDoc.assetId)}
-              onChange={e => setEditDoc(d => ({ ...d, assetId: e.target.value }))}
-            >
-              <option value="">— Không gắn —</option>
-              {assets.map(a => (
-                <option key={a.assetId} value={a.assetId}>{a.assetName}</option>
-              ))}
-            </Select>
+              onChange={(assetId) => setEditDoc((d) => ({ ...d, assetId }))}
+              label="Tài sản"
+            />
             {canReadCategories && (
               <Select
                 label="Phân loại"

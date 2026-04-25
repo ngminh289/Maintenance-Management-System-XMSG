@@ -5,6 +5,7 @@
  * Vật tư/linh kiện không nhập trên checklist — ghi trên phiếu việc (WO) khi bảo trì.
  * Gợi ý đánh giá tổng thể (WARNING/NG) theo ngưỡng mẫu: Numeric/Range ngoài min-max; PassFail «Không đạt».
  * BFD mục 3: sau khi gửi → TC/TP tiếp nhận tại /checklists/review.
+ * Câu kiểu Photo: upload multipart field `item_<itemId>` + lưu đường dẫn trong ChecklistDetails.AnswerValue; xem ảnh tại review/history.
  * Lịch sử trên tab: theo quyền backend (CN: APPROVED mọi người + phiếu của mình); NVKT+ xem 5 bản gần nhất đầy đủ.
  * Query ?assetId=: đồng bộ ô nhập + tự gọi getQRInfo (không cần bấm Tải thông tin).
  * Query ?woId=: gắn checklist với WO SCHEDULE — sau khi tải xong mở thẳng tab Checklist.
@@ -84,6 +85,8 @@ export function ChecklistPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(null);
   const [evidencePhoto, setEvidencePhoto] = useState(null);
+  /** Map TemplateItemID → File cho câu inputType Photo */
+  const [itemPhotos, setItemPhotos] = useState({});
   const [activeTagFilter, setActiveTagFilter] = useState("ALL");
   /** WO từ lịch — truyền từ WorkOrderDetail (?woId=) để nộp checklist gắn phiếu. */
   const linkedWoId = searchParams.get("woId")?.trim() || "";
@@ -210,6 +213,7 @@ export function ChecklistPage() {
     setQrData(null);
     setSubmitted(null);
     setAnswers({});
+    setItemPhotos({});
     setReadingValue("");
     setReadingInputError("");
     try {
@@ -248,6 +252,18 @@ export function ChecklistPage() {
       return;
     }
 
+    const photoItems = (activeChecklistTemplate?.items || []).filter(
+      (it) => String(it.inputType).toLowerCase() === "photo",
+    );
+    for (const it of photoItems) {
+      if (!itemPhotos[it.itemId]) {
+        toast.error(
+          `Vui lòng đính ảnh hiện trường cho câu: ${it.questionText || `#${it.itemId}`}`,
+        );
+        return;
+      }
+    }
+
     const rawRv = readingValue.trim();
     if (rawRv !== "") {
       const n = Number(rawRv.replace(",", "."));
@@ -269,11 +285,20 @@ export function ChecklistPage() {
     setReadingInputError("");
     setSubmitting(true);
     try {
-      const details = Object.entries(answers).map(([questionId, value]) => ({
+      let details = Object.entries(answers).map(([questionId, value]) => ({
         questionId: Number(questionId),
         answerValue: String(value),
         isOk: value !== "false" && value !== "0" && value !== "NG",
       }));
+      for (const it of photoItems) {
+        if (!details.some((d) => Number(d.questionId) === Number(it.itemId))) {
+          details.push({
+            questionId: Number(it.itemId),
+            answerValue: "",
+            isOk: true,
+          });
+        }
+      }
 
       // Luôn dùng FormData vì ảnh bắt buộc
       let res;
@@ -286,6 +311,10 @@ export function ChecklistPage() {
       fd.append("notes", notes);
       if (readingValue) fd.append("readingValue", readingValue);
       fd.append("details", JSON.stringify(details));
+      for (const it of photoItems) {
+        const f = itemPhotos[it.itemId];
+        if (f) fd.append(`item_${it.itemId}`, f);
+      }
       res = await checklistApi.submitWithPhoto(fd);
 
       setSubmitted(res.data.data);
@@ -294,6 +323,7 @@ export function ChecklistPage() {
       setNotes("");
       setAnswers({});
       setEvidencePhoto(null);
+      setItemPhotos({});
       setOverallStatus("OK");
       try {
         const refresh = await checklistApi.getQRInfo(
@@ -741,6 +771,7 @@ export function ChecklistPage() {
                             onChange={(e) => {
                               setSelectedTemplateId(e.target.value);
                               setAnswers({});
+                              setItemPhotos({});
                             }}
                           >
                             {(qrData.checklistTemplates || []).map((tpl) => (
@@ -824,6 +855,45 @@ export function ChecklistPage() {
                                   </option>
                                 ))}
                               </Select>
+                            )}
+                            {item.inputType === "Photo" && canSubmitChecklist && (
+                              <div
+                                className={`rounded-lg border p-3 ${
+                                  itemPhotos[item.itemId]
+                                    ? "border-green-300 bg-green-50/50"
+                                    : "border-amber-200 bg-amber-50/60"
+                                }`}
+                              >
+                                <label className="text-xs font-semibold text-gray-800 block mb-1.5">
+                                  Tải ảnh hiện trường <span className="text-red-600">*</span>
+                                </label>
+                                <input
+                                  type="file"
+                                  accept=".jpg,.jpeg,.png,.webp"
+                                  className="w-full text-sm text-gray-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0] ?? null;
+                                    setItemPhotos((p) => ({
+                                      ...p,
+                                      [item.itemId]: f,
+                                    }));
+                                  }}
+                                />
+                                {itemPhotos[item.itemId] ? (
+                                  <p className="text-xs text-green-700 mt-1.5 font-medium">
+                                    Đã chọn: {itemPhotos[item.itemId].name}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-amber-800 mt-1.5">
+                                    Bắt buộc có ảnh cho câu này trước khi gửi.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            {item.inputType === "Photo" && !canSubmitChecklist && (
+                              <p className="text-xs text-gray-500 italic">
+                                Ảnh hiện trường — chỉ KTV/Trưởng phòng BT được nộp.
+                              </p>
                             )}
                           </div>
                         ))}

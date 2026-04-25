@@ -20,6 +20,7 @@ import { APPROVAL_STATUS_COLOR } from '../../utils/format.js';
 import {
   getReviewRowCompare, formatAnswerLabel, formatSafeBand, formatInputRangeBand,
 } from '../../utils/checklistReviewCompare.js';
+import { checklistStoredPhotoUrl } from '../../utils/checklistPhotoUrl.js';
 import toast from 'react-hot-toast';
 
 const INPUT_TYPE_SHORT = {
@@ -378,9 +379,24 @@ export function ChecklistReviewPage() {
                                   </div>
                                   <div className="p-4 flex flex-col justify-center bg-white/40">
                                     <p className="text-xs text-slate-500 mb-1">Trả lời</p>
+                                    {d.inputType === 'Photo' && d.answerValue ? (
+                                      <a
+                                        href={checklistStoredPhotoUrl(d.answerValue) ?? '#'}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block rounded-lg border border-slate-200 overflow-hidden bg-white max-w-md"
+                                      >
+                                        <img
+                                          src={checklistStoredPhotoUrl(d.answerValue) ?? ''}
+                                          alt=""
+                                          className="max-h-56 w-full object-contain"
+                                        />
+                                      </a>
+                                    ) : (
                                     <p className={`text-lg font-bold tabular-nums ${cmp.tone === 'bad' ? 'text-red-700' : cmp.tone === 'good' ? 'text-emerald-800' : 'text-slate-800'}`}>
                                       {ans}
                                     </p>
+                                    )}
                                     <p className={`text-xs mt-1 ${d.isOK ? 'text-emerald-700' : 'text-red-700'}`}>
                                       {d.isOK ? 'OK' : 'Không OK'}
                                     </p>

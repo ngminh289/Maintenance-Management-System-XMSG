@@ -26,11 +26,13 @@ const absAssetPhotoPath = (filePath) => {
 
 export async function getAll(query) {
   const { page, limit, offset } = getPagination(query);
+  const rawQ = query.search ?? query.q;
+  const qSearch = rawQ != null && String(rawQ).trim() !== '' ? String(rawQ).trim() : undefined;
   const filters = {
     status:      query.status || undefined,
     assetTypeId:    query.assetTypeId    ? Number(query.assetTypeId) : undefined,
     locationId:     query.locationId     ? Number(query.locationId)  : undefined,
-    search:         query.search?.trim() || undefined,
+    search:         qSearch || undefined,
     productionLine: query.productionLine ? Number(query.productionLine) : undefined,
   };
 

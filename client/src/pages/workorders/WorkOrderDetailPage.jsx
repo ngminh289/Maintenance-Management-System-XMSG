@@ -4,6 +4,7 @@
  * Chỉ trưởng nhóm (IsGroupLeader) mới bắt đầu phiếu và ghi chú vật tư.
  * Trưởng ca / Trưởng phòng: phân công, nghiệm thu, đóng phiếu.
  * Link checklist: WO từ lịch (SCHEDULE) kèm woId; banner nhắc checklist hiển thị mọi trạng thái trừ hoàn thành/hủy.
+ * woLinkedChecklist: bản checklist mới nhất gắn WO (mọi thành viên nhóm thấy khi đồng nghiệp đã nộp). Duyệt WO: nhập Giờ ước tính (POST approve).
  */
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -46,6 +47,7 @@ import {
   fDateTime,
   fNumber,
   CHECKLIST_STATUS_COLOR,
+  APPROVAL_STATUS_COLOR,
 } from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo, LEVEL_TRUONG_CA } from "../../utils/rbac.js";
@@ -85,6 +87,7 @@ export function WorkOrderDetailPage() {
   const [approveAction, setApproveAction] = useState("APPROVED");
   const [comment, setComment] = useState("");
   const [approveAssignEmp, setApproveAssignEmp] = useState("");
+  const [approveEstimatedHours, setApproveEstimatedHours] = useState("");
   const [approveFieldEmployees, setApproveFieldEmployees] = useState([]);
   const [saving, setSaving] = useState(false);
   const [awaitingOpen, setAwaitingOpen] = useState(false);
@@ -171,6 +174,15 @@ export function WorkOrderDetailPage() {
       })
       .catch(() => setApproveFieldEmployees([]));
   }, [approveOpen, isWoFinalApprovalStep, id]);
+
+  useEffect(() => {
+    if (!approveOpen || !wo) return;
+    setApproveEstimatedHours(
+      wo.estimatedHours != null && wo.estimatedHours !== ""
+        ? String(wo.estimatedHours)
+        : "",
+    );
+  }, [approveOpen, wo?.woId, wo?.estimatedHours]);
 
   useEffect(() => {
     if (!editWoOpen) return;
@@ -402,11 +414,17 @@ export function WorkOrderDetailPage() {
           approveAction === "APPROVED" && approveAssignEmp
             ? approveAssignEmp
             : undefined,
+        estimatedHours:
+          approveAction === "APPROVED" &&
+          String(approveEstimatedHours).trim() !== ""
+            ? approveEstimatedHours
+            : undefined,
       });
       toast.success("Đã xử lý phê duyệt");
       setApproveOpen(false);
       setComment("");
       setApproveAssignEmp("");
+      setApproveEstimatedHours("");
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? "Lỗi phê duyệt");
@@ -674,6 +692,56 @@ export function WorkOrderDetailPage() {
             </div>
           </div>
         )}
+
+      {wo.recentChecklistsEligible && wo.woLinkedChecklist && (
+        <Card title="Checklist đã nộp cho phiếu này">
+          <p className="text-xs text-gray-500 mb-3">
+            Hiển thị khi có thành viên được phân công đã gửi checklist gắn WO (kể cả chờ Trưởng ca duyệt).
+          </p>
+          <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge color={CHECKLIST_STATUS_COLOR[wo.woLinkedChecklist.overallStatus] ?? "gray"}>
+                {wo.woLinkedChecklist.overallStatus}
+              </Badge>
+              <Badge color={APPROVAL_STATUS_COLOR[wo.woLinkedChecklist.reviewStatus] ?? "yellow"}>
+                {wo.woLinkedChecklist.reviewStatus === "PENDING"
+                  ? "Chờ duyệt"
+                  : wo.woLinkedChecklist.reviewStatus === "APPROVED"
+                    ? "Đã duyệt"
+                    : wo.woLinkedChecklist.reviewStatus === "REJECTED"
+                      ? "Từ chối"
+                      : wo.woLinkedChecklist.reviewStatus}
+              </Badge>
+              <span className="text-xs font-mono text-gray-500">
+                #{wo.woLinkedChecklist.checklistId}
+              </span>
+            </div>
+            <p className="text-gray-800">
+              <span className="font-semibold">{wo.woLinkedChecklist.checkerName ?? "—"}</span>
+              <span className="text-gray-500"> · {fDateTime(wo.woLinkedChecklist.checkTime)}</span>
+            </p>
+            {wo.woLinkedChecklist.templateName && (
+              <p className="text-xs text-gray-600">Mẫu: {wo.woLinkedChecklist.templateName}</p>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Link
+                to={`/checklists/history?assetId=${wo.assetId}&checklistId=${wo.woLinkedChecklist.checklistId}`}
+                className="text-sm font-semibold text-violet-800 underline"
+              >
+                Xem chi tiết / ảnh câu hỏi
+              </Link>
+              {canDo(user, "CHECKLIST_RESULT:APPROVE") && (
+                <Link
+                  to={`/checklists/review?checklistId=${wo.woLinkedChecklist.checklistId}`}
+                  className="text-sm font-semibold text-blue-700 underline"
+                >
+                  Mở tiếp nhận checklist
+                </Link>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {wo.woSource === "CORRECTIVE" && wo.counterBaselineResetAt && (
         <div className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
@@ -1475,6 +1543,7 @@ export function WorkOrderDetailPage() {
         onClose={() => {
           setApproveOpen(false);
           setApproveAssignEmp("");
+          setApproveEstimatedHours("");
         }}
         title="Xử lý phê duyệt"
         size="sm"
@@ -1496,6 +1565,17 @@ export function WorkOrderDetailPage() {
             <option value="REJECTED">Từ chối</option>
             <option value="REQUEST_CHANGES">Yêu cầu chỉnh sửa</option>
           </Select>
+          {approveAction === "APPROVED" && (
+            <Input
+              label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
+              type="number"
+              min={0}
+              step={0.5}
+              value={approveEstimatedHours}
+              onChange={(e) => setApproveEstimatedHours(e.target.value)}
+              placeholder="Để trống nếu không đổi / giữ giá trị hiện tại"
+            />
+          )}
           {isWoFinalApprovalStep &&
             approveAction === "APPROVED" && (
               <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-3 space-y-2">

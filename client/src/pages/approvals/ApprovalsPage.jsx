@@ -3,6 +3,7 @@
  * WO 2 bước chỉ cho sự cố nghiêm trọng (EMERGENCY hoặc CORRECTIVE+HIGH); hiển thị vai trò từng bước.
  * Hiển thị đủ ngữ cảnh: loại tài nguyên, mẫu luồng, tài sản, vị trí, mô tả chi tiết theo từng loại.
  * Dữ liệu mở rộng: approvalLog.model.js findPendingForPosition.
+ * Duyệt WO: có thể nhập Giờ ước tính (gửi kèm POST approve → WorkOrders.EstimatedHours).
  */
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
@@ -23,7 +24,7 @@ import { employeeApi } from "../../api/employee.api.js";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
-import { Select, Textarea } from "../../components/ui/Input.jsx";
+import { Input, Select, Textarea } from "../../components/ui/Input.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
 import {
@@ -317,6 +318,7 @@ export function ApprovalsPage() {
   const [saving, setSaving] = useState(false);
   /** Phân công ngay khi duyệt xong WO (bước cuối) — tuỳ chọn */
   const [assignEmployeeId, setAssignEmployeeId] = useState("");
+  const [approveEstimatedHours, setApproveEstimatedHours] = useState("");
   const [fieldEmployees, setFieldEmployees] = useState([]);
 
   const load = useCallback(async () => {
@@ -375,6 +377,12 @@ export function ApprovalsPage() {
           action === "APPROVED" && assignEmployeeId
             ? assignEmployeeId
             : undefined,
+        estimatedHours:
+          action === "APPROVED" &&
+          selected.resourceType === "WORK_ORDER" &&
+          String(approveEstimatedHours).trim() !== ""
+            ? approveEstimatedHours
+            : undefined,
       });
       toast.success(
         action === "APPROVED"
@@ -388,6 +396,7 @@ export function ApprovalsPage() {
       setSelected(null);
       setComment("");
       setAssignEmployeeId("");
+      setApproveEstimatedHours("");
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? "Lỗi xử lý");
@@ -539,6 +548,7 @@ export function ApprovalsPage() {
                     setAction("APPROVED");
                     setComment("");
                     setAssignEmployeeId("");
+                    setApproveEstimatedHours("");
                   }}
                   className="flex-shrink-0 self-center"
                 >
@@ -552,7 +562,10 @@ export function ApprovalsPage() {
 
       <Modal
         open={!!selected}
-        onClose={() => setSelected(null)}
+        onClose={() => {
+          setSelected(null);
+          setApproveEstimatedHours("");
+        }}
         title="Phê duyệt — xem đầy đủ thông tin"
         size="lg"
       >
@@ -569,6 +582,18 @@ export function ApprovalsPage() {
               <option value="REJECTED">✗ Từ chối</option>
               <option value="REQUEST_CHANGES">↩ Yêu cầu chỉnh sửa</option>
             </Select>
+
+            {selected.resourceType === "WORK_ORDER" && action === "APPROVED" && (
+              <Input
+                label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
+                type="number"
+                min={0}
+                step={0.5}
+                value={approveEstimatedHours}
+                onChange={(e) => setApproveEstimatedHours(e.target.value)}
+                placeholder="VD: 4 — để trống nếu không đổi"
+              />
+            )}
 
             {selected.resourceType === "WORK_ORDER" &&
               isWoFinalStep(selected) &&
@@ -613,7 +638,13 @@ export function ApprovalsPage() {
             />
 
             <div className="flex justify-end gap-3 pt-1">
-              <Button variant="secondary" onClick={() => setSelected(null)}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSelected(null);
+                  setApproveEstimatedHours("");
+                }}
+              >
                 Đóng
               </Button>
               <Button

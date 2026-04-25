@@ -17,13 +17,18 @@ export const approvalApi = {
   /**
    * Duyệt / từ chối / yêu cầu chỉnh sửa theo logId (ApprovalLogs.LogID, không phải ScheduleID/WO_ID).
    * @param {number} logId
-   * @param {{ action: 'APPROVED'|'REJECTED'|'REQUEST_CHANGES', comment?: string }} data
+   * @param {{ action: 'APPROVED'|'REJECTED'|'REQUEST_CHANGES', comment?: string, assignEmployeeId?: number, estimatedHours?: number|string }} data
    */
-  action: (logId, { action, comment, assignEmployeeId }) => {
+  action: (logId, { action, comment, assignEmployeeId, estimatedHours }) => {
     const body = {
       comment: comment || undefined,
       ...(assignEmployeeId != null && assignEmployeeId !== ''
         ? { assignEmployeeId: Number(assignEmployeeId) }
+        : {}),
+      ...(estimatedHours !== undefined &&
+      estimatedHours !== null &&
+      String(estimatedHours).trim() !== ''
+        ? { estimatedHours: Number(String(estimatedHours).replace(',', '.')) }
         : {}),
     };
     if (action === 'APPROVED') {

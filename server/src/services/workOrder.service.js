@@ -8,7 +8,7 @@
  * WO hoàn thành → workOrderMaintenanceSync; checklist OK đóng WO gọi reconcileAssetStatusForOnsiteWorkOrders.
  * Liên quan: workOrderPhoto.model.js, workOrderMaintenanceSync, approval, notification.
  * saveClosureNotesDraft / resetRuntimeBaselineForCorrective: thợ được giao hoặc TC+ (không cần ASSET:UPDATE cho reset mốc giờ).
- * getById(+viewer): recentChecklists — 3 checklist APPROVED gần nhất cùng tài sản (NVKT/TC+ hoặc thợ được phân công).
+ * getById(+viewer): recentChecklists + woLinkedChecklist (bản mới nhất gắn WO) khi được xem digest checklist.
  */
 import { createError } from "../utils/createError.js";
 import { getPagination, paginatedResult } from "../utils/paginate.js";
@@ -105,6 +105,7 @@ export async function getById(id, viewer = null) {
   const checklistSlot = await scheduledChecklistSlotModel.findByWorkOrderId(id);
   let recentChecklists = [];
   let recentChecklistsEligible = false;
+  let woLinkedChecklist = null;
   if (viewer?.employeeId != null) {
     recentChecklistsEligible = userMaySeeAssetChecklistDigest(
       assignments,
@@ -116,6 +117,9 @@ export async function getById(id, viewer = null) {
         wo.assetId,
         3,
       );
+      woLinkedChecklist = await checklistResultModel.findLatestByWorkOrderId(
+        id,
+      );
     }
   }
   return {
@@ -123,6 +127,7 @@ export async function getById(id, viewer = null) {
     checklistSlot,
     recentChecklists,
     recentChecklistsEligible,
+    woLinkedChecklist,
   };
 }
 

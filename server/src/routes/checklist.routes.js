@@ -9,7 +9,7 @@ import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { validate }          from '../middleware/validate.js';
-import { uploadPhoto }       from '../config/upload.js';
+import { uploadChecklistSubmit } from '../config/upload.js';
 import {
   templateSchema, templateItemSchema, submitChecklistSchema, reviewChecklistSchema,
 } from '../validators/checklist.validator.js';
@@ -85,7 +85,7 @@ checklistRouter.get('/results/:id', ctrl.getResultById);
 // Submit kết quả hiện trường — cần quyền CREATE CHECKLIST_RESULT
 checklistRouter.post('/results',
   requirePermission('CHECKLIST_RESULT', 'CREATE'),
-  uploadPhoto.single('photo'),
+  uploadChecklistSubmit,
   validate(submitChecklistSchema),
   ctrl.submitResult,
 );

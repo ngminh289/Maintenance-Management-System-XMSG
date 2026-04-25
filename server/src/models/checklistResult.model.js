@@ -3,6 +3,7 @@
  * BFD mục 3: ReviewStatus (PENDING → APPROVED/REJECTED) sau khi Trưởng ca xử lý.
  * Không còn cột PartsNotes (đã bỏ — migration 033); vật tư ghi trên WO / AssetMaintenanceHistory.
  * findRecentApprovedByAsset: 3 bản ghi gần nhất cho tham khảo trên phiếu việc.
+ * findLatestByWorkOrderId: bản checklist mới nhất gắn WO (mọi ReviewStatus) — hiển thị trên chi tiết WO khi đồng đội đã nộp.
  * Dùng trong: services/checklist.service.js, workOrder.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -120,6 +121,26 @@ export async function findByAssetVisibleTo(
 }
 
 /** Chỉ APPROVED — dùng làm tài liệu tham khảo an toàn cho thợ trên phiếu việc. */
+/** Bản ghi checklist gắn phiếu WO (mới nhất) — dùng cho banner trên WorkOrderDetail. */
+export async function findLatestByWorkOrderId(woId) {
+  const wid = Number(woId);
+  if (!Number.isFinite(wid) || wid < 1) return null;
+  const [rows] = await getPool().query(
+    `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
+            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus,
+            cr.CheckerID AS checkerId, cr.TemplateID AS templateId, ct.TemplateName AS templateName
+     FROM ChecklistResults cr
+     JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
+     WHERE cr.WO_ID = ?
+     ORDER BY cr.CheckTime DESC
+     LIMIT 1`,
+    [wid],
+  );
+  return rows[0] || null;
+}
+
 export async function findRecentApprovedByAsset(assetId, limit = 3) {
   const n = Math.min(Math.max(Number(limit) || 3, 1), 10);
   const [rows] = await getPool().query(

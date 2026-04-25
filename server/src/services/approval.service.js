@@ -6,6 +6,7 @@
  *   - Chỉ sự cố nghiêm trọng mới 2 bước — B1 Trưởng ca → B2 Trưởng phòng (workflow khẩn):
  *     Priority = EMERGENCY, hoặc (CORRECTIVE + HIGH).
  * Duyệt WO bước cuối: có thể kèm assignEmployeeId → phân công hiện trường ngay (tuỳ chọn).
+ * Body estimatedHours: cập nhật WorkOrders.EstimatedHours khi duyệt APPROVED (mọi bước WO).
  * Trạng thái tài sản MAINTENANCE khi KTV bắt đầu thực hiện (IN_PROGRESS) — xem workOrder.service.js; không gán MAINTENANCE tại bước phê duyệt WO.
  * Phân công được validate trước khi ghi APPROVED / WAITING — tránh lỗi nghỉ phép làm “log đã xử lý”.
  * Cùng cấp phó (8↔6, 9↔7) duyệt thay; bước Trưởng ca (3) giữ 1 bước.
@@ -20,6 +21,7 @@ import {
   assignFieldTechnicianToWorkOrder,
   validateFieldTechnicianAssignment,
 } from "./workOrderFieldAssign.service.js";
+import * as workOrderModel from "../models/workOrder.model.js";
 
 const PID_TP_BAO_TRI = 6;
 const PID_TP_KT = 7;
@@ -192,12 +194,26 @@ export async function approve({
   approverId,
   comment,
   assignEmployeeId,
-}) {
+  estimatedHours,
+} = {}) {
   const log = await model.findById(logId);
   if (!log) throw createError("Không tìm thấy approval log", 404);
   if (log.status !== "PENDING") throw createError("Log này đã được xử lý", 400);
 
   await verifyApprover(log, approverId);
+
+  if (
+    log.resourceType === "WORK_ORDER" &&
+    estimatedHours !== undefined &&
+    estimatedHours !== null &&
+    String(estimatedHours).trim() !== ""
+  ) {
+    const n = Number(String(estimatedHours).replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) {
+      throw createError("Giờ ước tính không hợp lệ", 400);
+    }
+    await workOrderModel.update(log.resourceId, { estimatedHours: n });
+  }
 
   if (log.currentLevel < log.totalLevels) {
     await model.update(logId, { approverId, status: "APPROVED", comment });

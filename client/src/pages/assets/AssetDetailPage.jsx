@@ -6,13 +6,14 @@
  * Liên quan: AssetForm.jsx, asset.model.js, asset.api.js
  * Ảnh: chỉ role ASSET:UPDATE mới upload/xóa được.
  * Tài liệu số: GET /digital-assets?assetId=… (kho chỉ hiện đã duyệt + nháp của user — server).
+ * Nút upload: /documents?upload=1&assetId=… (kho mở modal với tài sản gắn sẵn).
  */
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Pencil, QrCode, ArrowLeft, Gauge, Bell, Wrench,
   Info, Settings, Clock, Images, Trash2, ImagePlus, X,
-  FileText, ExternalLink,
+  FileText, ExternalLink, Upload,
 } from 'lucide-react';
 import { api }        from '../../api/index.js';
 import { assetApi }   from '../../api/asset.api.js';
@@ -91,6 +92,7 @@ export function AssetDetailPage() {
 
   const canEditAsset  = canDo(user, 'ASSET:UPDATE');
   const canLogHours   = canDo(user, 'RUNTIME_LOG:CREATE');
+  const canUploadDoc  = canDo(user, 'DOCUMENT:CREATE');
 
   const load = async () => {
     try {
@@ -347,7 +349,21 @@ export function AssetDetailPage() {
         </Card>
       </div>
 
-      <Card title={<span className="flex items-center gap-2"><FileText size={16} /> Tài liệu số liên quan</span>}>
+      <Card
+        title={<span className="flex items-center gap-2"><FileText size={16} /> Tài liệu số liên quan</span>}
+        action={
+          canUploadDoc ? (
+            <Link
+              to={`/documents?upload=1&assetId=${encodeURIComponent(id)}`}
+              className="inline-flex items-center gap-1.5 font-medium rounded-lg transition-colors
+                bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 shadow-sm
+                px-2 py-1 text-xs"
+            >
+              <Upload size={12} /> Upload tài liệu
+            </Link>
+          ) : undefined
+        }
+      >
         {linkedDocs.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-6">Chưa có tài liệu đính kèm (hoặc bạn chưa có quyền xem trong kho).</p>
         ) : (

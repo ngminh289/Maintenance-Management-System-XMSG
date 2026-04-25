@@ -516,6 +516,26 @@ export async function submitResult({
     resolvedTemplateId = fallback?.templateId ?? null;
   }
 
+  const tplFullForPhotos = resolvedTemplateId
+    ? await templateModel.findById(resolvedTemplateId)
+    : null;
+  if (tplFullForPhotos?.items?.length) {
+    for (const it of tplFullForPhotos.items) {
+      const itType = String(it.inputType || "").toLowerCase();
+      if (itType !== "photo") continue;
+      const row = (details || []).find(
+        (d) => Number(d.questionId) === Number(it.itemId),
+      );
+      const av = row?.answerValue;
+      if (av == null || String(av).trim() === "") {
+        throw createError(
+          `Thiếu ảnh hiện trường cho câu: ${it.questionText || `#${it.itemId}`}`,
+          400,
+        );
+      }
+    }
+  }
+
   const enriched = await enrichDetailsForInsert(
     asset.assetTypeId,
     details,

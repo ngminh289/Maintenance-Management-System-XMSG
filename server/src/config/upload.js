@@ -7,6 +7,7 @@
  *   - uploadEmployeePhoto: ảnh nhân viên (1 ảnh) → uploads/employees/
  * Dùng trong: routes/digitalAsset.routes.js, routes/checklist.routes.js,
  *             routes/asset.routes.js, routes/employee.routes.js.
+ * uploadChecklistSubmit: POST /checklists/results — photo + item_<id> (câu Photo trên mẫu).
  */
 import multer from 'multer';
 import { join, extname } from 'path';
@@ -83,6 +84,17 @@ export const uploadPhoto = multer({
       : cb(Object.assign(new Error('Chỉ hỗ trợ ảnh JPG/PNG/WEBP'), { status: 400 }));
   },
 });
+
+/** Nộp checklist: ảnh tổng `photo` + từng file `item_<TemplateItemID>` (câu kiểu Photo). */
+export const uploadChecklistSubmit = multer({
+  storage:    photoStorage,
+  limits:     { fileSize: 10 * 1024 * 1024, files: 32 },
+  fileFilter: (_req, file, cb) => {
+    PHOTO_EXT.has(extname(file.originalname).toLowerCase())
+      ? cb(null, true)
+      : cb(Object.assign(new Error('Chỉ hỗ trợ ảnh JPG/PNG/WEBP'), { status: 400 }));
+  },
+}).any();
 
 const woPhotoStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_WO_DIR),

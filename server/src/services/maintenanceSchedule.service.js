@@ -5,6 +5,7 @@
  *   - Dự báo: HOURS — ngưỡng giờ chạy; WO do assetCounter.recordReading khi vượt ngưỡng (không generateWorkOrder từ lịch).
  * Luồng phê duyệt lịch (quy trình đề tài):
  *   DRAFT | REJECTED → gửi SUBMIT → PENDING_APPROVAL → Trưởng ca duyệt → PENDING (chờ TH) | REJECTED | DRAFT (yêu cầu sửa)
+ * Kiểm tra checklist khi update: so khớp template với loại tài sản lấy từ Assets (payload.assetId hoặc lịch hiện tại) — không dùng schedule.assetTypeId thiếu từ DB layer.
  * Liên quan: models/maintenanceSchedule.model.js, services/notification.service.js.
  */
 import { createError } from "../utils/createError.js";
@@ -198,7 +199,16 @@ export async function update(id, data, opts = {}) {
       }
       const tpl = await checklistTemplateModel.findById(tid);
       if (!tpl) throw createError("Không tìm thấy checklist template", 404);
-      if (Number(tpl.assetTypeId) !== Number(schedule.assetTypeId)) {
+      const effectiveAssetId =
+        payload.assetId != null && payload.assetId !== ""
+          ? Number(payload.assetId)
+          : Number(schedule.assetId);
+      if (!Number.isFinite(effectiveAssetId)) {
+        throw createError("AssetID trên lịch không hợp lệ", 400);
+      }
+      const assetForCheck = await assetModel.findById(effectiveAssetId);
+      if (!assetForCheck) throw createError("Không tìm thấy tài sản", 404);
+      if (Number(tpl.assetTypeId) !== Number(assetForCheck.assetTypeId)) {
         throw createError(
           "Checklist template không thuộc loại tài sản của lịch bảo trì này.",
           400,

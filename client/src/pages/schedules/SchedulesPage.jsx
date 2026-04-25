@@ -15,10 +15,10 @@ import {
   Trash2,
   Send,
 } from "lucide-react";
-import { scheduleApi }    from "../../api/schedule.api.js";
-import { assetApi }       from "../../api/asset.api.js";
-import { assetTypeApi }   from "../../api/assetType.api.js";
-import { checklistApi }   from "../../api/checklist.api.js";
+import { scheduleApi } from "../../api/schedule.api.js";
+import { assetApi } from "../../api/asset.api.js";
+import { assetTypeApi } from "../../api/assetType.api.js";
+import { checklistApi } from "../../api/checklist.api.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
@@ -87,7 +87,8 @@ function dueRangeByPeriod(period) {
   let startDate = null;
   if (period === "week") startDate = new Date(today.getTime() - 6 * 86400000);
   if (period === "month") startDate = new Date(today.getTime() - 29 * 86400000);
-  if (period === "quarter") startDate = new Date(today.getTime() - 89 * 86400000);
+  if (period === "quarter")
+    startDate = new Date(today.getTime() - 89 * 86400000);
   if (!startDate) return {};
   return { dueFrom: startDate.toISOString().slice(0, 10), dueTo: end };
 }
@@ -155,14 +156,23 @@ function ScheduleForm({ form, setF, patchForm, assets }) {
     setF("assetId", assetId);
     if (!assetId || isPredictive) return;
     try {
-      const asset = assets.find(a => String(a.assetId) === String(assetId));
+      const asset = assets.find((a) => String(a.assetId) === String(assetId));
       if (!asset?.assetTypeId) return;
       const res = await assetTypeApi.getById(asset.assetTypeId);
       const t = res.data.data;
-      if (t?.defaultPMValue && t?.defaultPMUnit && t.defaultPMUnit !== 'HOURS') {
-        patchForm({ frequencyValue: t.defaultPMValue, frequencyUnit: t.defaultPMUnit });
+      if (
+        t?.defaultPMValue &&
+        t?.defaultPMUnit &&
+        t.defaultPMUnit !== "HOURS"
+      ) {
+        patchForm({
+          frequencyValue: t.defaultPMValue,
+          frequencyUnit: t.defaultPMUnit,
+        });
       }
-    } catch { /* bỏ qua lỗi fetch, không block */ }
+    } catch {
+      /* bỏ qua lỗi fetch, không block */
+    }
   };
 
   return (
@@ -205,13 +215,15 @@ function ScheduleForm({ form, setF, patchForm, assets }) {
               const u =
                 form.frequencyUnit === "HOURS"
                   ? "DAYS"
-                  : form.frequencyUnit ?? "DAYS";
+                  : (form.frequencyUnit ?? "DAYS");
               patchForm({
                 scheduleKind: "periodic",
                 maintenanceType: "PREVENTIVE",
                 frequencyUnit: u,
                 frequencyValue:
-                  form.frequencyUnit === "HOURS" ? 30 : Number(form.frequencyValue) || 30,
+                  form.frequencyUnit === "HOURS"
+                    ? 30
+                    : Number(form.frequencyValue) || 30,
               });
             }
           }}
@@ -254,13 +266,15 @@ function ScheduleForm({ form, setF, patchForm, assets }) {
         )}
         {isPredictive && (
           <p className="text-sm text-gray-600 col-span-2">
-            Đơn vị: <strong>giờ chạy tích lũy</strong> — khi nhập đồng hồ máy vượt ngưỡng, hệ thống tự tạo phiếu PM
-            chờ duyệt (không dùng nút WO trên dòng lịch).
+            Đơn vị: <strong>giờ chạy tích lũy</strong> — khi nhập đồng hồ máy
+            vượt ngưỡng, hệ thống tự tạo phiếu PM chờ duyệt (không dùng nút WO
+            trên dòng lịch).
           </p>
         )}
         {!isPredictive && (
           <p className="text-xs text-blue-600 col-span-2 -mt-1">
-            💡 Chọn tài sản sẽ tự gợi ý tần suất từ loại thiết bị (có thể sửa lại).
+            💡 Chọn tài sản sẽ tự gợi ý tần suất từ loại thiết bị (có thể sửa
+            lại).
           </p>
         )}
         <Input
@@ -292,7 +306,8 @@ function ScheduleForm({ form, setF, patchForm, assets }) {
       )}
       {isPredictive && (
         <p className="text-xs text-indigo-700 bg-indigo-50 rounded-lg px-3 py-2">
-          Lịch dự báo theo giờ — dựa trên bộ đếm tài sản và trung bình giờ/ngày; không tạo phiếu từ nút WO trên lịch.
+          Lịch dự báo theo giờ — dựa trên bộ đếm tài sản và trung bình giờ/ngày;
+          không tạo phiếu từ nút WO trên lịch.
         </p>
       )}
     </div>
@@ -334,7 +349,9 @@ export function SchedulesPage() {
         ...(filters.assetId && { assetId: filters.assetId }),
         ...(filters.locationId && { locationId: filters.locationId }),
         ...(filters.status && { status: filters.status }),
-        ...(filters.maintenanceType && { maintenanceType: filters.maintenanceType }),
+        ...(filters.maintenanceType && {
+          maintenanceType: filters.maintenanceType,
+        }),
         ...(filters.priority && { priority: filters.priority }),
         ...periodRange,
       });
@@ -518,16 +535,16 @@ export function SchedulesPage() {
             hiện).
           </li>
           <li>
-            Lịch <strong>định kỳ</strong>: nút <strong>WO</strong> hoặc scheduler
-            (đến hạn) tạo <strong>phiếu việc</strong>{" "}
+            Lịch <strong>định kỳ</strong>: nút <strong>WO</strong> hoặc
+            scheduler (đến hạn) tạo <strong>phiếu việc</strong>{" "}
             <strong>Chờ thực hiện</strong> — <em>không</em> phê duyệt lại phiếu.
-            Lịch <strong>dự báo theo giờ</strong> không có nút WO — phiếu tự sinh
-            khi vượt ngưỡng giờ chạy (chờ duyệt phiếu).
+            Lịch <strong>dự báo theo giờ</strong> không có nút WO — phiếu tự
+            sinh khi vượt ngưỡng giờ chạy (chờ duyệt phiếu).
           </li>
           <li>
-            Trưởng ca / Trưởng phòng <strong>phân công</strong> KTV hiện trường hoặc
-            Chuyên viên KTS trên chi tiết phiếu; người được giao xem phiếu tại{" "}
-            <strong>Phiếu việc</strong> + thông báo.
+            Trưởng ca / Trưởng phòng <strong>phân công</strong> KTV hiện trường
+            hoặc Chuyên viên KTS trên chi tiết phiếu; người được giao xem phiếu
+            tại <strong>Phiếu việc</strong> + thông báo.
           </li>
           <li>
             Tại máy: mở <strong>Checklist / QR</strong> (mã tài sản) để xem
@@ -560,40 +577,66 @@ export function SchedulesPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Select value={filters.assetId} onChange={(e) => setFilter("assetId", e.target.value)}>
+        <Select
+          value={filters.assetId}
+          onChange={(e) => setFilter("assetId", e.target.value)}
+        >
           <option value="">Tất cả tài sản</option>
           {assets.map((a) => (
-            <option key={a.assetId} value={a.assetId}>{a.assetName}</option>
-          ))}
-        </Select>
-        <Select value={filters.locationId} onChange={(e) => setFilter("locationId", e.target.value)}>
-          <option value="">Tất cả khu vực</option>
-          {locations.map((l) => (
-            <option key={l.locationId} value={l.locationId}>
-              {l.parentLocationName ? `${l.parentLocationName} › ${l.locationName}` : l.locationName}
+            <option key={a.assetId} value={a.assetId}>
+              {a.assetName}
             </option>
           ))}
         </Select>
-        <Select value={filters.status} onChange={(e) => setFilter("status", e.target.value)}>
+        <Select
+          value={filters.locationId}
+          onChange={(e) => setFilter("locationId", e.target.value)}
+        >
+          <option value="">Tất cả khu vực</option>
+          {locations.map((l) => (
+            <option key={l.locationId} value={l.locationId}>
+              {l.parentLocationName
+                ? `${l.parentLocationName} › ${l.locationName}`
+                : l.locationName}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={filters.status}
+          onChange={(e) => setFilter("status", e.target.value)}
+        >
           <option value="">Tất cả trạng thái</option>
           {Object.entries(STATUS_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
+            <option key={value} value={value}>
+              {label}
+            </option>
           ))}
         </Select>
-        <Select value={filters.maintenanceType} onChange={(e) => setFilter("maintenanceType", e.target.value)}>
+        <Select
+          value={filters.maintenanceType}
+          onChange={(e) => setFilter("maintenanceType", e.target.value)}
+        >
           <option value="">Tất cả loại bảo trì</option>
           {Object.entries(MAINTENANCE_TYPE_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
+            <option key={value} value={value}>
+              {label}
+            </option>
           ))}
         </Select>
-        <Select value={filters.priority} onChange={(e) => setFilter("priority", e.target.value)}>
+        <Select
+          value={filters.priority}
+          onChange={(e) => setFilter("priority", e.target.value)}
+        >
           <option value="">Tất cả ưu tiên</option>
           <option value="LOW">Thấp</option>
           <option value="MEDIUM">Trung bình</option>
           <option value="HIGH">Cao</option>
           <option value="EMERGENCY">Khẩn cấp</option>
         </Select>
-        <Select value={filters.period} onChange={(e) => setFilter("period", e.target.value)}>
+        <Select
+          value={filters.period}
+          onChange={(e) => setFilter("period", e.target.value)}
+        >
           <option value="">Thời gian: tất cả</option>
           <option value="week">Tuần này (7 ngày)</option>
           <option value="month">Tháng này (30 ngày)</option>
@@ -691,9 +734,13 @@ export function SchedulesPage() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {s.checklistTemplateName ? (
-                          <Badge color="indigo">{s.checklistTemplateName}</Badge>
+                          <Badge color="indigo">
+                            {s.checklistTemplateName}
+                          </Badge>
                         ) : (
-                          <span className="text-xs text-gray-400 italic">Chưa gắn template</span>
+                          <span className="text-xs text-gray-400 italic">
+                            Chưa gắn template
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -730,7 +777,7 @@ export function SchedulesPage() {
                                 size="xs"
                                 variant="secondary"
                                 onClick={() => handleSubmit(s.scheduleId)}
-                                title="Gửi Trưởng ca duyệt"
+                                title="Gửi Trưởng phòng duyệt"
                               >
                                 <Send size={11} /> Gửi
                               </Button>

@@ -51,14 +51,41 @@ export const getQRInfo = asyncHandler(async (req, res) =>
   ));
 
 // ── Results ───────────────────────────────────────────────────────────────────
+/** Chuẩn hoá đường dẫn lưu DB: luôn bắt đầu bằng uploads/photos/… */
+function normalizedChecklistPhotoPath(filePath) {
+  if (!filePath) return null;
+  const s = String(filePath).replace(/\\/g, '/');
+  const u = s.toLowerCase().indexOf('uploads/');
+  if (u >= 0) return s.slice(u);
+  const parts = s.split('/').filter(Boolean);
+  return parts.length ? `uploads/photos/${parts[parts.length - 1]}` : null;
+}
+
 export const submitResult = asyncHandler(async (req, res) => {
-  // Hỗ trợ multipart (khi có upload ảnh) và JSON thuần
-  const body    = req.body;
+  const body = req.body;
   const details = typeof body.details === 'string' ? JSON.parse(body.details) : (body.details ?? []);
-  const evidencePhoto = req.file?.path ?? body.evidencePhoto ?? null;
+  let evidencePhoto = body.evidencePhoto ?? null;
+  const files = Array.isArray(req.files) ? req.files : [];
+  const itemPhotos = {};
+  for (const f of files) {
+    if (!f?.path) continue;
+    const norm = normalizedChecklistPhotoPath(f.path);
+    if (f.fieldname === 'photo') evidencePhoto = norm ?? f.path;
+    else {
+      const m = /^item_(\d+)$/.exec(String(f.fieldname || ''));
+      if (m) itemPhotos[Number(m[1])] = norm ?? f.path;
+    }
+  }
+  const merged = (details || []).map((row) => {
+    const qid = Number(row.questionId);
+    if (Number.isFinite(qid) && itemPhotos[qid]) {
+      return { ...row, answerValue: itemPhotos[qid] };
+    }
+    return row;
+  });
   return ok(res, await service.submitResult({
     ...body,
-    details,
+    details: merged,
     evidencePhoto,
     checkerId: req.user.sub,
   }), 201);

@@ -36,6 +36,7 @@ export const approve = asyncHandler(async (req, res) =>
     approverId: req.user.sub,
     comment: req.body.comment,
     assignEmployeeId: req.body.assignEmployeeId,
+    estimatedHours: req.body.estimatedHours,
   })));
 
 export const reject = asyncHandler(async (req, res) => {

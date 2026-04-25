@@ -48,6 +48,14 @@ export function getReviewRowCompare(detail) {
     return { tone: pass ? 'good' : 'bad', lines };
   }
 
+  if (inputType === 'Photo') {
+    const has = answerValue && String(answerValue).trim();
+    return {
+      tone: has ? 'good' : 'neutral',
+      lines: has ? ['Đã đính kèm ảnh hiện trường'] : ['Chưa có ảnh'],
+    };
+  }
+
   if (inputType === 'Numeric' || inputType === 'Range') {
     const n = Number(answerValue);
     const min = threshold.safeNumericMin != null && threshold.safeNumericMin !== ''
@@ -82,6 +90,10 @@ export function formatAnswerLabel(inputType, answerValue, isOK) {
     const v = String(answerValue ?? '').toLowerCase();
     const pass = isOK !== false && v !== 'false' && v !== '0' && v !== 'ng';
     return pass ? 'Đạt' : 'Không đạt';
+  }
+  if (inputType === 'Photo') {
+    if (answerValue === null || answerValue === undefined || answerValue === '') return '—';
+    return 'Ảnh đính kèm';
   }
   if (answerValue === null || answerValue === undefined || answerValue === '') return '—';
   return String(answerValue);
