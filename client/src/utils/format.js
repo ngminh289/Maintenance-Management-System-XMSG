@@ -1,8 +1,24 @@
 /**
  * format.js — Tiện ích định dạng ngày, giờ, số, trạng thái.
+ * QUAN TRỌNG: Chuẩn hóa parse ngày theo local timezone để tránh lỗi lệch -1 ngày.
  */
-import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { addDays, format, formatDistanceToNow, parseISO, startOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
+
+function parseDateLike(value) {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) return value;
+  const s = String(value).trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (dateOnly) {
+    return new Date(
+      Number(dateOnly[1]),
+      Number(dateOnly[2]) - 1,
+      Number(dateOnly[3]),
+    );
+  }
+  return new Date(s.includes("T") ? s : s.replace(" ", "T"));
+}
 
 /** Ngày thuần YYYY-MM-DD: parse theo lịch local — tránh lùi 1 ngày khi chuỗi ISO được hiểu là UTC nửa đêm. */
 export const fDate = (d) => {
@@ -17,12 +33,43 @@ export const fDate = (d) => {
   }
   return format(parseISO(head), "dd/MM/yyyy");
 };
-export const fDateTime = (d) =>
-  d ? format(new Date(d), "dd/MM/yyyy HH:mm") : "—";
-export const fFromNow = (d) =>
-  d ? formatDistanceToNow(new Date(d), { addSuffix: true, locale: vi }) : "—";
+export const fDateTime = (d) => {
+  const parsed = parseDateLike(d);
+  if (!parsed || Number.isNaN(parsed.getTime())) return "—";
+  return format(parsed, "dd/MM/yyyy HH:mm");
+};
+export const fFromNow = (d) => {
+  const parsed = parseDateLike(d);
+  if (!parsed || Number.isNaN(parsed.getTime())) return "—";
+  return formatDistanceToNow(parsed, { addSuffix: true, locale: vi });
+};
 export const fNumber = (n) =>
   n == null ? "—" : Number(n).toLocaleString("vi-VN");
+
+/** YYYY-MM-DD local dùng cho input type=date / query API, không bị lệch UTC. */
+export const toDateInputValue = (value) => {
+  if (value == null || value === "") return "";
+  const s = String(value).trim();
+  const direct = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (direct) return `${direct[1]}-${direct[2]}-${direct[3]}`;
+  const parsed = parseDateLike(value);
+  if (!parsed || Number.isNaN(parsed.getTime())) return "";
+  return format(parsed, "yyyy-MM-dd");
+};
+
+/** Lấy ngày local hôm nay dạng YYYY-MM-DD (không dùng toISOString để tránh lệch ngày). */
+export const todayDateInput = () => format(new Date(), "yyyy-MM-dd");
+
+/** Lấy ngày local +/- N ngày dạng YYYY-MM-DD. */
+export const dateInputWithOffset = (daysOffset, baseDate = new Date()) =>
+  format(addDays(baseDate, daysOffset), "yyyy-MM-dd");
+
+/** So sánh theo ngày local: true nếu ngày đã qua trước hôm nay. */
+export const isDateBeforeToday = (value) => {
+  const d = parseDateLike(value);
+  if (!d || Number.isNaN(d.getTime())) return false;
+  return startOfDay(d).getTime() < startOfDay(new Date()).getTime();
+};
 
 export const ASSET_STATUS_LABEL = {
   AVAILABLE: "Hoạt động bình thường",

@@ -26,7 +26,7 @@ import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { AssetForm }  from './AssetForm.jsx';
 import {
   ASSET_STATUS_LABEL, ASSET_STATUS_COLOR,
-  fDate, fDateTime, fNumber, WO_SOURCE_LABEL,
+  fDate, fDateTime, fNumber, WO_SOURCE_LABEL, isDateBeforeToday,
 } from '../../utils/format.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { canDo }   from '../../utils/rbac.js';
@@ -191,7 +191,7 @@ export function AssetDetailPage() {
     ? fDate(c.estimatedNextPMDate)
     : hasHourlySchedule ? 'Chưa đủ dữ liệu giờ chạy' : 'Chưa có lịch theo giờ chạy';
 
-  const warrantyExpired = asset.warrantyDate && new Date(asset.warrantyDate) < new Date();
+  const warrantyExpired = asset.warrantyDate && isDateBeforeToday(asset.warrantyDate);
   const warrantyDisplay = asset.warrantyDate
     ? <span className={warrantyExpired ? 'text-red-600' : 'text-green-600'}>
         {fDate(asset.warrantyDate)}{warrantyExpired ? ' (Hết hạn)' : ' (Còn hạn)'}

@@ -33,7 +33,12 @@ import {
   mapScheduleToForm,
   validateScheduleForm as validateSharedScheduleForm,
 } from "../../components/schedules/ScheduleFormFields.jsx";
-import { fDate } from "../../utils/format.js";
+import {
+  fDate,
+  dateInputWithOffset,
+  todayDateInput,
+  toDateInputValue,
+} from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo } from "../../utils/rbac.js";
 import toast from "react-hot-toast";
@@ -82,21 +87,21 @@ const MAINTENANCE_TYPE_LABEL = {
 
 function dueRangeByPeriod(period) {
   if (!period) return {};
-  const today = new Date();
-  const end = today.toISOString().slice(0, 10);
-  let startDate = null;
-  if (period === "week") startDate = new Date(today.getTime() - 6 * 86400000);
-  if (period === "month") startDate = new Date(today.getTime() - 29 * 86400000);
-  if (period === "quarter")
-    startDate = new Date(today.getTime() - 89 * 86400000);
-  if (!startDate) return {};
-  return { dueFrom: startDate.toISOString().slice(0, 10), dueTo: end };
+  const dueTo = todayDateInput();
+  if (period === "week") return { dueFrom: dateInputWithOffset(-6), dueTo };
+  if (period === "month") return { dueFrom: dateInputWithOffset(-29), dueTo };
+  if (period === "quarter") return { dueFrom: dateInputWithOffset(-89), dueTo };
+  return {};
 }
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
+  const normalized = toDateInputValue(dateStr);
+  if (!normalized) return null;
+  const [y, m, d] = normalized.split("-").map(Number);
+  const targetDate = new Date(y, m - 1, d);
   return Math.round(
-    (new Date(dateStr) - new Date(new Date().toDateString())) / 86400000,
+    (targetDate - new Date(new Date().toDateString())) / 86400000,
   );
 }
 
@@ -518,42 +523,6 @@ export function SchedulesPage() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-blue-950">
-        <p className="font-bold text-blue-900 mb-1">
-          Luồng lịch → phiếu việc → hiện trường
-        </p>
-        <ul className="list-disc pl-5 space-y-1 text-blue-900/90 leading-relaxed">
-          <li>
-            Sau khi <strong>Thêm lịch</strong>, trạng thái là{" "}
-            <strong>Bản nháp</strong> — bấm <strong>Gửi</strong> trên dòng đó để
-            vào <strong>Chờ duyệt</strong>, rồi xử lý tại menu{" "}
-            <strong>Phê duyệt</strong>.
-          </li>
-          <li>
-            <strong>Lịch</strong> phải được duyệt trước (trạng thái{" "}
-            <strong>Chờ TH</strong> trên lịch = kế hoạch đã OK, chờ đến hạn thực
-            hiện).
-          </li>
-          <li>
-            Lịch <strong>định kỳ</strong>: nút <strong>WO</strong> hoặc
-            scheduler (đến hạn) tạo <strong>phiếu việc</strong>{" "}
-            <strong>Chờ thực hiện</strong> — <em>không</em> phê duyệt lại phiếu.
-            Lịch <strong>dự báo theo giờ</strong> không có nút WO — phiếu tự
-            sinh khi vượt ngưỡng giờ chạy (chờ duyệt phiếu).
-          </li>
-          <li>
-            Trưởng ca / Trưởng phòng <strong>phân công</strong> KTV hiện trường
-            hoặc Chuyên viên KTS trên chi tiết phiếu; người được giao xem phiếu
-            tại <strong>Phiếu việc</strong> + thông báo.
-          </li>
-          <li>
-            Tại máy: mở <strong>Checklist / QR</strong> (mã tài sản) để xem
-            SOP/tài liệu — QR ở đây là <strong>nhận diện thiết bị</strong>,
-            không phải khoá vật lý trừ khi nhà máy tích hợp thêm.
-          </li>
-        </ul>
-      </div>
-
       {/* Banner cảnh báo */}
       {(overdueCount > 0 || warningCount > 0) && (
         <div className="flex gap-3 flex-wrap">

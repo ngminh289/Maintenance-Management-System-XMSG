@@ -46,6 +46,7 @@ import {
   fDate,
   fDateTime,
   fNumber,
+  toDateInputValue,
   CHECKLIST_STATUS_COLOR,
   APPROVAL_STATUS_COLOR,
 } from "../../utils/format.js";
@@ -202,7 +203,7 @@ export function WorkOrderDetailPage() {
         : "",
     );
     setApprovePlannedDate(
-      wo.plannedDate ? String(wo.plannedDate).slice(0, 10) : "",
+      toDateInputValue(wo.plannedDate),
     );
     setApprovePriority(wo.priority || "");
     setApproveDescription(wo.description || "");
@@ -575,6 +576,12 @@ export function WorkOrderDetailPage() {
     ["IN_PROGRESS", "PAUSED"].includes(wo.status) &&
     canUpdate &&
     (amGroupLeader || isTcPlus);
+  const canControlMachinePower =
+    canUpdate &&
+    (amGroupLeader || isTcPlus) &&
+    ["IN_PROGRESS", "PAUSED", "AWAITING_CLOSURE"].includes(wo.status);
+  const machinePowerState = String(wo.machinePowerState || "STARTUP").toUpperCase();
+  const machineIsShutdown = machinePowerState === "SHUTDOWN";
   const source = String(wo.woSource || "").toUpperCase();
   const hasChecklistRequirement =
     (source === "SCHEDULE" ||
@@ -1172,6 +1179,10 @@ export function WorkOrderDetailPage() {
                 Number(wo.requiresShutdown) === 1 ? "Có" : "Không",
               ],
               [
+                "Trạng thái nguồn máy",
+                machineIsShutdown ? "Đang tắt máy" : "Đang bật máy",
+              ],
+              [
                 "Giờ thực tế",
                 wo.actualHours != null && wo.actualHours !== ""
                   ? `${wo.actualHours}h`
@@ -1301,20 +1312,32 @@ export function WorkOrderDetailPage() {
         </Card>
       )}
 
-      {["IN_PROGRESS", "AWAITING_CLOSURE"].includes(wo.status) && (
-        <Card title="Ảnh hiện trường">
-          {canAcceptWork && wo.status === "IN_PROGRESS" && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
-              <Input
-                label="Lý do downtime planned (tuỳ chọn)"
-                value={shutdownReason}
-                onChange={(e) => setShutdownReason(e.target.value)}
-                placeholder="VD: thay bạc đạn cụm trục chính"
-              />
-              <div className="w-full flex gap-2">
-                <Button type="button" size="sm" onClick={() => setPowerState("SHUTDOWN")}>
-                  Tắt máy
-                </Button>
+      {canControlMachinePower && (
+        <Card title="Điều khiển nguồn máy">
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700">
+              Trạng thái hiện tại:{" "}
+              <span className={machineIsShutdown ? "font-bold text-amber-700" : "font-bold text-green-700"}>
+                {machineIsShutdown ? "Đang tắt máy" : "Đang bật máy"}
+              </span>
+            </p>
+            {!machineIsShutdown && (
+              <>
+                <Input
+                  label="Lý do dừng máy (tuỳ chọn)"
+                  value={shutdownReason}
+                  onChange={(e) => setShutdownReason(e.target.value)}
+                  placeholder="VD: thay bạc đạn cụm trục chính"
+                />
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" onClick={() => setPowerState("SHUTDOWN")}>
+                    Tắt máy
+                  </Button>
+                </div>
+              </>
+            )}
+            {machineIsShutdown && (
+              <div className="flex gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -1324,8 +1347,13 @@ export function WorkOrderDetailPage() {
                   Bật máy
                 </Button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </Card>
+      )}
+
+      {["IN_PROGRESS", "AWAITING_CLOSURE"].includes(wo.status) && (
+        <Card title="Ảnh hiện trường">
           {canUploadPhotos && (
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <input

@@ -110,13 +110,14 @@ const PIDS_TRUONG_PHO_HAI_PHONG = [
 ];
 
 /**
- * Báo cáo hiệu suất tài sản: Trưởng/Phó bảo trì & PKT (L3), Quản trị (L4+), Ban GĐ.
- * Không gồm CV KTS / Trưởng ca.
+ * Báo cáo hiệu suất tài sản: CV KTS (L2), Trưởng/Phó bảo trì & PKT (L3), Quản trị (L4+), Ban GĐ.
+ * Theo yêu cầu nghiệp vụ: ai xem được báo cáo này thì cũng được quyền xuất.
  */
 export function canAccessPerformanceReport(user) {
   if (!user) return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
+  if (lvl === 2) return true;
   if (lvl >= 4) return true;
   return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
@@ -133,9 +134,7 @@ export function canAccessResourceUsageReport(user) {
   return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
 
-/**
- * Báo cáo nghiệp vụ checklist: cùng quyền với báo cáo hiệu suất (không gồm CV KTS).
- */
+/** Báo cáo nghiệp vụ checklist: cùng quyền với báo cáo hiệu suất. */
 export function canAccessChecklistOperationsReport(user) {
   return canAccessPerformanceReport(user);
 }

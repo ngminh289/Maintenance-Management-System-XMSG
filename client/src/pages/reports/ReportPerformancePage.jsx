@@ -5,6 +5,9 @@
  * Liên quan: api/stats.api.js, utils/rbac.js (canAccessPerformanceReport), routes stats.routes.js.
  */
 import { useEffect, useState, useCallback } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import {
   BarChart, Bar, LineChart, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -14,7 +17,7 @@ import { statsApi }    from '../../api/stats.api.js';
 import { Card }        from '../../components/ui/Card.jsx';
 import { Badge }       from '../../components/ui/Badge.jsx';
 import { PageLoader }  from '../../components/ui/Spinner.jsx';
-import { canDo }       from '../../utils/rbac.js';
+import { canAccessPerformanceReport } from '../../utils/rbac.js';
 import { useAuth }     from '../../contexts/AuthContext.jsx';
 import toast           from 'react-hot-toast';
 import {
@@ -34,6 +37,23 @@ function downloadCSV(data, filename) {
   const a       = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+}
+
+const LOGO_URL = '/assets/logo/logo.png';
+
+async function loadLogoDataUrl() {
+  try {
+    const res = await fetch(LOGO_URL);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** Label tooltip chung */
@@ -91,7 +111,8 @@ function ParetoTooltip({ active, payload, label }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export function ReportPerformancePage() {
   const { user }      = useAuth();
-  const canExport     = canDo(user, 'REPORT:EXPORT');
+  // Theo nghiệp vụ: ai xem được báo cáo hiệu suất thì được xuất.
+  const canExport     = canAccessPerformanceReport(user);
   const [tab,         setTab]     = useState('mtbf');
   const [months,      setMonths]  = useState(12);
   const [data,        setData]    = useState(null);
@@ -128,7 +149,7 @@ export function ReportPerformancePage() {
       downloadCSV(
         (mttr?.byAsset ?? []).map(r => ({
           'Tài sản': r.assetName, 'Vị trí': r.locationName ?? '',
-          'Số lần sửa': r.repairCount, 'Tổng giờ': r.totalRepairHours, 'MTTR (giờ)': r.mttr ?? '',
+          'Số lần sửa': r.repairCount, 'Tổng giờ': Math.round(Number(r.totalRepairHours || 0)), 'MTTR (giờ)': r.mttr ?? '',
         })), `mttr-${months}thang.csv`,
       );
     } else if (tab === 'downtime') {
@@ -161,6 +182,196 @@ export function ReportPerformancePage() {
     }
   };
 
+  const exportPerformanceExcel = () => {
+    if (!canExport) {
+      toast.error('Bạn chưa có quyền REPORT:EXPORT để xuất báo cáo');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const mtbfSheet = XLSX.utils.json_to_sheet(
+      (mtbf?.byAsset ?? []).map((r) => ({
+        'Mã tài sản': r.assetId,
+        'Tên tài sản': r.assetName,
+        'Vị trí': r.locationName ?? '',
+        'Tổng giờ chạy (h)': Number(r.totalRunHours || 0),
+        'Số lần hỏng (Emergency)': Number(r.failureCount || 0),
+        'MTBF (h)': r.mtbf ?? '',
+      })),
+    );
+    const mttrSheet = XLSX.utils.json_to_sheet(
+      (mttr?.byAsset ?? []).map((r) => ({
+        'Mã tài sản': r.assetId,
+        'Tên tài sản': r.assetName,
+        'Vị trí': r.locationName ?? '',
+        'Số lần sửa': Number(r.repairCount || 0),
+        'Tổng giờ sửa (h)': Math.round(Number(r.totalRepairHours || 0)),
+        'MTTR (h)': r.mttr ?? '',
+      })),
+    );
+    const paretoSheet = XLSX.utils.json_to_sheet(
+      (pareto?.rows ?? []).map((r) => ({
+        'Mã tài sản': r.assetId,
+        'Tên tài sản': r.assetName,
+        'Vị trí': r.locationName ?? '',
+        'Downtime (h)': Number(r.downtimeHours || 0),
+        'Planned (h)': Number(r.plannedHours || 0),
+        'Unplanned (h)': Number(r.unplannedHours || 0),
+        'Tích lũy (%)': Number(r.cumulativePercent || 0),
+        'Ưu tiên 80/20': Number(r.cumulativePercent || 0) <= 80 ? 'Ưu tiên 1' : 'Ưu tiên 2',
+      })),
+    );
+    const downtimeLogSheet = XLSX.utils.json_to_sheet(
+      (downtime?.byAsset ?? []).map((r) => ({
+        'Mã tài sản': r.assetId,
+        'Tên tài sản': r.assetName,
+        'Vị trí': r.locationName ?? '',
+        'Downtime tổng (h)': Number(r.downtimeHours || 0),
+        'Planned (h)': Number(r.plannedDowntimeHours || 0),
+        'Unplanned (h)': Number(r.unplannedDowntimeHours || 0),
+        'Tỷ lệ dừng (%)': Number(r.downtimePercent || 0),
+      })),
+    );
+    XLSX.utils.book_append_sheet(wb, mtbfSheet, 'Tong hieu suat');
+    XLSX.utils.book_append_sheet(wb, mttrSheet, 'MTTR');
+    XLSX.utils.book_append_sheet(wb, paretoSheet, 'Pareto');
+    XLSX.utils.book_append_sheet(wb, downtimeLogSheet, 'Nhat ky dung may');
+    XLSX.writeFile(wb, `bao-cao-hieu-suat-${months}thang.xlsx`);
+  };
+
+  const exportPerformancePdf = async () => {
+    try {
+      if (!canExport) {
+        toast.error('Bạn chưa có quyền xuất báo cáo');
+        return;
+      }
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const now = new Date();
+      const generatedAt = `${now.toLocaleTimeString('vi-VN')} ${now.toLocaleDateString('vi-VN')}`;
+      const exportedBy =
+        user?.fullName ||
+        user?.name ||
+        user?.username ||
+        user?.email ||
+        `Employee #${user?.employeeId ?? 'unknown'}`;
+      const logoDataUrl = await loadLogoDataUrl();
+
+      const drawHeaderFooter = (title) => {
+        doc.setFillColor(15, 23, 42);
+        doc.rect(0, 0, pageW, 18, 'F');
+        if (logoDataUrl) {
+          try {
+            doc.addImage(logoDataUrl, 'PNG', 8, 3, 12, 12);
+          } catch {
+            // Bỏ qua lỗi logo để vẫn xuất được PDF
+          }
+        }
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('BAO CAO HIEU SUAT TAI SAN', 24, 11);
+        doc.setFontSize(9);
+        doc.text(`Ky: ${months} thang`, pageW - 40, 7);
+        doc.text(`Trang ${doc.getNumberOfPages()}`, pageW - 40, 12);
+        doc.setTextColor(20, 20, 20);
+        doc.setFontSize(14);
+        doc.text(title, 14, 28);
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Nguoi xuat: ${exportedBy}`, 14, pageH - 12);
+        doc.text(`Bao cao trich xuat tu he thong luc ${generatedAt}`, 14, pageH - 8);
+        doc.setTextColor(20, 20, 20);
+      };
+
+      drawHeaderFooter('1) Tong quan KPI');
+      autoTable(doc, {
+      startY: 34,
+      head: [['Chi so', 'Gia tri']],
+      body: [
+        ['MTBF trung binh (h)', mtbf?.overall ?? '—'],
+        ['MTTR trung binh (h)', mttr?.overall ?? '—'],
+        ['Downtime trung binh (%)', downtime?.overall ?? '—'],
+        ['Tong planned downtime (h)', Number(downtime?.plannedOverallHours ?? 0).toFixed(2)],
+        ['Tong unplanned downtime (h)', Number(downtime?.unplannedOverallHours ?? 0).toFixed(2)],
+      ],
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [30, 41, 59] },
+    });
+
+      doc.addPage();
+      drawHeaderFooter('2) MTBF & MTTR chi tiet');
+      autoTable(doc, {
+      startY: 34,
+      head: [['Ma TS', 'Ten tai san', 'Tong gio chay', 'Lan hong', 'Tong gio sua', 'MTBF', 'MTTR']],
+      body: (mtbf?.byAsset ?? []).map((r) => {
+        const mttrRow = (mttr?.byAsset ?? []).find((m) => Number(m.assetId) === Number(r.assetId));
+        return [
+          r.assetId,
+          r.assetName,
+          Number(r.totalRunHours || 0).toFixed(2),
+          Number(r.failureCount || 0),
+          Math.round(Number(mttrRow?.totalRepairHours || 0)),
+          r.mtbf ?? '—',
+          mttrRow?.mttr ?? '—',
+        ];
+      }),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: { 1: { cellWidth: 42 } },
+    });
+
+      doc.addPage();
+      drawHeaderFooter('3) Pareto downtime');
+      autoTable(doc, {
+      startY: 34,
+      head: [['#', 'Ma TS', 'Ten tai san', 'Downtime (h)', 'Planned (h)', 'Unplanned (h)', 'Tich luy (%)', 'Uu tien']],
+      body: (pareto?.rows ?? []).map((r, idx) => [
+        idx + 1,
+        r.assetId,
+        r.assetName,
+        Number(r.downtimeHours || 0).toFixed(2),
+        Number(r.plannedHours || 0).toFixed(2),
+        Number(r.unplannedHours || 0).toFixed(2),
+        Number(r.cumulativePercent || 0).toFixed(1),
+        Number(r.cumulativePercent || 0) <= 80 ? 'Uu tien 1' : 'Uu tien 2',
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [30, 41, 59] },
+      didParseCell: (hookData) => {
+        if (hookData.section === 'body') {
+          const cum = Number(hookData.row.raw?.[6] || 0);
+          if (cum <= 80) hookData.cell.styles.fillColor = [254, 226, 226];
+        }
+      },
+    });
+
+      doc.addPage();
+      drawHeaderFooter('4) Nhat ky downtime theo tai san');
+      autoTable(doc, {
+      startY: 34,
+      head: [['Ma TS', 'Ten tai san', 'Tong dung (h)', 'Planned', 'Unplanned', 'Ty le (%)']],
+      body: (downtime?.byAsset ?? []).map((r) => [
+        r.assetId,
+        r.assetName,
+        Number(r.downtimeHours || 0).toFixed(2),
+        Number(r.plannedDowntimeHours || 0).toFixed(2),
+        Number(r.unplannedDowntimeHours || 0).toFixed(2),
+        Number(r.downtimePercent || 0).toFixed(2),
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: { 1: { cellWidth: 52 } },
+    });
+
+      doc.save(`bao-cao-hieu-suat-${months}thang.pdf`);
+      toast.success('Đã tạo file PDF báo cáo');
+    } catch (err) {
+      console.error('Export PDF failed:', err);
+      toast.error('Xuất PDF lỗi. Mở Console (F12) để xem chi tiết.');
+    }
+  };
+
   return (
     <div className="space-y-5">
 
@@ -186,7 +397,7 @@ export function ReportPerformancePage() {
           <select
             value={months}
             onChange={e => setMonths(Number(e.target.value))}
-            className="text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="text-sm text-gray-900 border border-gray-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             {PERIOD_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -198,14 +409,41 @@ export function ReportPerformancePage() {
           >
             <RefreshCw size={14} /> Làm mới
           </button>
-          {canExport && (
+          <>
+            <button
+              onClick={exportPerformancePdf}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                canExport
+                  ? 'text-white bg-blue-600 hover:bg-blue-700'
+                  : 'text-gray-400 bg-gray-200 cursor-not-allowed'
+              }`}
+              title={canExport ? 'Xuất PDF báo cáo' : 'Thiếu quyền REPORT:EXPORT'}
+            >
+              <Download size={14} /> Xuất PDF đẹp
+            </button>
+            <button
+              onClick={exportPerformanceExcel}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                canExport
+                  ? 'text-gray-700 border-gray-200 hover:bg-gray-50'
+                  : 'text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed'
+              }`}
+              title={canExport ? 'Xuất Excel báo cáo' : 'Thiếu quyền REPORT:EXPORT'}
+            >
+              <Download size={14} /> Xuất Excel
+            </button>
             <button
               onClick={exportCurrent}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                canExport
+                  ? 'text-gray-700 border-gray-200 hover:bg-gray-50'
+                  : 'text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed'
+              }`}
+              title={canExport ? 'Xuất CSV báo cáo' : 'Thiếu quyền REPORT:EXPORT'}
             >
               <Download size={14} /> Xuất CSV
             </button>
-          )}
+          </>
         </div>
       </div>
 
@@ -332,7 +570,7 @@ export function ReportPerformancePage() {
             />
             <KpiCard
               label="Tổng giờ sửa chữa"
-              value={(mttr?.byAsset ?? []).reduce((s, r) => s + Number(r.totalRepairHours), 0)}
+              value={Math.round((mttr?.byAsset ?? []).reduce((s, r) => s + Number(r.totalRepairHours), 0))}
               unit="giờ"
               icon={Clock}
               color="text-blue-700"
@@ -393,7 +631,7 @@ export function ReportPerformancePage() {
                               <p className="text-xs text-gray-400">{r.locationName ?? '—'}</p>
                             </td>
                             <td className="px-3 py-2 text-gray-700">{r.repairCount}</td>
-                            <td className="px-3 py-2 text-gray-700">{r.totalRepairHours}h</td>
+                            <td className="px-3 py-2 text-gray-700">{Math.round(Number(r.totalRepairHours || 0))}h</td>
                             <td className="px-3 py-2 font-bold">
                               <span className={Number(r.mttr) <= 4 ? 'text-green-600' : Number(r.mttr) <= 8 ? 'text-amber-600' : 'text-red-600'}>
                                 {r.mttr}h
@@ -607,10 +845,13 @@ export function ReportPerformancePage() {
               label="Top 20% gây ra"
               value={(() => {
                 const rows = pareto?.rows ?? [];
+                if (!rows.length) return 0;
                 const top20pct = Math.max(1, Math.ceil(rows.length * 0.2));
                 const topHours = rows.slice(0, top20pct).reduce((s, r) => s + Number(r.downtimeHours), 0);
-                const pct = pareto?.total > 0 ? Math.round(topHours / pareto.total * 100) : 0;
-                return pct;
+                const total = rows.reduce((s, r) => s + Number(r.downtimeHours), 0);
+                if (!(total > 0)) return 0;
+                const pct = (topHours / total) * 100;
+                return Math.min(100, Math.max(0, Math.round(pct)));
               })()}
               unit="% downtime"
               icon={BarChart2}

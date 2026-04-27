@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Input, Select, Textarea } from '../ui/Input.jsx';
-import { fDate } from '../../utils/format.js';
+import { fDate, todayDateInput, toDateInputValue } from '../../utils/format.js';
 import { assetTypeApi } from '../../api/assetType.api.js';
 
 export const EMPTY_SCHEDULE_FORM = {
@@ -33,7 +33,7 @@ export function buildScheduleFormForAsset(asset) {
     description: asset?.assetName
       ? `Bảo trì định kỳ cho ${asset.assetName}.`
       : '',
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: todayDateInput(),
   };
 }
 
@@ -49,8 +49,8 @@ export function mapScheduleToForm(schedule) {
     frequencyValue:
       schedule?.frequencyValue ?? (predictive ? 720 : 30),
     frequencyUnit: schedule?.frequencyUnit ?? 'DAYS',
-    startDate: schedule?.startDate ? schedule.startDate.split('T')[0] : '',
-    endDate: schedule?.endDate ? schedule.endDate.split('T')[0] : '',
+    startDate: toDateInputValue(schedule?.startDate),
+    endDate: toDateInputValue(schedule?.endDate),
     priority: schedule?.priority ?? 'MEDIUM',
     checklistTemplateId:
       schedule?.checklistTemplateId != null

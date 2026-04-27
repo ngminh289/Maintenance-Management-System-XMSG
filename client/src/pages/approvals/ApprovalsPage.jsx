@@ -32,6 +32,7 @@ import {
   fDateTime,
   fDate,
   fNumber,
+  toDateInputValue,
   WO_STATUS_LABEL,
   WO_PRIORITY_LABEL,
 } from "../../utils/format.js";
@@ -374,7 +375,12 @@ export function ApprovalsPage() {
   }, [selected]);
 
   useEffect(() => {
-    if (!selected || !isWoFinalStep(selected) || assignMode !== "group" || !assignGroupId) {
+    if (
+      !selected ||
+      !isWoFinalStep(selected) ||
+      assignMode !== "group" ||
+      !assignGroupId
+    ) {
       setAssignGroupMembers([]);
       return;
     }
@@ -471,13 +477,14 @@ export function ApprovalsPage() {
         <p className="text-sm text-gray-700 mt-3 pt-3 border-t border-amber-100/80 leading-relaxed">
           <strong>Duyệt</strong> và <strong>phân công</strong> là hai việc khác
           nhau: duyệt chuyển phiếu sang <em>Chờ thực hiện</em> (hoặc bước tiếp
-          theo nếu đa cấp). Phân công = gán KTV hiện trường / Chuyên viên KTS — có thể{" "}
-          <strong>làm ngay khi duyệt bước cuối</strong> (ô bên dưới) hoặc{" "}
+          theo nếu đa cấp). Phân công = gán KTV hiện trường / Chuyên viên KTS —
+          có thể <strong>làm ngay khi duyệt bước cuối</strong> (ô bên dưới) hoặc{" "}
           <strong>để sau</strong> tại Chi tiết phiếu.{" "}
           <strong>Phiếu WO khẩn 2 bước</strong> (ưu tiên Khẩn cấp, hoặc sự cố
           khắc phục mức Cao): bước 1 Trưởng ca → bước 2 Trưởng phòng xác nhận;
-          Trưởng phòng có thể <strong>chọn lại người phân công</strong> khi duyệt
-          cuối. Các phiếu thường chỉ cần <strong>một bước</strong> (Trưởng ca).
+          Trưởng phòng có thể <strong>chọn lại người phân công</strong> khi
+          duyệt cuối. Các phiếu thường chỉ cần <strong>một bước</strong> (Trưởng
+          ca).
         </p>
       </div>
 
@@ -604,9 +611,7 @@ export function ApprovalsPage() {
                     setAssignGroupMembers([]);
                     setApproveEstimatedHours("");
                     setApprovePlannedDate(
-                      item.resourcePlannedDate
-                        ? String(item.resourcePlannedDate).slice(0, 10)
-                        : "",
+                      toDateInputValue(item.resourcePlannedDate),
                     );
                     setApprovePriority(item.resourcePriority || "");
                     setApproveDescription(item.resourceDescription || "");
@@ -651,43 +656,44 @@ export function ApprovalsPage() {
               <option value="REQUEST_CHANGES">↩ Yêu cầu chỉnh sửa</option>
             </Select>
 
-            {selected.resourceType === "WORK_ORDER" && action === "APPROVED" && (
-              <div className="space-y-3">
-                <Input
-                  label="Ngày dự kiến"
-                  type="date"
-                  value={approvePlannedDate}
-                  onChange={(e) => setApprovePlannedDate(e.target.value)}
-                />
-                <Input
-                  label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={approveEstimatedHours}
-                  onChange={(e) => setApproveEstimatedHours(e.target.value)}
-                  placeholder="VD: 4 — để trống nếu không đổi"
-                />
-                <Select
-                  label="Ưu tiên"
-                  value={approvePriority}
-                  onChange={(e) => setApprovePriority(e.target.value)}
-                >
-                  <option value="">— Giữ như hiện tại —</option>
-                  <option value="LOW">Thấp</option>
-                  <option value="MEDIUM">Trung bình</option>
-                  <option value="HIGH">Cao</option>
-                  <option value="EMERGENCY">Khẩn cấp</option>
-                </Select>
-                <Textarea
-                  label="Mô tả công việc"
-                  value={approveDescription}
-                  onChange={(e) => setApproveDescription(e.target.value)}
-                  placeholder="Cập nhật mô tả trước khi duyệt (nếu cần)"
-                  rows={3}
-                />
-              </div>
-            )}
+            {selected.resourceType === "WORK_ORDER" &&
+              action === "APPROVED" && (
+                <div className="space-y-3">
+                  <Input
+                    label="Ngày dự kiến"
+                    type="date"
+                    value={approvePlannedDate}
+                    onChange={(e) => setApprovePlannedDate(e.target.value)}
+                  />
+                  <Input
+                    label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={approveEstimatedHours}
+                    onChange={(e) => setApproveEstimatedHours(e.target.value)}
+                    placeholder="VD: 4 — để trống nếu không đổi"
+                  />
+                  <Select
+                    label="Ưu tiên"
+                    value={approvePriority}
+                    onChange={(e) => setApprovePriority(e.target.value)}
+                  >
+                    <option value="">— Giữ như hiện tại —</option>
+                    <option value="LOW">Thấp</option>
+                    <option value="MEDIUM">Trung bình</option>
+                    <option value="HIGH">Cao</option>
+                    <option value="EMERGENCY">Khẩn cấp</option>
+                  </Select>
+                  <Textarea
+                    label="Mô tả công việc"
+                    value={approveDescription}
+                    onChange={(e) => setApproveDescription(e.target.value)}
+                    placeholder="Cập nhật mô tả trước khi duyệt (nếu cần)"
+                    rows={3}
+                  />
+                </div>
+              )}
 
             {selected.resourceType === "WORK_ORDER" &&
               isWoFinalStep(selected) &&
@@ -746,7 +752,10 @@ export function ApprovalsPage() {
                           </p>
                           <ul className="space-y-0.5">
                             {assignGroupMembers.map((m) => (
-                              <li key={m.employeeId} className="text-xs text-gray-700">
+                              <li
+                                key={m.employeeId}
+                                className="text-xs text-gray-700"
+                              >
                                 {m.fullName}
                                 {Number(m.isGroupLeader) === 1
                                   ? " (Trưởng nhóm)"
@@ -758,13 +767,6 @@ export function ApprovalsPage() {
                       )}
                     </>
                   )}
-                  <p className="text-xs text-blue-900/80 leading-relaxed">
-                    Chỉ hiện ở <strong>bước duyệt cuối</strong> (với WO 2 bước,
-                    thường là <strong>Trưởng phòng</strong>). Chọn người để vừa
-                    duyệt vừa gửi thông báo phân công — có thể{" "}
-                    <strong>đổi lại</strong> so với ý Trưởng ca; bỏ trống nếu
-                    muốn duyệt trước, giao việc sau trên phiếu.
-                  </p>
                 </div>
               )}
 

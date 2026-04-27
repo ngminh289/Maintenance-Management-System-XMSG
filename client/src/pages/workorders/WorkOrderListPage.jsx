@@ -29,6 +29,8 @@ import {
   WO_PRIORITY_LABEL,
   WO_PRIORITY_COLOR,
   fDate,
+  todayDateInput,
+  dateInputWithOffset,
 } from "../../utils/format.js";
 import { WorkOrderForm } from "./WorkOrderForm.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
@@ -84,13 +86,13 @@ export function WorkOrderListPage() {
         ...(period && {
           plannedFrom:
             period === "week"
-              ? new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
+              ? dateInputWithOffset(-6)
               : period === "month"
-                ? new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
+                ? dateInputWithOffset(-29)
                 : period === "quarter"
-                  ? new Date(Date.now() - 89 * 86400000).toISOString().slice(0, 10)
+                  ? dateInputWithOffset(-89)
                   : undefined,
-          plannedTo: new Date().toISOString().slice(0, 10),
+          plannedTo: todayDateInput(),
         }),
       });
       setOrders(res.data.data?.items ?? []);

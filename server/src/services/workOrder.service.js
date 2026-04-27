@@ -92,9 +92,10 @@ export async function getAll(query) {
 export async function getById(id, viewer = null) {
   const wo = await model.findById(id);
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
-  const [assignments, photos] = await Promise.all([
+  const [assignments, photos, openPlannedDowntime] = await Promise.all([
     model.getAssignments(id),
     photoModel.listByWo(id),
+    downtimeEventModel.findOpenByWorkOrder(id),
   ]);
   const suggestedActualHours = [
     "IN_PROGRESS",
@@ -103,7 +104,14 @@ export async function getById(id, viewer = null) {
   ].includes(wo.status)
     ? (model.computeSuggestedActualHours(wo) ?? null)
     : null;
-  const base = { ...wo, assignments, photos, suggestedActualHours };
+  const machinePowerState = openPlannedDowntime ? "SHUTDOWN" : "STARTUP";
+  const base = {
+    ...wo,
+    assignments,
+    photos,
+    suggestedActualHours,
+    machinePowerState,
+  };
   const checklistSlot = await scheduledChecklistSlotModel.findByWorkOrderId(id);
   let recentChecklists = [];
   let recentChecklistsEligible = false;
