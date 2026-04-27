@@ -13,6 +13,7 @@ export function WorkOrderForm({ wo, assets = [], onSuccess, onCancel }) {
     description:    wo?.description    ?? '',
     plannedDate:    wo?.plannedDate    ?? '',
     estimatedHours: wo?.estimatedHours ?? '',
+    requiresShutdown: Boolean(wo?.requiresShutdown),
     priority:       wo?.priority       ?? 'MEDIUM',
     woSource:       wo?.woSource       ?? 'MANUAL',
   });
@@ -57,6 +58,14 @@ export function WorkOrderForm({ wo, assets = [], onSuccess, onCancel }) {
         </Select>
         <Input label="Giờ ước tính" type="number" min={0} value={form.estimatedHours} onChange={e => set('estimatedHours', e.target.value)} placeholder="VD: 4" />
       </div>
+      <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+        <input
+          type="checkbox"
+          checked={Boolean(form.requiresShutdown)}
+          onChange={e => set('requiresShutdown', e.target.checked)}
+        />
+        Bảo trì cần dừng máy (tính downtime planned)
+      </label>
       <Textarea label="Mô tả công việc" value={form.description} onChange={e => set('description', e.target.value)} />
 
       {error && <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}

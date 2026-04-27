@@ -14,6 +14,7 @@ import {
   changeStatusSchema,
   assignSchema,
   closureNotesDraftSchema,
+  workOrderPowerSchema,
 } from '../validators/workOrder.validator.js';
 import { uploadWoPhotos } from '../config/upload.js';
 import * as ctrl from '../controllers/workOrder.controller.js';
@@ -52,6 +53,11 @@ workOrderRouter.patch('/:id/status',
   requirePermission('WORK_ORDER', 'UPDATE'),
   validate(changeStatusSchema),
   ctrl.changeStatus,
+);
+workOrderRouter.patch('/:id/power-state',
+  requirePermission('WORK_ORDER', 'UPDATE'),
+  validate(workOrderPowerSchema),
+  ctrl.setPowerState,
 );
 
 workOrderRouter.post('/:id/photos',

@@ -102,6 +102,7 @@ export function WorkOrderDetailPage() {
   const [closurePartsNotes, setClosurePartsNotes] = useState("");
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeHours, setCloseHours] = useState("");
+  const [shutdownReason, setShutdownReason] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
   const [editWoOpen, setEditWoOpen] = useState(false);
   const [woEditAssets, setWoEditAssets] = useState([]);
@@ -256,14 +257,29 @@ export function WorkOrderDetailPage() {
     }
   };
 
-  const changeStatus = async (status) => {
+  const changeStatus = async (status, extra = {}) => {
     if (!confirm(`Chuyển sang «${WO_STATUS_LABEL[status] ?? status}»?`)) return;
     try {
-      await workOrderApi.changeStatus(id, status);
+      await workOrderApi.changeStatus(id, status, extra);
       toast.success("Đã cập nhật");
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? "Lỗi");
+    }
+  };
+
+  const setPowerState = async (action) => {
+    try {
+      await workOrderApi.setPowerState(
+        id,
+        action,
+        shutdownReason.trim() || undefined,
+      );
+      toast.success(action === "SHUTDOWN" ? "Đã ghi nhận tắt máy" : "Đã ghi nhận bật máy");
+      if (action === "SHUTDOWN") setShutdownReason("");
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không cập nhật được trạng thái máy");
     }
   };
 
@@ -616,9 +632,26 @@ export function WorkOrderDetailPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {canAcceptWork && wo.status === "WAITING" && (
-            <Button size="sm" onClick={() => changeStatus("IN_PROGRESS")}>
-              <Play size={13} /> Nhận việc
-            </Button>
+            <>
+              <Button
+                size="sm"
+                onClick={() =>
+                  changeStatus("IN_PROGRESS", {
+                    requiresShutdown: true,
+                    shutdownReason: shutdownReason.trim() || undefined,
+                  })
+                }
+              >
+                <Play size={13} /> Nhận việc + Tắt máy
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => changeStatus("IN_PROGRESS", { requiresShutdown: false })}
+              >
+                <Play size={13} /> Nhận việc + Giữ máy chạy
+              </Button>
+            </>
           )}
           {canSuperviseFlow && wo.status === "IN_PROGRESS" && (
             <Button
@@ -1135,6 +1168,10 @@ export function WorkOrderDetailPage() {
                 wo.estimatedHours ? `${wo.estimatedHours}h` : "—",
               ],
               [
+                "Yêu cầu dừng máy",
+                Number(wo.requiresShutdown) === 1 ? "Có" : "Không",
+              ],
+              [
                 "Giờ thực tế",
                 wo.actualHours != null && wo.actualHours !== ""
                   ? `${wo.actualHours}h`
@@ -1266,6 +1303,29 @@ export function WorkOrderDetailPage() {
 
       {["IN_PROGRESS", "AWAITING_CLOSURE"].includes(wo.status) && (
         <Card title="Ảnh hiện trường">
+          {canAcceptWork && wo.status === "IN_PROGRESS" && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
+              <Input
+                label="Lý do downtime planned (tuỳ chọn)"
+                value={shutdownReason}
+                onChange={(e) => setShutdownReason(e.target.value)}
+                placeholder="VD: thay bạc đạn cụm trục chính"
+              />
+              <div className="w-full flex gap-2">
+                <Button type="button" size="sm" onClick={() => setPowerState("SHUTDOWN")}>
+                  Tắt máy
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPowerState("STARTUP")}
+                >
+                  Bật máy
+                </Button>
+              </div>
+            </div>
+          )}
           {canUploadPhotos && (
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <input

@@ -10,6 +10,8 @@ export const workOrderApi = {
   create:       (data)   => api.post('/work-orders', data),
   update:       (id, d)  => api.put(`/work-orders/${id}`, d),
   changeStatus: (id, status, data = {}) => api.patch(`/work-orders/${id}/status`, { status, ...data }),
+  setPowerState: (id, action, reason) =>
+    api.patch(`/work-orders/${id}/power-state`, { action, reason }),
   saveClosureNotes: (id, data) => api.patch(`/work-orders/${id}/closure-notes`, data),
   resetRuntimeBaseline: (id) => api.post(`/work-orders/${id}/counter-reset-baseline`),
   uploadPhotos: (id, formData) => api.post(`/work-orders/${id}/photos`, formData, {

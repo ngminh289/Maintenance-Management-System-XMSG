@@ -464,7 +464,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
       ? Math.round((totalRepairAll / totalRepairCnt) * 100) / 100
       : null;
 
-  // ── 3. Tỷ lệ dừng máy — xấp xỉ bằng giờ WO CORRECTIVE / tổng giờ chạy ──
+  // ── 3. Tỷ lệ dừng máy — chuẩn theo AssetDowntimeEvents (planned + unplanned) ──
   const [downtimeRows] = await pool.query(
     `
     SELECT
@@ -472,10 +472,16 @@ export const performanceReport = asyncHandler(async (req, res) => {
       a.AssetName     AS assetName,
       l.LocationName  AS locationName,
       COALESCE(rt.totalRunHours,   0) AS totalRunHours,
-      COALESCE(dt.downtimeHours,   0) AS downtimeHours,
+      COALESCE(dt.totalDowntimeHours, 0) AS downtimeHours,
+      COALESCE(dt.plannedHours, 0) AS plannedDowntimeHours,
+      COALESCE(dt.unplannedHours, 0) AS unplannedDowntimeHours,
       CASE
-        WHEN COALESCE(rt.totalRunHours, 0) > 0
-          THEN ROUND(COALESCE(dt.downtimeHours, 0) / rt.totalRunHours * 100, 2)
+        WHEN (COALESCE(rt.totalRunHours, 0) + COALESCE(dt.totalDowntimeHours, 0)) > 0
+          THEN ROUND(
+            COALESCE(dt.totalDowntimeHours, 0) /
+            (COALESCE(rt.totalRunHours, 0) + COALESCE(dt.totalDowntimeHours, 0)) * 100,
+            2
+          )
         ELSE 0
       END AS downtimePercent
     FROM Assets a
@@ -487,19 +493,50 @@ export const performanceReport = asyncHandler(async (req, res) => {
       GROUP BY AssetID
     ) rt ON rt.AssetID = a.AssetID
     LEFT JOIN (
-      SELECT AssetID, SUM(ActualHours) AS downtimeHours
-      FROM WorkOrders
-      WHERE WO_Source = 'CORRECTIVE' AND Status = 'COMPLETED'
-        AND ActualHours IS NOT NULL
-        AND ActualDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-      GROUP BY AssetID
+      SELECT
+        ade.AssetID,
+        ROUND(
+          SUM(
+            TIMESTAMPDIFF(
+              SECOND,
+              GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+              LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+            )
+          ) / 3600, 4
+        ) AS totalDowntimeHours,
+        ROUND(
+          SUM(
+            CASE WHEN ade.DowntimeType = 'PLANNED_MAINTENANCE' THEN
+              TIMESTAMPDIFF(
+                SECOND,
+                GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+                LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+              )
+            ELSE 0 END
+          ) / 3600, 4
+        ) AS plannedHours,
+        ROUND(
+          SUM(
+            CASE WHEN ade.DowntimeType = 'UNPLANNED_BREAKDOWN' THEN
+              TIMESTAMPDIFF(
+                SECOND,
+                GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+                LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+              )
+            ELSE 0 END
+          ) / 3600, 4
+        ) AS unplannedHours
+      FROM AssetDowntimeEvents ade
+      WHERE ade.StartAt < NOW()
+        AND COALESCE(ade.EndAt, NOW()) > DATE_SUB(NOW(), INTERVAL ? MONTH)
+      GROUP BY ade.AssetID
     ) dt ON dt.AssetID = a.AssetID
     WHERE a.Status != 'DECOMMISSIONED'
-      AND COALESCE(rt.totalRunHours, 0) > 0
+      AND (COALESCE(rt.totalRunHours, 0) + COALESCE(dt.totalDowntimeHours, 0)) > 0
     ORDER BY downtimePercent DESC
     LIMIT 20
   `,
-    [months, months],
+    [months, months, months, months, months],
   );
 
   const sumRunAll = downtimeRows.reduce(
@@ -510,8 +547,18 @@ export const performanceReport = asyncHandler(async (req, res) => {
     (s, r) => s + Number(r.downtimeHours),
     0,
   );
+  const sumPlannedAll = downtimeRows.reduce(
+    (s, r) => s + Number(r.plannedDowntimeHours),
+    0,
+  );
+  const sumUnplannedAll = downtimeRows.reduce(
+    (s, r) => s + Number(r.unplannedDowntimeHours),
+    0,
+  );
   const downtimeOverall =
-    sumRunAll > 0 ? Math.round((sumDownAll / sumRunAll) * 10000) / 100 : 0;
+    sumRunAll + sumDownAll > 0
+      ? Math.round((sumDownAll / (sumRunAll + sumDownAll)) * 10000) / 100
+      : 0;
 
   // ── 4. Kế hoạch vs Thực tế ────────────────────────────────────────────────
   const [[planSummary]] = await pool.query(
@@ -560,19 +607,47 @@ export const performanceReport = asyncHandler(async (req, res) => {
       a.AssetID       AS assetId,
       a.AssetName     AS assetName,
       l.LocationName  AS locationName,
-      SUM(wo.ActualHours) AS downtimeHours
-    FROM WorkOrders wo
-    JOIN Assets a   ON a.AssetID  = wo.AssetID
+      ROUND(
+        SUM(
+          TIMESTAMPDIFF(
+            SECOND,
+            GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+            LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+          )
+        ) / 3600, 4
+      ) AS downtimeHours,
+      ROUND(
+        SUM(
+          CASE WHEN ade.DowntimeType = 'PLANNED_MAINTENANCE' THEN
+            TIMESTAMPDIFF(
+              SECOND,
+              GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+              LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+            )
+          ELSE 0 END
+        ) / 3600, 4
+      ) AS plannedHours,
+      ROUND(
+        SUM(
+          CASE WHEN ade.DowntimeType = 'UNPLANNED_BREAKDOWN' THEN
+            TIMESTAMPDIFF(
+              SECOND,
+              GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+              LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+            )
+          ELSE 0 END
+        ) / 3600, 4
+      ) AS unplannedHours
+    FROM AssetDowntimeEvents ade
+    JOIN Assets a   ON a.AssetID  = ade.AssetID
     LEFT JOIN Locations l ON l.LocationID = a.LocationID
-    WHERE wo.WO_Source = 'CORRECTIVE'
-      AND wo.Status = 'COMPLETED'
-      AND wo.ActualHours IS NOT NULL
-      AND wo.ActualDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+    WHERE ade.StartAt < NOW()
+      AND COALESCE(ade.EndAt, NOW()) > DATE_SUB(NOW(), INTERVAL ? MONTH)
     GROUP BY a.AssetID, a.AssetName, l.LocationName
     ORDER BY downtimeHours DESC
     LIMIT 20
   `,
-    [months],
+    [months, months, months, months],
   );
 
   // Tính cumulative % (Pareto)
@@ -586,6 +661,8 @@ export const performanceReport = asyncHandler(async (req, res) => {
     return {
       ...r,
       downtimeHours: Math.round(Number(r.downtimeHours) * 100) / 100,
+      plannedHours: Math.round(Number(r.plannedHours) * 100) / 100,
+      unplannedHours: Math.round(Number(r.unplannedHours) * 100) / 100,
       cumulativePercent:
         paretoTotal > 0
           ? Math.round((cumulative / paretoTotal) * 1000) / 10
@@ -597,7 +674,12 @@ export const performanceReport = asyncHandler(async (req, res) => {
     months,
     mtbf: { overall: mtbfOverall, byAsset: mtbfRows },
     mttr: { overall: mttrOverall, byAsset: mttrRows },
-    downtime: { overall: downtimeOverall, byAsset: downtimeRows },
+    downtime: {
+      overall: downtimeOverall,
+      plannedOverallHours: Math.round(sumPlannedAll * 100) / 100,
+      unplannedOverallHours: Math.round(sumUnplannedAll * 100) / 100,
+      byAsset: downtimeRows,
+    },
     planVsActual: { summary: planSummary, byMonth: planByMonth },
     pareto: { total: paretoTotal, rows: paretoRows },
   });

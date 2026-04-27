@@ -24,6 +24,7 @@ import { createError } from "../utils/createError.js";
 import * as templateModel from "../models/checklistTemplate.model.js";
 import * as resultModel from "../models/checklistResult.model.js";
 import * as assetModel from "../models/asset.model.js";
+import * as assetService from "./asset.service.js";
 import * as workOrderModel from "../models/workOrder.model.js";
 import * as workOrderSvc from "./workOrder.service.js";
 import * as counterSvc from "./assetCounter.service.js";
@@ -381,9 +382,9 @@ export async function applyApprovedChecklistEffects(row) {
   }
 
   if (overallStatus === "OK") {
-    await assetModel.updateStatus(assetId, "AVAILABLE");
+    await assetService.updateStatus(assetId, "AVAILABLE", checkerId ?? null);
   } else if (overallStatus === "WARNING") {
-    await assetModel.updateStatus(assetId, "MONITORING");
+    await assetService.updateStatus(assetId, "MONITORING", checkerId ?? null);
     newWorkOrderId = await workOrderSvc.createAutomatic({
       assetId,
       woSource: "PREDICTIVE",
@@ -398,7 +399,7 @@ export async function applyApprovedChecklistEffects(row) {
       { resourceType: "WORK_ORDER", resourceId: newWorkOrderId },
     );
   } else if (overallStatus === "NG") {
-    await assetModel.updateStatus(assetId, "BROKEN");
+    await assetService.updateStatus(assetId, "BROKEN", checkerId ?? null);
     newWorkOrderId = await workOrderSvc.createAutomatic({
       assetId,
       woSource: "CORRECTIVE",

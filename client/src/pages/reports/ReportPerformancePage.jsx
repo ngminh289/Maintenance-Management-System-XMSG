@@ -135,7 +135,10 @@ export function ReportPerformancePage() {
       downloadCSV(
         (downtime?.byAsset ?? []).map(r => ({
           'Tài sản': r.assetName, 'Vị trí': r.locationName ?? '',
-          'Giờ chạy': r.totalRunHours, 'Giờ dừng': r.downtimeHours, 'Tỷ lệ (%)': r.downtimePercent,
+          'Giờ chạy': r.totalRunHours, 'Giờ dừng': r.downtimeHours,
+          'Planned dừng': r.plannedDowntimeHours,
+          'Unplanned dừng': r.unplannedDowntimeHours,
+          'Tỷ lệ (%)': r.downtimePercent,
         })), `downtime-${months}thang.csv`,
       );
     } else if (tab === 'plan') {
@@ -148,7 +151,11 @@ export function ReportPerformancePage() {
     } else if (tab === 'pareto') {
       downloadCSV(
         (pareto?.rows ?? []).map(r => ({
-          'Tài sản': r.assetName, 'Giờ dừng': r.downtimeHours, 'Tích lũy (%)': r.cumulativePercent,
+          'Tài sản': r.assetName,
+          'Giờ dừng': r.downtimeHours,
+          'Planned': r.plannedHours,
+          'Unplanned': r.unplannedHours,
+          'Tích lũy (%)': r.cumulativePercent,
         })), `pareto-${months}thang.csv`,
       );
     }
@@ -432,9 +439,9 @@ export function ReportPerformancePage() {
               sub={`Trong ${months} tháng gần nhất`}
             />
             <KpiCard
-              label="Thiết bị có dừng máy"
-              value={(downtime?.byAsset ?? []).filter(r => r.downtimeHours > 0).length}
-              unit="thiết bị"
+              label="Planned / Unplanned"
+              value={`${Number(downtime?.plannedOverallHours ?? 0).toFixed(1)} / ${Number(downtime?.unplannedOverallHours ?? 0).toFixed(1)}`}
+              unit="giờ"
               icon={AlertTriangle}
               color="text-amber-600"
             />
@@ -472,7 +479,7 @@ export function ReportPerformancePage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {['Tài sản', 'Vị trí', 'Giờ vận hành', 'Giờ dừng', 'Tỷ lệ (%)'].map(h => (
+                        {['Tài sản', 'Vị trí', 'Giờ vận hành', 'Planned', 'Unplanned', 'Giờ dừng', 'Tỷ lệ (%)'].map(h => (
                           <th key={h} className="text-left text-xs font-bold text-gray-600 px-3 py-2">{h}</th>
                         ))}
                       </tr>
@@ -483,6 +490,8 @@ export function ReportPerformancePage() {
                           <td className="px-3 py-2 font-semibold text-gray-900 truncate max-w-[160px]">{r.assetName}</td>
                           <td className="px-3 py-2 text-gray-700">{r.locationName ?? '—'}</td>
                           <td className="px-3 py-2 text-gray-700">{r.totalRunHours}h</td>
+                          <td className="px-3 py-2 text-blue-700 font-medium">{r.plannedDowntimeHours}h</td>
+                          <td className="px-3 py-2 text-orange-700 font-medium">{r.unplannedDowntimeHours}h</td>
                           <td className="px-3 py-2 text-red-700 font-medium">{r.downtimeHours}h</td>
                           <td className="px-3 py-2">
                             <Badge color={Number(r.downtimePercent) <= 5 ? 'green' : Number(r.downtimePercent) <= 15 ? 'yellow' : 'red'}>
@@ -499,8 +508,8 @@ export function ReportPerformancePage() {
           </Card>
 
           <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-800">
-            <strong>Lưu ý:</strong> Tỷ lệ dừng máy được ước tính bằng <em>giờ WO CORRECTIVE / giờ chạy đo được</em>.
-            Để chính xác 100%, hệ thống sẽ dùng dữ liệu <code>AssetStatusHistory</code> (bắt đầu ghi từ khi cài migration 050).
+            <strong>Công thức chuẩn:</strong> Downtime% = <em>Giờ dừng / (Giờ chạy + Giờ dừng)</em>.
+            Giờ dừng lấy từ <code>AssetDowntimeEvents</code> gồm planned (bảo trì có tắt máy) và unplanned (hỏng hóc/BROKEN).
           </div>
         </div>
       )}
@@ -656,7 +665,7 @@ export function ReportPerformancePage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {['#', 'Tài sản', 'Vị trí', 'Giờ dừng', 'Tích lũy %', 'Phân loại'].map(h => (
+                        {['#', 'Tài sản', 'Vị trí', 'Planned', 'Unplanned', 'Giờ dừng', 'Tích lũy %', 'Phân loại'].map(h => (
                           <th key={h} className="text-left text-xs font-bold text-gray-600 px-3 py-2">{h}</th>
                         ))}
                       </tr>
@@ -669,6 +678,8 @@ export function ReportPerformancePage() {
                             <td className="px-3 py-2 text-gray-500 font-mono">#{i + 1}</td>
                             <td className="px-3 py-2 font-semibold text-gray-900 truncate max-w-[160px]">{r.assetName}</td>
                             <td className="px-3 py-2 text-gray-700">{r.locationName ?? '—'}</td>
+                            <td className="px-3 py-2 text-blue-700 font-medium">{r.plannedHours}h</td>
+                            <td className="px-3 py-2 text-orange-700 font-medium">{r.unplannedHours}h</td>
                             <td className="px-3 py-2 font-bold text-red-700">{r.downtimeHours}h</td>
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-2">

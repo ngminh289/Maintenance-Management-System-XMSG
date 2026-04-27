@@ -20,6 +20,8 @@ export function createWOSchema(body) {
     return "Ngày kế hoạch không hợp lệ";
   if (body.priority && !VALID_PRIORITY.includes(body.priority))
     return `Priority không hợp lệ: ${VALID_PRIORITY.join(", ")}`;
+  if (body.requiresShutdown != null && typeof body.requiresShutdown !== "boolean")
+    return "requiresShutdown phải là true/false";
   return null;
 }
 
@@ -28,12 +30,24 @@ export function updateWOSchema(body) {
     return "Ngày kế hoạch không hợp lệ";
   if (body.priority && !VALID_PRIORITY.includes(body.priority))
     return `Priority không hợp lệ`;
+  if (body.requiresShutdown != null && typeof body.requiresShutdown !== "boolean")
+    return "requiresShutdown phải là true/false";
   return null;
 }
 
 export function changeStatusSchema(body) {
   if (!body.status || !VALID_STATUS.includes(body.status))
     return `Status không hợp lệ: ${VALID_STATUS.join(", ")}`;
+  if (body.requiresShutdown != null && typeof body.requiresShutdown !== "boolean")
+    return "requiresShutdown phải là true/false";
+  return null;
+}
+
+export function workOrderPowerSchema(body) {
+  const action = String(body?.action || "").toUpperCase();
+  if (!["SHUTDOWN", "STARTUP"].includes(action)) {
+    return "action không hợp lệ (SHUTDOWN|STARTUP)";
+  }
   return null;
 }
 

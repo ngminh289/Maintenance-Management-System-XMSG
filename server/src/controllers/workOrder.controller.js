@@ -43,9 +43,22 @@ export const changeStatus = asyncHandler(async (req, res) => {
     employeeId: req.user.sub,
     closureFieldNotes: req.body.closureFieldNotes,
     closurePartsNotes: req.body.closurePartsNotes,
+    requiresShutdown: req.body.requiresShutdown,
+    shutdownReason: req.body.shutdownReason,
   });
   return ok(res, result);
 });
+
+export const setPowerState = asyncHandler(async (req, res) =>
+  ok(
+    res,
+    await service.setWorkOrderPowerState(req.params.id, req.body.action, {
+      employeeId: req.user.sub,
+      actorLevel: req.user.positionLevel,
+      reason: req.body.reason,
+    }),
+  ),
+);
 
 export const saveClosureNotesDraft = asyncHandler(async (req, res) =>
   ok(

@@ -23,6 +23,7 @@ const COLS = `
   wo.PlannedDate    AS plannedDate,
   wo.ActualDate     AS actualDate,
   wo.EstimatedHours AS estimatedHours,
+  wo.RequiresShutdown AS requiresShutdown,
   wo.ActualHours    AS actualHours,
   wo.WorkStartedAt        AS workStartedAt,
   wo.PausedAccumulatedSec AS pausedAccumulatedSec,
@@ -406,20 +407,22 @@ export async function create({
   description,
   plannedDate,
   estimatedHours,
+  requiresShutdown,
   status,
   woSource,
   priority,
   createdBy,
 }) {
   const [result] = await getPool().query(
-    `INSERT INTO WorkOrders (ScheduleID, AssetID, Description, PlannedDate, EstimatedHours, Status, WO_Source, Priority, CreatedBy)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO WorkOrders (ScheduleID, AssetID, Description, PlannedDate, EstimatedHours, RequiresShutdown, Status, WO_Source, Priority, CreatedBy)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       scheduleId || null,
       assetId,
       description || null,
       plannedDate,
       estimatedHours || null,
+      requiresShutdown ? 1 : 0,
       status || "PENDING_APPROVAL",
       woSource || "MANUAL",
       priority || "MEDIUM",
@@ -435,6 +438,7 @@ export async function update(id, data) {
     plannedDate: "PlannedDate",
     actualDate: "ActualDate",
     estimatedHours: "EstimatedHours",
+    requiresShutdown: "RequiresShutdown",
     actualHours: "ActualHours",
     priority: "Priority",
   };

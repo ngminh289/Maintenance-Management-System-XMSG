@@ -21,12 +21,14 @@ import * as workOrderMaintSync from "./workOrderMaintenanceSync.service.js";
 import * as approvalSvc from "./approval.service.js";
 import * as notifService from "./notification.service.js";
 import * as assetModel from "../models/asset.model.js";
+import * as assetService from "./asset.service.js";
 import * as assetCounterModel from "../models/assetCounter.model.js";
 import * as assetCounterForecast from "./assetCounterForecast.service.js";
 import { assignFieldTechnicianToWorkOrder, assignGroupToWorkOrder } from "./workOrderFieldAssign.service.js";
 import * as employeeModel from "../models/employee.model.js";
 import * as checklistResultModel from "../models/checklistResult.model.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
+import * as downtimeEventModel from "../models/assetDowntimeEvent.model.js";
 
 /** Thư mục gốc server (…/server) — resolve đường dẫn file ảnh WO */
 const SERVER_ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -43,7 +45,7 @@ export async function reconcileAssetStatusForOnsiteWorkOrders(assetId) {
   const asset = await assetModel.findById(assetId);
   if (!asset || asset.status === "DECOMMISSIONED") return;
   const n = await model.countAssetMaintenanceHoldOrders(assetId);
-  await assetModel.updateStatus(assetId, n > 0 ? "MAINTENANCE" : "AVAILABLE");
+  await assetService.updateStatus(assetId, n > 0 ? "MAINTENANCE" : "AVAILABLE");
 }
 
 // Trạng thái cho phép chuyển tiếp (guard)
@@ -138,6 +140,7 @@ export async function create(data, createdBy) {
 
   const woId = await model.create({
     ...data,
+    requiresShutdown: data.requiresShutdown === true || data.requiresShutdown === 1,
     status: "PENDING_APPROVAL",
     createdBy,
   });
@@ -169,6 +172,7 @@ export async function createAutomatic({
     assetId,
     woSource,
     priority,
+    requiresShutdown: false,
     status: "PENDING_APPROVAL",
     plannedDate: new Date().toISOString().split("T")[0],
     description: description || `Phiếu tự động (${woSource})`,
@@ -212,6 +216,7 @@ export async function createFromApprovedSchedule({
     assetId,
     woSource: "SCHEDULE",
     priority: priority || "MEDIUM",
+    requiresShutdown: false,
     status: "PENDING_APPROVAL",
     plannedDate: plannedDate || new Date().toISOString().split("T")[0],
     description: description || `Phiếu từ lịch #${scheduleId}`,
@@ -241,6 +246,12 @@ export async function update(id, data) {
     throw createError("Không thể sửa phiếu đã kết thúc", 400);
   await model.update(id, data);
   return getById(id);
+}
+
+function toOptionalReason(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s ? s.slice(0, 500) : null;
 }
 
 async function loadAssignmentsSet(woId) {
@@ -329,6 +340,8 @@ export async function changeStatus(
     employeeId,
     closureFieldNotes,
     closurePartsNotes,
+    requiresShutdown,
+    shutdownReason,
   } = {},
 ) {
   const wo = await model.findById(id);
@@ -443,6 +456,19 @@ export async function changeStatus(
 
   await model.applyTimingTransition(id, wo.status, newStatus);
 
+  let targetRequiresShutdown = wo.requiresShutdown;
+  if (
+    newStatus === "IN_PROGRESS" &&
+    wo.status === "WAITING" &&
+    requiresShutdown !== undefined
+  ) {
+    targetRequiresShutdown =
+      requiresShutdown === true ||
+      String(requiresShutdown).toLowerCase() === "true" ||
+      Number(requiresShutdown) === 1;
+    await model.update(id, { requiresShutdown: targetRequiresShutdown ? 1 : 0 });
+  }
+
   if (newStatus === "AWAITING_CLOSURE") {
     await model.setClosureFieldReport(id, {
       closureFieldNotes,
@@ -518,8 +544,30 @@ export async function changeStatus(
     await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
   }
 
+  if (["COMPLETED", "CANCELLED"].includes(newStatus)) {
+    const openByWo = await downtimeEventModel.findOpenByWorkOrder(id);
+    if (openByWo) {
+      await downtimeEventModel.closeEvent(openByWo.eventId);
+    }
+  }
+
   if (newStatus === "IN_PROGRESS" && wo.assetId) {
     await reconcileAssetStatusForOnsiteWorkOrders(wo.assetId);
+    if (wo.status === "WAITING" && targetRequiresShutdown) {
+      const openByWo = await downtimeEventModel.findOpenByWorkOrder(id);
+      if (!openByWo) {
+        await downtimeEventModel.createEvent({
+          assetId: wo.assetId,
+          downtimeType: "PLANNED_MAINTENANCE",
+          workOrderId: id,
+          source: "WORK_ORDER",
+          reason:
+            toOptionalReason(shutdownReason) ||
+            `WO #${id} yêu cầu dừng máy khi bắt đầu thực hiện`,
+          createdBy: employeeId ?? null,
+        });
+      }
+    }
   }
 
   if (newStatus === "IN_PROGRESS" && wo.status === "WAITING") {
@@ -534,6 +582,55 @@ export async function changeStatus(
   }
 
   return getById(id);
+}
+
+/**
+ * Tắt/bật máy trong lúc WO đang thực hiện để điều khiển downtime planned.
+ * action=SHUTDOWN => mở AssetDowntimeEvents (nếu chưa mở).
+ * action=STARTUP  => đóng event open của WO.
+ */
+export async function setWorkOrderPowerState(
+  id,
+  action,
+  { employeeId, actorLevel, reason } = {},
+) {
+  const wo = await model.findById(id);
+  if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
+  if (!["IN_PROGRESS", "PAUSED", "AWAITING_CLOSURE"].includes(wo.status)) {
+    throw createError("Chỉ thao tác tắt/bật máy khi phiếu đang xử lý.", 400);
+  }
+  const { isGroupLeader } = await loadAssignmentsSet(id);
+  const isSupervisor = (actorLevel ?? 0) >= SUPERVISOR_MIN_LEVEL;
+  if (!isGroupLeader(employeeId) && !isSupervisor) {
+    throw createError("Chỉ trưởng nhóm hoặc Trưởng ca/Trưởng phòng được thao tác.", 403);
+  }
+  const upperAction = String(action || "").toUpperCase();
+  if (!["SHUTDOWN", "STARTUP"].includes(upperAction)) {
+    throw createError("Hành động không hợp lệ (SHUTDOWN|STARTUP).", 400);
+  }
+  if (!wo.assetId) throw createError("Phiếu chưa gắn tài sản.", 400);
+
+  if (upperAction === "SHUTDOWN") {
+    const openByWo = await downtimeEventModel.findOpenByWorkOrder(id);
+    if (!openByWo) {
+      await model.update(id, { requiresShutdown: 1 });
+      await downtimeEventModel.createEvent({
+        assetId: wo.assetId,
+        downtimeType: "PLANNED_MAINTENANCE",
+        workOrderId: id,
+        source: "WORK_ORDER",
+        reason: toOptionalReason(reason) || `WO #${id} tắt máy để bảo trì`,
+        createdBy: employeeId ?? null,
+      });
+    }
+    return { ...(await getById(id)), machinePower: "SHUTDOWN" };
+  }
+
+  const openByWo = await downtimeEventModel.findOpenByWorkOrder(id);
+  if (openByWo) {
+    await downtimeEventModel.closeEvent(openByWo.eventId);
+  }
+  return { ...(await getById(id)), machinePower: "STARTUP" };
 }
 
 /** Đính kèm nhiều ảnh hiện trường (IN_PROGRESS | AWAITING_CLOSURE). */

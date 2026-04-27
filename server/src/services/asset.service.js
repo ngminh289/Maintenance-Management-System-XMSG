@@ -14,6 +14,7 @@ import { createError }                    from '../utils/createError.js';
 import { getPagination, paginatedResult } from '../utils/paginate.js';
 import * as model      from '../models/asset.model.js';
 import * as photoModel from '../models/assetPhoto.model.js';
+import * as downtimeEventModel from '../models/assetDowntimeEvent.model.js';
 import { getPool }     from '../config/database.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,7 @@ export async function updateStatus(id, status, changedBy = null) {
   const existing = await model.findById(id);
   if (!existing) throw createError('Không tìm thấy tài sản', 404);
   if (existing.status !== status) {
+    const now = new Date();
     await model.updateStatus(id, status);
     // Ghi lịch sử để tính Downtime chính xác (migration 050)
     await getPool().query(
@@ -72,6 +74,32 @@ export async function updateStatus(id, status, changedBy = null) {
        VALUES (?, ?, ?, ?)`,
       [id, existing.status, status, changedBy ?? null],
     );
+
+    // Downtime unplanned: mở khi vào BROKEN, đóng khi rời BROKEN.
+    if (status === 'BROKEN') {
+      const openBroken = await downtimeEventModel.findOpenByAssetAndType(
+        id,
+        'UNPLANNED_BREAKDOWN',
+      );
+      if (!openBroken) {
+        await downtimeEventModel.createEvent({
+          assetId: id,
+          downtimeType: 'UNPLANNED_BREAKDOWN',
+          source: 'ASSET_STATUS',
+          reason: `Asset chuyển trạng thái ${existing.status} -> BROKEN`,
+          createdBy: changedBy ?? null,
+          startAt: now,
+        });
+      }
+    } else if (existing.status === 'BROKEN') {
+      const openBroken = await downtimeEventModel.findOpenByAssetAndType(
+        id,
+        'UNPLANNED_BREAKDOWN',
+      );
+      if (openBroken) {
+        await downtimeEventModel.closeEvent(openBroken.eventId, now);
+      }
+    }
   }
   return getById(id);
 }
