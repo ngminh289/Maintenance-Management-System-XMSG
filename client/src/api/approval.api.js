@@ -17,19 +17,29 @@ export const approvalApi = {
   /**
    * Duyệt / từ chối / yêu cầu chỉnh sửa theo logId (ApprovalLogs.LogID, không phải ScheduleID/WO_ID).
    * @param {number} logId
-   * @param {{ action: 'APPROVED'|'REJECTED'|'REQUEST_CHANGES', comment?: string, assignEmployeeId?: number, estimatedHours?: number|string }} data
+   * @param {{ action: 'APPROVED'|'REJECTED'|'REQUEST_CHANGES', comment?: string, assignEmployeeId?: number, assignGroupId?: number, estimatedHours?: number|string, plannedDate?: string, priority?: string, description?: string }} data
    */
-  action: (logId, { action, comment, assignEmployeeId, estimatedHours }) => {
+  action: (logId, { action, comment, assignEmployeeId, assignGroupId, estimatedHours, plannedDate, priority, description }) => {
     const body = {
       comment: comment || undefined,
       ...(assignEmployeeId != null && assignEmployeeId !== ''
         ? { assignEmployeeId: Number(assignEmployeeId) }
+        : {}),
+      ...(assignGroupId != null && assignGroupId !== ''
+        ? { assignGroupId: Number(assignGroupId) }
         : {}),
       ...(estimatedHours !== undefined &&
       estimatedHours !== null &&
       String(estimatedHours).trim() !== ''
         ? { estimatedHours: Number(String(estimatedHours).replace(',', '.')) }
         : {}),
+      ...(plannedDate !== undefined &&
+      plannedDate !== null &&
+      String(plannedDate).trim() !== ''
+        ? { plannedDate: String(plannedDate).trim() }
+        : {}),
+      ...(priority && String(priority).trim() !== '' ? { priority: String(priority).trim().toUpperCase() } : {}),
+      ...(description !== undefined ? { description } : {}),
     };
     if (action === 'APPROVED') {
       return api.post(`/approvals/${logId}/approve`, body);

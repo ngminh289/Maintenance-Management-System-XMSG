@@ -483,7 +483,7 @@ export function SchedulesPage() {
   const canCreateSch = canDo(user, "SCHEDULE:CREATE");
   const canUpdateSch = canDo(user, "SCHEDULE:UPDATE");
   const canSubmitSch = canDo(user, "SCHEDULE:SUBMIT");
-  const canApproveSch = canDo(user, "SCHEDULE:APPROVE");
+  const canCreateWo = canDo(user, "WORK_ORDER:CREATE");
   const canDeleteSch = canDo(user, "SCHEDULE:DELETE");
   const adminBypass = (user?.positionLevel ?? 0) >= 4;
 
@@ -782,7 +782,7 @@ export function SchedulesPage() {
                                 <Send size={11} /> Gửi
                               </Button>
                             )}
-                          {canApproveSch &&
+                          {canCreateWo &&
                             ["PENDING", "IN_PROGRESS", "OVERDUE"].includes(
                               s.status,
                             ) &&

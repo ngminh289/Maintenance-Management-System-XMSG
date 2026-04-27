@@ -19,6 +19,8 @@ import * as notifService from "./notification.service.js";
 import * as employeeModel from "../models/employee.model.js";
 import {
   assignFieldTechnicianToWorkOrder,
+  assignGroupToWorkOrder,
+  validateGroupAssignment,
   validateFieldTechnicianAssignment,
 } from "./workOrderFieldAssign.service.js";
 import * as workOrderModel from "../models/workOrder.model.js";
@@ -96,6 +98,19 @@ function workOrderNeedsTwoStepApproval(woSource, priority) {
   if (priority === "EMERGENCY") return true;
   if (woSource === "CORRECTIVE" && priority === "HIGH") return true;
   return false;
+}
+
+function parseApprovalYmd(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const s = String(v).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return s;
+}
+
+function parsePriority(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const p = String(v).trim().toUpperCase();
+  return ["LOW", "MEDIUM", "HIGH", "EMERGENCY"].includes(p) ? p : null;
 }
 
 /**
@@ -194,7 +209,11 @@ export async function approve({
   approverId,
   comment,
   assignEmployeeId,
+  assignGroupId,
   estimatedHours,
+  plannedDate,
+  priority,
+  description,
 } = {}) {
   const log = await model.findById(logId);
   if (!log) throw createError("Không tìm thấy approval log", 404);
@@ -202,17 +221,39 @@ export async function approve({
 
   await verifyApprover(log, approverId);
 
-  if (
-    log.resourceType === "WORK_ORDER" &&
-    estimatedHours !== undefined &&
-    estimatedHours !== null &&
-    String(estimatedHours).trim() !== ""
-  ) {
-    const n = Number(String(estimatedHours).replace(",", "."));
-    if (!Number.isFinite(n) || n < 0) {
-      throw createError("Giờ ước tính không hợp lệ", 400);
+  if (log.resourceType === "WORK_ORDER") {
+    const woPatch = {};
+    if (
+      estimatedHours !== undefined &&
+      estimatedHours !== null &&
+      String(estimatedHours).trim() !== ""
+    ) {
+      const n = Number(String(estimatedHours).replace(",", "."));
+      if (!Number.isFinite(n) || n < 0) {
+        throw createError("Giờ ước tính không hợp lệ", 400);
+      }
+      woPatch.estimatedHours = n;
     }
-    await workOrderModel.update(log.resourceId, { estimatedHours: n });
+    if (plannedDate !== undefined) {
+      if (plannedDate === null || String(plannedDate).trim() === "") {
+        woPatch.plannedDate = null;
+      } else {
+        const ymd = parseApprovalYmd(plannedDate);
+        if (!ymd) throw createError("Ngày dự kiến không hợp lệ (YYYY-MM-DD)", 400);
+        woPatch.plannedDate = ymd;
+      }
+    }
+    if (priority !== undefined) {
+      const parsed = parsePriority(priority);
+      if (!parsed) throw createError("Ưu tiên không hợp lệ", 400);
+      woPatch.priority = parsed;
+    }
+    if (description !== undefined) {
+      woPatch.description = String(description ?? "").trim() || null;
+    }
+    if (Object.keys(woPatch).length) {
+      await workOrderModel.update(log.resourceId, woPatch);
+    }
   }
 
   if (log.currentLevel < log.totalLevels) {
@@ -237,7 +278,20 @@ export async function approve({
 
   // Cấp cuối — kiểm tra phân công WO (nghỉ phép / PlannedDate) trước khi ghi log & WAITING
   let assigneeIdForWo = null;
+  let assigneeGroupIdForWo = null;
   let approverLevelForAssign = 0;
+  if (
+    log.resourceType === "WORK_ORDER" &&
+    assignEmployeeId != null &&
+    assignEmployeeId !== "" &&
+    assignGroupId != null &&
+    assignGroupId !== ""
+  ) {
+    throw createError(
+      "Chỉ chọn một kiểu phân công: cá nhân hoặc nhóm.",
+      400,
+    );
+  }
   if (
     log.resourceType === "WORK_ORDER" &&
     assignEmployeeId != null &&
@@ -252,6 +306,23 @@ export async function approve({
     await validateFieldTechnicianAssignment(
       log.resourceId,
       assigneeIdForWo,
+      approverLevelForAssign,
+    );
+  }
+  if (
+    log.resourceType === "WORK_ORDER" &&
+    assignGroupId != null &&
+    assignGroupId !== ""
+  ) {
+    assigneeGroupIdForWo = Number(assignGroupId);
+    if (!Number.isFinite(assigneeGroupIdForWo) || assigneeGroupIdForWo < 1) {
+      throw createError("assignGroupId không hợp lệ", 400);
+    }
+    const approverEmp = await employeeModel.findById(approverId);
+    approverLevelForAssign = approverEmp?.positionLevel ?? 0;
+    await validateGroupAssignment(
+      log.resourceId,
+      assigneeGroupIdForWo,
       approverLevelForAssign,
     );
   }
@@ -314,6 +385,13 @@ export async function approve({
       assigneeIdForWo,
       approverLevelForAssign,
       { skipValidation: true },
+    );
+  }
+  if (assigneeGroupIdForWo != null) {
+    await assignGroupToWorkOrder(
+      log.resourceId,
+      assigneeGroupIdForWo,
+      approverLevelForAssign,
     );
   }
 

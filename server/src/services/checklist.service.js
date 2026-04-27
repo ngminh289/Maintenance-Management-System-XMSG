@@ -3,7 +3,7 @@
  *
  * Gửi checklist: lưu kết quả + chi tiết, ReviewStatus=PENDING — KHÔNG đổi tài sản / WO / bộ đếm.
  * Trưởng ca / Trưởng phòng duyệt (APPROVE): mới chạy logic theo OverallStatus:
- *   OK      → đóng WO (nếu có) + reconcile tài sản (AVAILABLE nếu hết phiến onsite, còn thì MAINTENANCE); không WO → AVAILABLE
+ *   OK      → nếu checklist độc lập (không gắn WO) thì AVAILABLE; checklist gắn WO không tự đóng phiếu
  *   WARNING → MONITORING, WO PREDICTIVE HIGH + thông báo
  *   NG      → BROKEN, WO CORRECTIVE EMERGENCY + thông báo (MAINTENANCE khi KTV bắt đầu IN_PROGRESS)
  * Đồng hồ giờ chạy (recordReading) chỉ gọi khi APPROVE.
@@ -25,7 +25,6 @@ import * as templateModel from "../models/checklistTemplate.model.js";
 import * as resultModel from "../models/checklistResult.model.js";
 import * as assetModel from "../models/asset.model.js";
 import * as workOrderModel from "../models/workOrder.model.js";
-import * as workOrderMaintSync from "./workOrderMaintenanceSync.service.js";
 import * as workOrderSvc from "./workOrder.service.js";
 import * as counterSvc from "./assetCounter.service.js";
 import * as counterModel from "../models/assetCounter.model.js";
@@ -239,6 +238,9 @@ export async function getQRInfo(assetId, viewer = {}) {
   const checklistTemplate = checklistTemplates[0] || null;
   let preferredTemplateId = checklistTemplate?.templateId ?? null;
   const linkedWoId = viewer.woId != null && viewer.woId !== "" ? Number(viewer.woId) : null;
+  const viewerEmployeeId =
+    viewer.employeeId != null ? Number(viewer.employeeId) : null;
+  let woChecklist = null;
   if (linkedWoId && Number.isFinite(linkedWoId) && linkedWoId > 0) {
     const wo = await workOrderModel.findById(linkedWoId);
     if (
@@ -255,6 +257,25 @@ export async function getQRInfo(assetId, viewer = {}) {
       if (schedule?.checklistTemplateId != null) {
         preferredTemplateId = Number(schedule.checklistTemplateId);
       }
+      const assigns = await workOrderModel.getAssignments(linkedWoId);
+      const amLeader =
+        viewerEmployeeId != null &&
+        assigns.some(
+          (a) =>
+            Number(a.employeeId) === viewerEmployeeId &&
+            Number(a.isGroupLeader) === 1,
+        );
+      const amAssigned =
+        viewerEmployeeId != null &&
+        assigns.some((a) => Number(a.employeeId) === viewerEmployeeId);
+      const slot = await scheduledChecklistSlotModel.findByWorkOrderId(linkedWoId);
+      woChecklist = {
+        woId: linkedWoId,
+        slotStatus: String(slot?.status || ""),
+        canSubmit: Boolean(amLeader),
+        amLeader: Boolean(amLeader),
+        amAssigned: Boolean(amAssigned),
+      };
     }
   }
 
@@ -323,6 +344,7 @@ export async function getQRInfo(assetId, viewer = {}) {
     documents: documentsWithTags,
     recentResults,
     runtimeCounter,
+    woChecklist,
   };
 }
 
@@ -349,22 +371,17 @@ export async function applyApprovedChecklistEffects(row) {
 
   let newWorkOrderId = null;
 
+  /**
+   * Checklist gắn WO chỉ dùng để xác nhận checklist-slot và cập nhật dữ liệu checklist.
+   * Không tự động đổi trạng thái WO (đặc biệt không auto COMPLETED) để tránh bỏ qua
+   * luồng nghiệm thu AWAITING_CLOSURE -> COMPLETED của Trưởng ca/Trưởng phòng.
+   */
+  if (woId) {
+    return null;
+  }
+
   if (overallStatus === "OK") {
-    if (woId) {
-      const w = await workOrderModel.findById(woId);
-      const autoHours = w
-        ? workOrderModel.computeSuggestedActualHours(w)
-        : undefined;
-      await workOrderModel.updateStatus(woId, "COMPLETED", {
-        actualDate: new Date().toISOString().split("T")[0],
-        ...(autoHours !== undefined ? { actualHours: autoHours } : {}),
-      });
-      const completedWo = await workOrderModel.findById(woId);
-      await workOrderMaintSync.afterWorkOrderCompleted(completedWo);
-      await workOrderSvc.reconcileAssetStatusForOnsiteWorkOrders(assetId);
-    } else {
-      await assetModel.updateStatus(assetId, "AVAILABLE");
-    }
+    await assetModel.updateStatus(assetId, "AVAILABLE");
   } else if (overallStatus === "WARNING") {
     await assetModel.updateStatus(assetId, "MONITORING");
     newWorkOrderId = await workOrderSvc.createAutomatic({
@@ -462,6 +479,18 @@ export async function submitResult({
     }
     if (!["OPEN", "OVERDUE"].includes(String(slot.status).toUpperCase())) {
       throw createError("Checklist của phiếu này đã được thực hiện trước đó.", 409);
+    }
+    const assigns = await workOrderModel.getAssignments(wid);
+    const isLeader = assigns.some(
+      (a) =>
+        Number(a.employeeId) === Number(checkerId) &&
+        Number(a.isGroupLeader) === 1,
+    );
+    if (!isLeader) {
+      throw createError(
+        "Checklist gắn phiếu chỉ trưởng nhóm được thực hiện. Thành viên khác chỉ xem sau khi hoàn thành.",
+        403,
+      );
     }
     if (woSource === "PREDICTIVE_SCHEDULE" || woSource === "PREDICTIVE") {
       const today = new Date().toISOString().split("T")[0];

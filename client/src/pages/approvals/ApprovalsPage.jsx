@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { approvalApi } from "../../api/approval.api.js";
 import { employeeApi } from "../../api/employee.api.js";
+import { api } from "../../api/index.js";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
@@ -317,8 +318,15 @@ export function ApprovalsPage() {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   /** Phân công ngay khi duyệt xong WO (bước cuối) — tuỳ chọn */
+  const [assignMode, setAssignMode] = useState("individual");
   const [assignEmployeeId, setAssignEmployeeId] = useState("");
+  const [assignGroupId, setAssignGroupId] = useState("");
+  const [assignGroups, setAssignGroups] = useState([]);
+  const [assignGroupMembers, setAssignGroupMembers] = useState([]);
   const [approveEstimatedHours, setApproveEstimatedHours] = useState("");
+  const [approvePlannedDate, setApprovePlannedDate] = useState("");
+  const [approvePriority, setApprovePriority] = useState("");
+  const [approveDescription, setApproveDescription] = useState("");
   const [fieldEmployees, setFieldEmployees] = useState([]);
 
   const load = useCallback(async () => {
@@ -344,6 +352,8 @@ export function ApprovalsPage() {
   useEffect(() => {
     if (!selected || !isWoFinalStep(selected)) {
       setFieldEmployees([]);
+      setAssignGroups([]);
+      setAssignGroupMembers([]);
       return;
     }
     employeeApi
@@ -357,7 +367,22 @@ export function ApprovalsPage() {
         );
       })
       .catch(() => setFieldEmployees([]));
+    api
+      .get("/maintenance-groups")
+      .then((r) => setAssignGroups(r.data.data?.items ?? r.data.data ?? []))
+      .catch(() => setAssignGroups([]));
   }, [selected]);
+
+  useEffect(() => {
+    if (!selected || !isWoFinalStep(selected) || assignMode !== "group" || !assignGroupId) {
+      setAssignGroupMembers([]);
+      return;
+    }
+    api
+      .get(`/maintenance-groups/${assignGroupId}`)
+      .then((r) => setAssignGroupMembers(r.data.data?.members ?? []))
+      .catch(() => setAssignGroupMembers([]));
+  }, [selected, assignMode, assignGroupId]);
 
   const handleAction = async () => {
     if (!selected) return;
@@ -374,14 +399,34 @@ export function ApprovalsPage() {
         action,
         comment,
         assignEmployeeId:
-          action === "APPROVED" && assignEmployeeId
+          action === "APPROVED" &&
+          assignMode === "individual" &&
+          assignEmployeeId
             ? assignEmployeeId
+            : undefined,
+        assignGroupId:
+          action === "APPROVED" && assignMode === "group" && assignGroupId
+            ? assignGroupId
             : undefined,
         estimatedHours:
           action === "APPROVED" &&
           selected.resourceType === "WORK_ORDER" &&
           String(approveEstimatedHours).trim() !== ""
             ? approveEstimatedHours
+            : undefined,
+        plannedDate:
+          action === "APPROVED" && selected.resourceType === "WORK_ORDER"
+            ? approvePlannedDate
+            : undefined,
+        priority:
+          action === "APPROVED" &&
+          selected.resourceType === "WORK_ORDER" &&
+          String(approvePriority).trim() !== ""
+            ? approvePriority
+            : undefined,
+        description:
+          action === "APPROVED" && selected.resourceType === "WORK_ORDER"
+            ? approveDescription
             : undefined,
       });
       toast.success(
@@ -395,8 +440,14 @@ export function ApprovalsPage() {
       );
       setSelected(null);
       setComment("");
+      setAssignMode("individual");
       setAssignEmployeeId("");
+      setAssignGroupId("");
+      setAssignGroupMembers([]);
       setApproveEstimatedHours("");
+      setApprovePlannedDate("");
+      setApprovePriority("");
+      setApproveDescription("");
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? "Lỗi xử lý");
@@ -547,8 +598,18 @@ export function ApprovalsPage() {
                     setSelected(item);
                     setAction("APPROVED");
                     setComment("");
+                    setAssignMode("individual");
                     setAssignEmployeeId("");
+                    setAssignGroupId("");
+                    setAssignGroupMembers([]);
                     setApproveEstimatedHours("");
+                    setApprovePlannedDate(
+                      item.resourcePlannedDate
+                        ? String(item.resourcePlannedDate).slice(0, 10)
+                        : "",
+                    );
+                    setApprovePriority(item.resourcePriority || "");
+                    setApproveDescription(item.resourceDescription || "");
                   }}
                   className="flex-shrink-0 self-center"
                 >
@@ -564,7 +625,14 @@ export function ApprovalsPage() {
         open={!!selected}
         onClose={() => {
           setSelected(null);
+          setAssignMode("individual");
+          setAssignEmployeeId("");
+          setAssignGroupId("");
+          setAssignGroupMembers([]);
           setApproveEstimatedHours("");
+          setApprovePlannedDate("");
+          setApprovePriority("");
+          setApproveDescription("");
         }}
         title="Phê duyệt — xem đầy đủ thông tin"
         size="lg"
@@ -584,15 +652,41 @@ export function ApprovalsPage() {
             </Select>
 
             {selected.resourceType === "WORK_ORDER" && action === "APPROVED" && (
-              <Input
-                label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
-                type="number"
-                min={0}
-                step={0.5}
-                value={approveEstimatedHours}
-                onChange={(e) => setApproveEstimatedHours(e.target.value)}
-                placeholder="VD: 4 — để trống nếu không đổi"
-              />
+              <div className="space-y-3">
+                <Input
+                  label="Ngày dự kiến"
+                  type="date"
+                  value={approvePlannedDate}
+                  onChange={(e) => setApprovePlannedDate(e.target.value)}
+                />
+                <Input
+                  label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={approveEstimatedHours}
+                  onChange={(e) => setApproveEstimatedHours(e.target.value)}
+                  placeholder="VD: 4 — để trống nếu không đổi"
+                />
+                <Select
+                  label="Ưu tiên"
+                  value={approvePriority}
+                  onChange={(e) => setApprovePriority(e.target.value)}
+                >
+                  <option value="">— Giữ như hiện tại —</option>
+                  <option value="LOW">Thấp</option>
+                  <option value="MEDIUM">Trung bình</option>
+                  <option value="HIGH">Cao</option>
+                  <option value="EMERGENCY">Khẩn cấp</option>
+                </Select>
+                <Textarea
+                  label="Mô tả công việc"
+                  value={approveDescription}
+                  onChange={(e) => setApproveDescription(e.target.value)}
+                  placeholder="Cập nhật mô tả trước khi duyệt (nếu cần)"
+                  rows={3}
+                />
+              </div>
             )}
 
             {selected.resourceType === "WORK_ORDER" &&
@@ -600,19 +694,70 @@ export function ApprovalsPage() {
               action === "APPROVED" && (
                 <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-3 space-y-2">
                   <Select
-                    label="Phân công ngay (tuỳ chọn)"
-                    value={assignEmployeeId}
-                    onChange={(e) => setAssignEmployeeId(e.target.value)}
+                    label="Kiểu phân công"
+                    value={assignMode}
+                    onChange={(e) => {
+                      setAssignMode(e.target.value);
+                      setAssignEmployeeId("");
+                      setAssignGroupId("");
+                      setAssignGroupMembers([]);
+                    }}
                   >
-                    <option value="">
-                      — Để sau: vào Phiếu việc → Phân công —
-                    </option>
-                    {fieldEmployees.map((e) => (
-                      <option key={e.employeeId} value={e.employeeId}>
-                        {e.fullName} — {e.positionName}
-                      </option>
-                    ))}
+                    <option value="individual">Cá nhân</option>
+                    <option value="group">Nhóm</option>
                   </Select>
+                  {assignMode === "individual" ? (
+                    <Select
+                      label="Phân công ngay (tuỳ chọn)"
+                      value={assignEmployeeId}
+                      onChange={(e) => setAssignEmployeeId(e.target.value)}
+                    >
+                      <option value="">
+                        — Để sau: vào Phiếu việc → Phân công —
+                      </option>
+                      {fieldEmployees.map((e) => (
+                        <option key={e.employeeId} value={e.employeeId}>
+                          {e.fullName} — {e.positionName}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <>
+                      <Select
+                        label="Nhóm bảo trì (tuỳ chọn)"
+                        value={assignGroupId}
+                        onChange={(e) => setAssignGroupId(e.target.value)}
+                      >
+                        <option value="">
+                          — Để sau: vào Phiếu việc → Phân công —
+                        </option>
+                        {assignGroups.map((g) => (
+                          <option key={g.groupId} value={g.groupId}>
+                            {g.groupName}
+                            {g.specialty ? ` · ${g.specialty}` : ""}
+                            {g.leaderName ? ` · TN: ${g.leaderName}` : ""}
+                          </option>
+                        ))}
+                      </Select>
+                      {assignGroupMembers.length > 0 && (
+                        <div className="rounded-lg border border-blue-200 bg-white px-3 py-2">
+                          <p className="text-xs font-semibold text-blue-900 mb-1">
+                            Thành viên nhóm sẽ được phân công
+                          </p>
+                          <ul className="space-y-0.5">
+                            {assignGroupMembers.map((m) => (
+                              <li key={m.employeeId} className="text-xs text-gray-700">
+                                {m.fullName}
+                                {Number(m.isGroupLeader) === 1
+                                  ? " (Trưởng nhóm)"
+                                  : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <p className="text-xs text-blue-900/80 leading-relaxed">
                     Chỉ hiện ở <strong>bước duyệt cuối</strong> (với WO 2 bước,
                     thường là <strong>Trưởng phòng</strong>). Chọn người để vừa
@@ -642,7 +787,14 @@ export function ApprovalsPage() {
                 variant="secondary"
                 onClick={() => {
                   setSelected(null);
+                  setAssignMode("individual");
+                  setAssignEmployeeId("");
+                  setAssignGroupId("");
+                  setAssignGroupMembers([]);
                   setApproveEstimatedHours("");
+                  setApprovePlannedDate("");
+                  setApprovePriority("");
+                  setApproveDescription("");
                 }}
               >
                 Đóng

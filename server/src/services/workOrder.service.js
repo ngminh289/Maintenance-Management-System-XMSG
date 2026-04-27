@@ -196,8 +196,8 @@ export async function createAutomatic({
 }
 
 /**
- * Phiếu từ lịch bảo trì đã được duyệt (kế hoạch OK) — không gửi phê duyệt phiếu lần nữa.
- * Vào WAITING: Trưởng ca/Trưởng phòng phân công → KTV HT / Chuyên viên KTS nhận việc trên phiếu.
+ * Phiếu từ lịch bảo trì đã được duyệt (kế hoạch OK) — vẫn phải qua phê duyệt WO.
+ * Tạo WO ở PENDING_APPROVAL và submit workflow; chỉ sang WAITING sau khi duyệt cấp cuối.
  */
 export async function createFromApprovedSchedule({
   scheduleId,
@@ -212,15 +212,22 @@ export async function createFromApprovedSchedule({
     assetId,
     woSource: "SCHEDULE",
     priority: priority || "MEDIUM",
-    status: "WAITING",
+    status: "PENDING_APPROVAL",
     plannedDate: plannedDate || new Date().toISOString().split("T")[0],
     description: description || `Phiếu từ lịch #${scheduleId}`,
     createdBy: createdBy || null,
   });
+  await approvalSvc.submit({
+    resourceType: "WORK_ORDER",
+    resourceId: woId,
+    submitterId: createdBy,
+    woSource: "SCHEDULE",
+    woPriority: priority || "MEDIUM",
+  });
   if (createdBy) {
     await notifService.send(
       createdBy,
-      `Đã tạo WO #${woId} từ lịch bảo trì — trạng thái Chờ thực hiện. Vui lòng phân công nhân viên hiện trường.`,
+      `Đã tạo WO #${woId} từ lịch bảo trì — đang chờ phê duyệt trước khi phân công nhân viên hiện trường.`,
       "APPROVAL_REQUEST",
       { resourceType: "WORK_ORDER", resourceId: woId },
     );

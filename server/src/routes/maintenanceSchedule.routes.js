@@ -46,7 +46,7 @@ maintenanceScheduleRouter.delete(
 // Tạo WO từ lịch định kỳ (không áp dụng lịch HOURS — service trả 400)
 maintenanceScheduleRouter.post(
   "/:id/generate-work-order",
-  requirePermission("MAINTENANCE_PLAN", "APPROVE"),
+  requirePermission("WORK_ORDER", "CREATE"),
   ctrl.generateWorkOrder,
 );
 

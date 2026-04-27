@@ -16,6 +16,41 @@ import { messageIfAssignmentConflictsWithScheduledLeave } from "../utils/schedul
 
 const MAX_ASSIGNEE_LEVEL = 2;
 
+/** Kiểm tra toàn bộ điều kiện phân công nhóm (không ghi DB). */
+export async function validateGroupAssignment(woId, groupId, actorLevel) {
+  if ((actorLevel ?? 0) < 3) {
+    throw createError("Chỉ Trưởng ca / Trưởng phòng được phân công nhóm lên phiếu việc.", 403);
+  }
+  const [wo, group] = await Promise.all([
+    model.findById(woId),
+    groupModel.findById(groupId),
+  ]);
+  if (!wo) throw createError("Không tìm thấy phiếu", 404);
+  if (!group) throw createError("Không tìm thấy nhóm bảo trì", 404);
+
+  const members = await groupModel.getMembers(groupId);
+  if (members.length === 0) throw createError("Nhóm chưa có thành viên", 400);
+
+  const leader = members.find((m) => Number(m.isGroupLeader) === 1);
+  if (!leader) {
+    throw createError(
+      `Nhóm "${group.groupName}" chưa có trưởng nhóm. Hãy đặt trưởng nhóm trong trang Nhân sự → Nhóm bảo trì trước.`,
+      400,
+    );
+  }
+
+  for (const m of members) {
+    const emp = await employeeModel.findById(m.employeeId);
+    if (!emp || !emp.isActive) {
+      throw createError(`Nhân viên ${m.fullName} không còn hoạt động`, 400);
+    }
+    const leaveMsg = messageIfAssignmentConflictsWithScheduledLeave(emp, wo.plannedDate);
+    if (leaveMsg) throw createError(leaveMsg, 400);
+  }
+
+  return { wo, group, members, leader };
+}
+
 /** Kiểm tra toàn bộ điều kiện phân công cá nhân (không ghi DB). */
 export async function validateFieldTechnicianAssignment(woId, assigneeEmployeeId, actorLevel) {
   if ((actorLevel ?? 0) < 3) {
@@ -61,37 +96,11 @@ export async function assignFieldTechnicianToWorkOrder(woId, assigneeEmployeeId,
  * - Gửi thông báo riêng cho từng người, thông báo đặc biệt cho leader.
  */
 export async function assignGroupToWorkOrder(woId, groupId, actorLevel, { replaceExisting = true } = {}) {
-  if ((actorLevel ?? 0) < 3) {
-    throw createError("Chỉ Trưởng ca / Trưởng phòng được phân công nhóm lên phiếu việc.", 403);
-  }
-  const [wo, group] = await Promise.all([
-    model.findById(woId),
-    groupModel.findById(groupId),
-  ]);
-  if (!wo)    throw createError("Không tìm thấy phiếu", 404);
-  if (!group) throw createError("Không tìm thấy nhóm bảo trì", 404);
-
-  const members = await groupModel.getMembers(groupId);
-  if (members.length === 0) throw createError("Nhóm chưa có thành viên", 400);
-
-  // Phải có trưởng nhóm cố định
-  const leader = members.find(m => Number(m.isGroupLeader) === 1);
-  if (!leader) {
-    throw createError(
-      `Nhóm "${group.groupName}" chưa có trưởng nhóm. Hãy đặt trưởng nhóm trong trang Nhân sự → Nhóm bảo trì trước.`,
-      400,
-    );
-  }
-
-  // Kiểm tra nghỉ phép cho tất cả thành viên
-  for (const m of members) {
-    const emp = await employeeModel.findById(m.employeeId);
-    if (!emp || !emp.isActive) {
-      throw createError(`Nhân viên ${m.fullName} không còn hoạt động`, 400);
-    }
-    const leaveMsg = messageIfAssignmentConflictsWithScheduledLeave(emp, wo.plannedDate);
-    if (leaveMsg) throw createError(leaveMsg, 400);
-  }
+  const { group, members, leader } = await validateGroupAssignment(
+    woId,
+    groupId,
+    actorLevel,
+  );
 
   if (replaceExisting) {
     await model.clearAssignments(woId);

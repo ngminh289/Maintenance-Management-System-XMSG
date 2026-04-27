@@ -73,21 +73,27 @@ export function WorkOrderDetailPage() {
   const [approvals, setApprovals] = useState([]);
   const [approvalWorkflowSteps, setApprovalWorkflowSteps] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [groups,    setGroups]    = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [assignOpen,     setAssignOpen]     = useState(false);
-  const [assignMode,         setAssignMode]         = useState("individual"); // "individual" | "group"
-  const [assignSpecialty,    setAssignSpecialty]    = useState("");
-  const [assignCraftLevel,   setAssignCraftLevel]   = useState("");
-  const [assignGroupFilter,  setAssignGroupFilter]  = useState(""); // lọc chuyên môn nhóm
-  const [selectedGroup,      setSelectedGroup]      = useState("");
-  const [groupMembers,       setGroupMembers]       = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignMode, setAssignMode] = useState("individual"); // "individual" | "group"
+  const [assignSpecialty, setAssignSpecialty] = useState("");
+  const [assignCraftLevel, setAssignCraftLevel] = useState("");
+  const [assignGroupFilter, setAssignGroupFilter] = useState(""); // lọc chuyên môn nhóm
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const [groupMembers, setGroupMembers] = useState([]);
   const [approveOpen, setApproveOpen] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState("");
   const [approveAction, setApproveAction] = useState("APPROVED");
   const [comment, setComment] = useState("");
+  const [approveAssignMode, setApproveAssignMode] = useState("individual");
   const [approveAssignEmp, setApproveAssignEmp] = useState("");
+  const [approveAssignGroup, setApproveAssignGroup] = useState("");
+  const [approveGroupMembers, setApproveGroupMembers] = useState([]);
   const [approveEstimatedHours, setApproveEstimatedHours] = useState("");
+  const [approvePlannedDate, setApprovePlannedDate] = useState("");
+  const [approvePriority, setApprovePriority] = useState("");
+  const [approveDescription, setApproveDescription] = useState("");
   const [approveFieldEmployees, setApproveFieldEmployees] = useState([]);
   const [saving, setSaving] = useState(false);
   const [awaitingOpen, setAwaitingOpen] = useState(false);
@@ -127,13 +133,25 @@ export function WorkOrderDetailPage() {
 
   useEffect(() => {
     load();
-    employeeApi.getAll({ limit: 200 }).then((r) => {
-      const items = r.data.data?.items ?? [];
-      setEmployees(items.filter(e => e.isActive !== false && (e.positionLevel ?? 99) <= ASSIGNEE_MAX_LEVEL));
-    }).catch(() => {});
-    api.get("/maintenance-groups").then(r => {
-      setGroups(r.data.data?.items ?? r.data.data ?? []);
-    }).catch(() => {});
+    employeeApi
+      .getAll({ limit: 200 })
+      .then((r) => {
+        const items = r.data.data?.items ?? [];
+        setEmployees(
+          items.filter(
+            (e) =>
+              e.isActive !== false &&
+              (e.positionLevel ?? 99) <= ASSIGNEE_MAX_LEVEL,
+          ),
+        );
+      })
+      .catch(() => {});
+    api
+      .get("/maintenance-groups")
+      .then((r) => {
+        setGroups(r.data.data?.items ?? r.data.data ?? []);
+      })
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -182,7 +200,23 @@ export function WorkOrderDetailPage() {
         ? String(wo.estimatedHours)
         : "",
     );
+    setApprovePlannedDate(
+      wo.plannedDate ? String(wo.plannedDate).slice(0, 10) : "",
+    );
+    setApprovePriority(wo.priority || "");
+    setApproveDescription(wo.description || "");
   }, [approveOpen, wo?.woId, wo?.estimatedHours]);
+
+  useEffect(() => {
+    if (!approveOpen || approveAssignMode !== "group" || !approveAssignGroup) {
+      setApproveGroupMembers([]);
+      return;
+    }
+    api
+      .get(`/maintenance-groups/${approveAssignGroup}`)
+      .then((r) => setApproveGroupMembers(r.data.data?.members ?? []))
+      .catch(() => setApproveGroupMembers([]));
+  }, [approveOpen, approveAssignMode, approveAssignGroup]);
 
   useEffect(() => {
     if (!editWoOpen) return;
@@ -214,7 +248,9 @@ export function WorkOrderDetailPage() {
       );
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message ?? "Không gửi lại được phê duyệt");
+      toast.error(
+        err.response?.data?.message ?? "Không gửi lại được phê duyệt",
+      );
     } finally {
       setSaving(false);
     }
@@ -363,7 +399,10 @@ export function WorkOrderDetailPage() {
 
   const handleAssign = async () => {
     if (assignMode === "group") {
-      if (!selectedGroup) { toast.error("Chọn nhóm"); return; }
+      if (!selectedGroup) {
+        toast.error("Chọn nhóm");
+        return;
+      }
       setSaving(true);
       try {
         await workOrderApi.assignGroup(id, Number(selectedGroup));
@@ -372,7 +411,9 @@ export function WorkOrderDetailPage() {
         load();
       } catch (err) {
         toast.error(err.response?.data?.message ?? "Lỗi phân công nhóm");
-      } finally { setSaving(false); }
+      } finally {
+        setSaving(false);
+      }
     } else {
       if (!selectedEmp) return;
       setSaving(true);
@@ -383,7 +424,9 @@ export function WorkOrderDetailPage() {
         load();
       } catch (err) {
         toast.error(err.response?.data?.message ?? "Lỗi phân công");
-      } finally { setSaving(false); }
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -396,7 +439,9 @@ export function WorkOrderDetailPage() {
     try {
       const r = await api.get(`/maintenance-groups/${gid}`);
       setGroupMembers(r.data.data?.members ?? []);
-    } catch { toast.error("Không tải được thành viên nhóm"); }
+    } catch {
+      toast.error("Không tải được thành viên nhóm");
+    }
   };
 
   const handleApprove = async () => {
@@ -411,20 +456,42 @@ export function WorkOrderDetailPage() {
         action: approveAction,
         comment,
         assignEmployeeId:
-          approveAction === "APPROVED" && approveAssignEmp
+          approveAction === "APPROVED" &&
+          approveAssignMode === "individual" &&
+          approveAssignEmp
             ? approveAssignEmp
+            : undefined,
+        assignGroupId:
+          approveAction === "APPROVED" &&
+          approveAssignMode === "group" &&
+          approveAssignGroup
+            ? approveAssignGroup
             : undefined,
         estimatedHours:
           approveAction === "APPROVED" &&
           String(approveEstimatedHours).trim() !== ""
             ? approveEstimatedHours
             : undefined,
+        plannedDate:
+          approveAction === "APPROVED" ? approvePlannedDate : undefined,
+        priority:
+          approveAction === "APPROVED" && String(approvePriority).trim() !== ""
+            ? approvePriority
+            : undefined,
+        description:
+          approveAction === "APPROVED" ? approveDescription : undefined,
       });
       toast.success("Đã xử lý phê duyệt");
       setApproveOpen(false);
       setComment("");
+      setApproveAssignMode("individual");
       setApproveAssignEmp("");
+      setApproveAssignGroup("");
+      setApproveGroupMembers([]);
       setApproveEstimatedHours("");
+      setApprovePlannedDate("");
+      setApprovePriority("");
+      setApproveDescription("");
       load();
     } catch (err) {
       toast.error(err.response?.data?.message ?? "Lỗi phê duyệt");
@@ -441,10 +508,7 @@ export function WorkOrderDetailPage() {
       source === "SCHEDULE" ||
       source === "PREDICTIVE_SCHEDULE" ||
       (source === "PREDICTIVE" && wo.scheduleId != null);
-    if (
-      scheduleChecklistSource &&
-      wo.scheduleId != null
-    ) {
+    if (scheduleChecklistSource && wo.scheduleId != null) {
       q.set("woId", String(wo.woId));
     }
     return `/checklists?${q.toString()}`;
@@ -463,7 +527,9 @@ export function WorkOrderDetailPage() {
   );
   /** Người dùng hiện tại là trưởng nhóm của phiếu này */
   const amGroupLeader = wo.assignments?.some(
-    (a) => Number(a.employeeId) === Number(user?.employeeId) && Number(a.isGroupLeader) === 1,
+    (a) =>
+      Number(a.employeeId) === Number(user?.employeeId) &&
+      Number(a.isGroupLeader) === 1,
   );
   const isTcPlus = (user?.positionLevel ?? 0) >= LEVEL_TRUONG_CA;
   const canUpdate = canDo(user, "WORK_ORDER:UPDATE");
@@ -474,9 +540,7 @@ export function WorkOrderDetailPage() {
   const canReportAwaiting =
     canUpdate && (amGroupLeader || isTcPlus) && wo.status === "IN_PROGRESS";
   const canUploadPhotos =
-    canUpdate &&
-    (isAssigned || isTcPlus) &&
-    wo.status === "IN_PROGRESS";
+    canUpdate && (isAssigned || isTcPlus) && wo.status === "IN_PROGRESS";
   const canCloseAfterReview =
     canUpdate && isTcPlus && wo.status === "AWAITING_CLOSURE";
   const canReopenFromAwaiting =
@@ -502,9 +566,18 @@ export function WorkOrderDetailPage() {
       (source === "PREDICTIVE" && wo.scheduleId != null)) &&
     wo.scheduleId != null &&
     !["COMPLETED", "CANCELLED"].includes(wo.status);
-  const checklistSlotStatus = String(wo.checklistSlot?.status || "").toUpperCase();
+  const checklistSlotStatus = String(
+    wo.checklistSlot?.status || "",
+  ).toUpperCase();
   const checklistDueDate = wo.checklistSlot?.dueDate || null;
   const checklistDone = checklistSlotStatus === "FULFILLED";
+  const checklistPendingReview =
+    String(wo.woLinkedChecklist?.reviewStatus || "").toUpperCase() === "PENDING";
+  const woLinkedChecklistApproved =
+    String(wo.woLinkedChecklist?.reviewStatus || "").toUpperCase() ===
+    "APPROVED";
+  const canSeeWoLinkedChecklist =
+    isTcPlus || amGroupLeader || woLinkedChecklistApproved;
 
   const twoStepApproval = Number(pendingApprovalLog?.totalLevels) === 2;
   const tpStepName =
@@ -609,7 +682,10 @@ export function WorkOrderDetailPage() {
               size="sm"
               variant="success"
               onClick={() => {
+                setApproveAssignMode("individual");
                 setApproveAssignEmp("");
+                setApproveAssignGroup("");
+                setApproveGroupMembers([]);
                 setApproveOpen(true);
               }}
             >
@@ -626,11 +702,7 @@ export function WorkOrderDetailPage() {
             </Button>
           )}
           {canResubmitApproval && (
-            <Button
-              size="sm"
-              onClick={handleResubmitApproval}
-              loading={saving}
-            >
+            <Button size="sm" onClick={handleResubmitApproval} loading={saving}>
               <Send size={13} /> Gửi lại phê duyệt
             </Button>
           )}
@@ -657,91 +729,128 @@ export function WorkOrderDetailPage() {
       </div>
 
       {hasChecklistRequirement && (
-          <div className="flex gap-3 rounded-xl border border-teal-200 bg-teal-50/90 px-4 py-3 text-sm text-teal-950">
-            <ClipboardList
-              size={18}
-              className="shrink-0 text-teal-600 mt-0.5"
-              aria-hidden
-            />
-            <div>
-              <p className="font-bold text-teal-900">
-                {String(wo.woSource || "").toUpperCase() === "PREDICTIVE_SCHEDULE"
-                || (String(wo.woSource || "").toUpperCase() === "PREDICTIVE" && wo.scheduleId != null)
-                  ? "Checklist dự báo đính kèm"
-                  : "Checklist định kỳ đính kèm"}
-              </p>
-              <p className="mt-1 leading-relaxed">
-                {checklistDone
-                  ? "Checklist đã được thực hiện và xác nhận."
+        <div className="flex gap-3 rounded-xl border border-teal-200 bg-teal-50/90 px-4 py-3 text-sm text-teal-950">
+          <ClipboardList
+            size={18}
+            className="shrink-0 text-teal-600 mt-0.5"
+            aria-hidden
+          />
+          <div>
+            <p className="font-bold text-teal-900">
+              {String(wo.woSource || "").toUpperCase() ===
+                "PREDICTIVE_SCHEDULE" ||
+              (String(wo.woSource || "").toUpperCase() === "PREDICTIVE" &&
+                wo.scheduleId != null)
+                ? "Checklist dự báo đính kèm"
+                : "Checklist định kỳ đính kèm"}
+            </p>
+            <p className="mt-1 leading-relaxed">
+              {checklistDone
+                ? "Checklist đã được thực hiện và xác nhận."
+                : checklistPendingReview
+                  ? "Checklist đã nộp và đang chờ duyệt."
                   : "Checklist chưa được thực hiện. Vui lòng hoàn tất checklist hiện trường cho phiếu này."}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge color={checklistDone ? "green" : "yellow"}>
-                  {checklistDone ? "Đã thực hiện" : "Chưa thực hiện"}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge
+                color={
+                  checklistDone
+                    ? "green"
+                    : checklistPendingReview
+                      ? "orange"
+                      : "yellow"
+                }
+              >
+                {checklistDone
+                  ? "Đã thực hiện"
+                  : checklistPendingReview
+                    ? "Chờ duyệt"
+                    : "Chưa thực hiện"}
+              </Badge>
+              {checklistDueDate && (
+                <Badge color="blue">
+                  Hạn checklist: {fDate(checklistDueDate)}
                 </Badge>
-                {checklistDueDate && (
-                  <Badge color="blue">Hạn checklist: {fDate(checklistDueDate)}</Badge>
-                )}
-              </div>
+              )}
+            </div>
+            {!checklistPendingReview && (
               <Link
                 to={checklistForAssetHref}
                 className="inline-block mt-2 text-sm font-semibold text-teal-900 underline hover:no-underline"
               >
                 Mở trang checklist — tài sản #{wo.assetId}
               </Link>
-            </div>
-          </div>
-        )}
-
-      {wo.recentChecklistsEligible && wo.woLinkedChecklist && (
-        <Card title="Checklist đã nộp cho phiếu này">
-          <p className="text-xs text-gray-500 mb-3">
-            Hiển thị khi có thành viên được phân công đã gửi checklist gắn WO (kể cả chờ Trưởng ca duyệt).
-          </p>
-          <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge color={CHECKLIST_STATUS_COLOR[wo.woLinkedChecklist.overallStatus] ?? "gray"}>
-                {wo.woLinkedChecklist.overallStatus}
-              </Badge>
-              <Badge color={APPROVAL_STATUS_COLOR[wo.woLinkedChecklist.reviewStatus] ?? "yellow"}>
-                {wo.woLinkedChecklist.reviewStatus === "PENDING"
-                  ? "Chờ duyệt"
-                  : wo.woLinkedChecklist.reviewStatus === "APPROVED"
-                    ? "Đã duyệt"
-                    : wo.woLinkedChecklist.reviewStatus === "REJECTED"
-                      ? "Từ chối"
-                      : wo.woLinkedChecklist.reviewStatus}
-              </Badge>
-              <span className="text-xs font-mono text-gray-500">
-                #{wo.woLinkedChecklist.checklistId}
-              </span>
-            </div>
-            <p className="text-gray-800">
-              <span className="font-semibold">{wo.woLinkedChecklist.checkerName ?? "—"}</span>
-              <span className="text-gray-500"> · {fDateTime(wo.woLinkedChecklist.checkTime)}</span>
-            </p>
-            {wo.woLinkedChecklist.templateName && (
-              <p className="text-xs text-gray-600">Mẫu: {wo.woLinkedChecklist.templateName}</p>
             )}
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Link
-                to={`/checklists/history?assetId=${wo.assetId}&checklistId=${wo.woLinkedChecklist.checklistId}`}
-                className="text-sm font-semibold text-violet-800 underline"
-              >
-                Xem chi tiết / ảnh câu hỏi
-              </Link>
-              {canDo(user, "CHECKLIST_RESULT:APPROVE") && (
-                <Link
-                  to={`/checklists/review?checklistId=${wo.woLinkedChecklist.checklistId}`}
-                  className="text-sm font-semibold text-blue-700 underline"
-                >
-                  Mở tiếp nhận checklist
-                </Link>
-              )}
-            </div>
           </div>
-        </Card>
+        </div>
       )}
+
+      {wo.recentChecklistsEligible &&
+        wo.woLinkedChecklist &&
+        canSeeWoLinkedChecklist && (
+          <Card title="Checklist đã nộp cho phiếu này">
+            <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  color={
+                    CHECKLIST_STATUS_COLOR[
+                      wo.woLinkedChecklist.overallStatus
+                    ] ?? "gray"
+                  }
+                >
+                  {wo.woLinkedChecklist.overallStatus}
+                </Badge>
+                <Badge
+                  color={
+                    APPROVAL_STATUS_COLOR[wo.woLinkedChecklist.reviewStatus] ??
+                    "yellow"
+                  }
+                >
+                  {wo.woLinkedChecklist.reviewStatus === "PENDING"
+                    ? "Chờ duyệt"
+                    : wo.woLinkedChecklist.reviewStatus === "APPROVED"
+                      ? "Đã duyệt"
+                      : wo.woLinkedChecklist.reviewStatus === "REJECTED"
+                        ? "Từ chối"
+                        : wo.woLinkedChecklist.reviewStatus}
+                </Badge>
+                <span className="text-xs font-mono text-gray-500">
+                  #{wo.woLinkedChecklist.checklistId}
+                </span>
+              </div>
+              <p className="text-gray-800">
+                <span className="font-semibold">
+                  {wo.woLinkedChecklist.checkerName ?? "—"}
+                </span>
+                <span className="text-gray-500">
+                  {" "}
+                  · {fDateTime(wo.woLinkedChecklist.checkTime)}
+                </span>
+              </p>
+              {wo.woLinkedChecklist.templateName && (
+                <p className="text-xs text-gray-600">
+                  Mẫu: {wo.woLinkedChecklist.templateName}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Link
+                  to={`/checklists/history?assetId=${wo.assetId}&checklistId=${wo.woLinkedChecklist.checklistId}`}
+                  className="text-sm font-semibold text-violet-800 underline"
+                >
+                  Xem chi tiết / ảnh câu hỏi
+                </Link>
+                {canDo(user, "CHECKLIST_RESULT:APPROVE") && (
+                  <Link
+                    to={`/checklists/review?checklistId=${wo.woLinkedChecklist.checklistId}`}
+                    className="text-sm font-semibold text-blue-700 underline"
+                  >
+                    Mở tiếp nhận checklist
+                  </Link>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
 
       {wo.woSource === "CORRECTIVE" && wo.counterBaselineResetAt && (
         <div className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
@@ -755,8 +864,7 @@ export function WorkOrderDetailPage() {
               Đã reset mốc giờ chạy (dự báo PM) trên phiếu này
             </p>
             <p className="mt-1 leading-relaxed">
-              Thời điểm:{" "}
-              <strong>{fDateTime(wo.counterBaselineResetAt)}</strong>
+              Thời điểm: <strong>{fDateTime(wo.counterBaselineResetAt)}</strong>
               {wo.counterBaselineResetByName ? (
                 <>
                   {" "}
@@ -772,12 +880,10 @@ export function WorkOrderDetailPage() {
 
       {needsResubmitApproval && (
         <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
-          <p className="font-bold text-amber-950 mb-1">
-            Chờ gửi lại phê duyệt
-          </p>
+          <p className="font-bold text-amber-950 mb-1">Chờ gửi lại phê duyệt</p>
           <p className="leading-relaxed text-amber-900/95">
-            Giám sát đã yêu cầu chỉnh sửa hoặc luồng duyệt tạm dừng — phiếu vẫn ở trạng thái «Chờ duyệt» nhưng
-            không còn bước đang chờ. Hãy{" "}
+            Giám sát đã yêu cầu chỉnh sửa hoặc luồng duyệt tạm dừng — phiếu vẫn
+            ở trạng thái «Chờ duyệt» nhưng không còn bước đang chờ. Hãy{" "}
             <strong>sửa nội dung phiếu</strong> (nếu cần) rồi{" "}
             <strong>gửi lại phê duyệt</strong>: hệ thống tạo yêu cầu mới từ{" "}
             <strong>bước 1 — Trưởng ca</strong>; phiếu <strong>hai cấp</strong>{" "}
@@ -785,7 +891,8 @@ export function WorkOrderDetailPage() {
           </p>
           {!canResubmitApproval && !canEditPendingResubmit && (
             <p className="mt-2 text-xs text-amber-800/90">
-              Cần quyền cập nhật phiếu / tạo &amp; gửi duyệt (Chuyên viên KTS…) để thao tác tại đây.
+              Cần quyền cập nhật phiếu / tạo &amp; gửi duyệt (Chuyên viên KTS…)
+              để thao tác tại đây.
             </p>
           )}
         </div>
@@ -793,77 +900,79 @@ export function WorkOrderDetailPage() {
 
       {wo.status === "PENDING_APPROVAL" &&
         (stepsForApprovalUi.length > 0 || !!pendingApprovalLog) && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-4 text-sm text-indigo-950">
-          <p className="font-bold text-indigo-950 mb-3">Tiến trình phê duyệt</p>
-          <div className="flex flex-wrap items-center gap-y-2 gap-x-1">
-            {stepsForApprovalUi.map((step, idx) => {
-              const level = Number(step.stepLevel);
-              const done = approvals.some(
-                (a) =>
-                  Number(a.currentLevel) === level && a.status === "APPROVED",
-              );
-              const current =
-                pendingApprovalLog &&
-                Number(pendingApprovalLog.currentLevel) === level &&
-                pendingApprovalLog.status === "PENDING";
-              const label = step.positionName ?? `Bước ${level}`;
-              return (
-                <span key={level} className="flex items-center gap-1">
-                  {idx > 0 && (
-                    <ChevronRight
-                      className="text-indigo-300 shrink-0 mx-0.5"
-                      size={18}
-                      aria-hidden
-                    />
-                  )}
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                      done
-                        ? "bg-green-100 text-green-900"
-                        : current
-                          ? "bg-amber-100 text-amber-950 ring-2 ring-amber-400 shadow-sm"
-                          : "bg-white/90 text-gray-500 border border-indigo-100"
-                    }`}
-                  >
-                    {done && <CheckCircle size={14} className="shrink-0" />}
-                    {level}. {label}
-                    {current ? " · đang chờ" : ""}
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-4 text-sm text-indigo-950">
+            <p className="font-bold text-indigo-950 mb-3">
+              Tiến trình phê duyệt
+            </p>
+            <div className="flex flex-wrap items-center gap-y-2 gap-x-1">
+              {stepsForApprovalUi.map((step, idx) => {
+                const level = Number(step.stepLevel);
+                const done = approvals.some(
+                  (a) =>
+                    Number(a.currentLevel) === level && a.status === "APPROVED",
+                );
+                const current =
+                  pendingApprovalLog &&
+                  Number(pendingApprovalLog.currentLevel) === level &&
+                  pendingApprovalLog.status === "PENDING";
+                const label = step.positionName ?? `Bước ${level}`;
+                return (
+                  <span key={level} className="flex items-center gap-1">
+                    {idx > 0 && (
+                      <ChevronRight
+                        className="text-indigo-300 shrink-0 mx-0.5"
+                        size={18}
+                        aria-hidden
+                      />
+                    )}
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                        done
+                          ? "bg-green-100 text-green-900"
+                          : current
+                            ? "bg-amber-100 text-amber-950 ring-2 ring-amber-400 shadow-sm"
+                            : "bg-white/90 text-gray-500 border border-indigo-100"
+                      }`}
+                    >
+                      {done && <CheckCircle size={14} className="shrink-0" />}
+                      {level}. {label}
+                      {current ? " · đang chờ" : ""}
+                    </span>
                   </span>
-                </span>
-              );
-            })}
+                );
+              })}
+            </div>
+            {twoStepApproval &&
+              Number(pendingApprovalLog?.currentLevel) === 1 &&
+              pendingApprovalLog?.status === "PENDING" && (
+                <p className="mt-3 text-xs leading-relaxed border-t border-indigo-200/60 pt-3 text-indigo-900/95">
+                  Phiếu <strong>sự cố nghiêm trọng</strong> (2 cấp duyệt). Sau
+                  khi <strong>{tcStepName}</strong> duyệt xong, yêu cầu chuyển
+                  sang <strong>{tpStepName}</strong> — bước đó có thể{" "}
+                  <strong>xác nhận / phân công lại</strong> người hiện trường
+                  khi duyệt cuối (hoặc để trống, phân công sau trên phiếu).
+                </p>
+              )}
+            {twoStepApproval &&
+              Number(pendingApprovalLog?.currentLevel) === 2 &&
+              pendingApprovalLog?.status === "PENDING" && (
+                <p className="mt-3 text-xs font-semibold leading-relaxed border-t border-indigo-200/60 pt-3 text-amber-950">
+                  Đang chờ <strong>{tpStepName}</strong> — duyệt hoàn tất để
+                  phiếu sang «Chờ thực hiện». Ở bước cuối có thể chọn phân công
+                  ngay trong form Phê duyệt (điều chỉnh lại người giao nếu cần).
+                </p>
+              )}
+            {!twoStepApproval &&
+              Number(pendingApprovalLog?.currentLevel) === 1 &&
+              pendingApprovalLog?.status === "PENDING" && (
+                <p className="mt-3 text-xs leading-relaxed border-t border-indigo-200/60 pt-3 text-indigo-800/90">
+                  Phiếu thông thường: một bước duyệt{" "}
+                  <strong>{tcStepName}</strong>. Có thể phân công sau khi đã vào
+                  «Chờ thực hiện».
+                </p>
+              )}
           </div>
-          {twoStepApproval &&
-            Number(pendingApprovalLog?.currentLevel) === 1 &&
-            pendingApprovalLog?.status === "PENDING" && (
-              <p className="mt-3 text-xs leading-relaxed border-t border-indigo-200/60 pt-3 text-indigo-900/95">
-                Phiếu <strong>sự cố nghiêm trọng</strong> (2 cấp duyệt). Sau khi{" "}
-                <strong>{tcStepName}</strong> duyệt xong, yêu cầu chuyển sang{" "}
-                <strong>{tpStepName}</strong> — bước đó có thể{" "}
-                <strong>xác nhận / phân công lại</strong> người hiện trường khi
-                duyệt cuối (hoặc để trống, phân công sau trên phiếu).
-              </p>
-            )}
-          {twoStepApproval &&
-            Number(pendingApprovalLog?.currentLevel) === 2 &&
-            pendingApprovalLog?.status === "PENDING" && (
-              <p className="mt-3 text-xs font-semibold leading-relaxed border-t border-indigo-200/60 pt-3 text-amber-950">
-                Đang chờ <strong>{tpStepName}</strong> — duyệt hoàn tất để phiếu
-                sang «Chờ thực hiện». Ở bước cuối có thể chọn phân công ngay
-                trong form Phê duyệt (điều chỉnh lại người giao nếu cần).
-              </p>
-            )}
-          {!twoStepApproval &&
-            Number(pendingApprovalLog?.currentLevel) === 1 &&
-            pendingApprovalLog?.status === "PENDING" && (
-              <p className="mt-3 text-xs leading-relaxed border-t border-indigo-200/60 pt-3 text-indigo-800/90">
-                Phiếu thông thường: một bước duyệt{" "}
-                <strong>{tcStepName}</strong>. Có thể phân công sau khi đã vào
-                «Chờ thực hiện».
-              </p>
-            )}
-        </div>
-      )}
+        )}
 
       {wo.status === "AWAITING_CLOSURE" && isTcPlus && (
         <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-sm text-violet-950">
@@ -910,8 +1019,9 @@ export function WorkOrderDetailPage() {
               Chưa phân công người hiện trường
             </p>
             <p className="mt-1 leading-relaxed">
-              Bấm <strong>Phân công</strong> và chọn <strong>KTV hiện trường</strong>{" "}
-              hoặc <strong>Chuyên viên kỹ thuật số</strong>.
+              Bấm <strong>Phân công</strong> và chọn{" "}
+              <strong>KTV hiện trường</strong> hoặc{" "}
+              <strong>Chuyên viên kỹ thuật số</strong>.
             </p>
           </div>
         </div>
@@ -920,11 +1030,19 @@ export function WorkOrderDetailPage() {
       {wo.status === "WAITING" && isAssigned && (
         <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
           {amGroupLeader ? (
-            <span className="font-semibold text-blue-800">Bạn là trưởng nhóm — bấm <strong>Bắt đầu</strong> để khởi động phiếu này.</span>
+            <span className="font-semibold text-blue-800">
+              Bạn là trưởng nhóm — bấm <strong>Bắt đầu</strong> để khởi động
+              phiếu này.
+            </span>
           ) : (
-            <span className="font-semibold">Bạn được phân công — chờ trưởng nhóm bắt đầu.</span>
+            <span className="font-semibold">
+              Bạn được phân công — chờ trưởng nhóm bắt đầu.
+            </span>
           )}{" "}
-          <Link to={checklistForAssetHref} className="font-bold text-blue-800 underline ml-1">
+          <Link
+            to={checklistForAssetHref}
+            className="font-bold text-blue-800 underline ml-1"
+          >
             Tài liệu / QR — #{wo.assetId}
           </Link>
         </div>
@@ -942,7 +1060,9 @@ export function WorkOrderDetailPage() {
                 className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm"
               >
                 <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                  <Badge color={CHECKLIST_STATUS_COLOR[c.overallStatus] ?? "gray"}>
+                  <Badge
+                    color={CHECKLIST_STATUS_COLOR[c.overallStatus] ?? "gray"}
+                  >
                     {c.overallStatus}
                   </Badge>
                   <span className="text-xs font-semibold text-slate-600">
@@ -1056,13 +1176,21 @@ export function WorkOrderDetailPage() {
           {wo.assignments?.length > 0 ? (
             <ul className="space-y-2">
               {wo.assignments.map((a) => {
-                const photoUrl = a.photoPath ? employeeApi.getPhotoUrl(a.photoPath) : null;
+                const photoUrl = a.photoPath
+                  ? employeeApi.getPhotoUrl(a.photoPath)
+                  : null;
                 const isLeader = Number(a.isGroupLeader) === 1;
                 return (
                   <EmployeeCard key={a.employeeId} emp={a} side="right">
-                    <li className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-default ${isLeader ? "bg-blue-50 border border-blue-100" : "bg-gray-50"}`}>
+                    <li
+                      className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-default ${isLeader ? "bg-blue-50 border border-blue-100" : "bg-gray-50"}`}
+                    >
                       {photoUrl ? (
-                        <img src={photoUrl} alt={a.fullName} className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                        <img
+                          src={photoUrl}
+                          alt={a.fullName}
+                          className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0"
+                        />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
                           {a.fullName?.[0] ?? "?"}
@@ -1070,7 +1198,9 @@ export function WorkOrderDetailPage() {
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold text-gray-900">{a.fullName}</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {a.fullName}
+                          </p>
                           {isLeader && (
                             <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase tracking-wide">
                               Trưởng nhóm
@@ -1241,9 +1371,7 @@ export function WorkOrderDetailPage() {
                   }
                 >
                   Bước {a.currentLevel}
-                  {a.stepPositionName
-                    ? ` · ${a.stepPositionName}`
-                    : ""}
+                  {a.stepPositionName ? ` · ${a.stepPositionName}` : ""}
                 </Badge>
                 <div>
                   <p className="font-semibold text-gray-900">
@@ -1266,21 +1394,45 @@ export function WorkOrderDetailPage() {
 
       <Modal
         open={assignOpen}
-        onClose={() => { setAssignOpen(false); setAssignMode("individual"); setAssignSpecialty(""); setSelectedEmp(""); setSelectedGroup(""); setSelectedLeader(""); setGroupMembers([]); }}
+        onClose={() => {
+          setAssignOpen(false);
+          setAssignMode("individual");
+          setAssignSpecialty("");
+          setSelectedEmp("");
+          setSelectedGroup("");
+          setSelectedLeader("");
+          setGroupMembers([]);
+        }}
         title="Phân công thực hiện"
         size="md"
       >
         <div className="space-y-4">
           {/* Chọn chế độ */}
           <div className="flex gap-2">
-            {[["individual","Cá nhân"],["group","Nhóm bảo trì"]].map(([mode, label]) => (
+            {[
+              ["individual", "Cá nhân"],
+              ["group", "Nhóm bảo trì"],
+            ].map(([mode, label]) => (
               <button
                 key={mode}
                 type="button"
-                onClick={() => { setAssignMode(mode); setSelectedEmp(""); setSelectedGroup(""); setGroupMembers([]); setAssignSpecialty(""); setAssignCraftLevel(""); setAssignGroupFilter(""); }}
+                onClick={() => {
+                  setAssignMode(mode);
+                  setSelectedEmp("");
+                  setSelectedGroup("");
+                  setGroupMembers([]);
+                  setAssignSpecialty("");
+                  setAssignCraftLevel("");
+                  setAssignGroupFilter("");
+                }}
                 className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${
-                  assignMode === mode ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"}`}
-              >{label}</button>
+                  assignMode === mode
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                }`}
+              >
+                {label}
+              </button>
             ))}
           </div>
 
@@ -1292,17 +1444,25 @@ export function WorkOrderDetailPage() {
                   type="text"
                   placeholder="Lọc chuyên môn..."
                   value={assignSpecialty}
-                  onChange={e => { setAssignSpecialty(e.target.value); setSelectedEmp(""); }}
+                  onChange={(e) => {
+                    setAssignSpecialty(e.target.value);
+                    setSelectedEmp("");
+                  }}
                   className="flex-1 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 outline-none placeholder:text-gray-400"
                 />
                 <select
                   value={assignCraftLevel}
-                  onChange={e => { setAssignCraftLevel(e.target.value); setSelectedEmp(""); }}
+                  onChange={(e) => {
+                    setAssignCraftLevel(e.target.value);
+                    setSelectedEmp("");
+                  }}
                   className="w-36 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-2 py-2 focus:border-blue-500 outline-none"
                 >
                   <option value="">Tất cả bậc</option>
-                  {[1,2,3,4,5,6,7].map(n => (
-                    <option key={n} value={n}>Bậc thợ {n}</option>
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                    <option key={n} value={n}>
+                      Bậc thợ {n}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1310,29 +1470,48 @@ export function WorkOrderDetailPage() {
               {/* Danh sách chọn nhân viên */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  Nhân viên thực hiện <span className="text-gray-400 font-normal">(tự là trưởng nhóm)</span>
+                  Nhân viên thực hiện{" "}
+                  <span className="text-gray-400 font-normal">
+                    (tự là trưởng nhóm)
+                  </span>
                 </label>
                 <div className="border border-gray-200 rounded-xl overflow-auto max-h-60 divide-y divide-gray-100">
                   {employees
-                    .filter(e =>
-                      (!assignSpecialty || (e.specialty ?? "").toLowerCase().includes(assignSpecialty.toLowerCase())) &&
-                      (!assignCraftLevel || String(e.craftLevel) === String(assignCraftLevel))
+                    .filter(
+                      (e) =>
+                        (!assignSpecialty ||
+                          (e.specialty ?? "")
+                            .toLowerCase()
+                            .includes(assignSpecialty.toLowerCase())) &&
+                        (!assignCraftLevel ||
+                          String(e.craftLevel) === String(assignCraftLevel)),
                     )
-                    .map(e => {
+                    .map((e) => {
                       const onLeave = Boolean(e.onScheduledLeave);
-                      const selected = String(selectedEmp) === String(e.employeeId);
+                      const selected =
+                        String(selectedEmp) === String(e.employeeId);
                       return (
                         <EmployeeCard key={e.employeeId} emp={e} side="left">
                           <button
                             type="button"
                             disabled={onLeave}
-                            onClick={() => !onLeave && setSelectedEmp(String(e.employeeId))}
+                            onClick={() =>
+                              !onLeave && setSelectedEmp(String(e.employeeId))
+                            }
                             className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                              selected ? "bg-blue-50" : onLeave ? "opacity-50 cursor-not-allowed bg-gray-50" : "hover:bg-gray-50"
+                              selected
+                                ? "bg-blue-50"
+                                : onLeave
+                                  ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                  : "hover:bg-gray-50"
                             }`}
                           >
                             {e.photoPath ? (
-                              <img src={employeeApi.getPhotoUrl(e.photoPath)} alt={e.fullName} className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                              <img
+                                src={employeeApi.getPhotoUrl(e.photoPath)}
+                                alt={e.fullName}
+                                className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0"
+                              />
                             ) : (
                               <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700 flex-shrink-0">
                                 {e.fullName?.[0] ?? "?"}
@@ -1340,9 +1519,21 @@ export function WorkOrderDetailPage() {
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className={`text-sm font-semibold ${selected ? "text-blue-700" : "text-gray-900"}`}>{e.fullName}</p>
-                                {selected && <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded">✓</span>}
-                                {onLeave && <span className="text-[10px] text-orange-600 font-semibold bg-orange-50 px-1.5 py-0.5 rounded">Đang nghỉ</span>}
+                                <p
+                                  className={`text-sm font-semibold ${selected ? "text-blue-700" : "text-gray-900"}`}
+                                >
+                                  {e.fullName}
+                                </p>
+                                {selected && (
+                                  <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded">
+                                    ✓
+                                  </span>
+                                )}
+                                {onLeave && (
+                                  <span className="text-[10px] text-orange-600 font-semibold bg-orange-50 px-1.5 py-0.5 rounded">
+                                    Đang nghỉ
+                                  </span>
+                                )}
                               </div>
                               <p className="text-xs text-gray-500 truncate">
                                 {e.positionName}
@@ -1359,11 +1550,18 @@ export function WorkOrderDetailPage() {
                         </EmployeeCard>
                       );
                     })}
-                  {employees.filter(e =>
-                    (!assignSpecialty || (e.specialty ?? "").toLowerCase().includes(assignSpecialty.toLowerCase())) &&
-                    (!assignCraftLevel || String(e.craftLevel) === String(assignCraftLevel))
+                  {employees.filter(
+                    (e) =>
+                      (!assignSpecialty ||
+                        (e.specialty ?? "")
+                          .toLowerCase()
+                          .includes(assignSpecialty.toLowerCase())) &&
+                      (!assignCraftLevel ||
+                        String(e.craftLevel) === String(assignCraftLevel)),
                   ).length === 0 && (
-                    <p className="px-4 py-6 text-sm text-gray-400 text-center">Không có nhân viên phù hợp</p>
+                    <p className="px-4 py-6 text-sm text-gray-400 text-center">
+                      Không có nhân viên phù hợp
+                    </p>
                   )}
                 </div>
               </div>
@@ -1375,15 +1573,28 @@ export function WorkOrderDetailPage() {
                 type="text"
                 placeholder="Lọc nhóm theo chuyên môn..."
                 value={assignGroupFilter}
-                onChange={e => { setAssignGroupFilter(e.target.value); setSelectedGroup(""); setGroupMembers([]); }}
+                onChange={(e) => {
+                  setAssignGroupFilter(e.target.value);
+                  setSelectedGroup("");
+                  setGroupMembers([]);
+                }}
                 className="w-full text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 outline-none placeholder:text-gray-400"
               />
 
               {/* Danh sách nhóm */}
               <div className="border border-gray-200 rounded-xl overflow-auto max-h-44 divide-y divide-gray-100">
                 {groups
-                  .filter(g => !assignGroupFilter || (g.specialty ?? "").toLowerCase().includes(assignGroupFilter.toLowerCase()) || g.groupName.toLowerCase().includes(assignGroupFilter.toLowerCase()))
-                  .map(g => {
+                  .filter(
+                    (g) =>
+                      !assignGroupFilter ||
+                      (g.specialty ?? "")
+                        .toLowerCase()
+                        .includes(assignGroupFilter.toLowerCase()) ||
+                      g.groupName
+                        .toLowerCase()
+                        .includes(assignGroupFilter.toLowerCase()),
+                  )
+                  .map((g) => {
                     const sel = String(selectedGroup) === String(g.groupId);
                     return (
                       <button
@@ -1392,38 +1603,73 @@ export function WorkOrderDetailPage() {
                         onClick={() => handleSelectGroup(g.groupId)}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${sel ? "bg-blue-50" : "hover:bg-gray-50"}`}
                       >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${sel ? "bg-blue-600 text-white" : "bg-indigo-100 text-indigo-700"}`}>
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${sel ? "bg-blue-600 text-white" : "bg-indigo-100 text-indigo-700"}`}
+                        >
                           {g.groupName?.[0] ?? "N"}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold ${sel ? "text-blue-700" : "text-gray-900"}`}>{g.groupName}</p>
+                          <p
+                            className={`text-sm font-semibold ${sel ? "text-blue-700" : "text-gray-900"}`}
+                          >
+                            {g.groupName}
+                          </p>
                           <p className="text-xs text-gray-500 truncate">
                             {g.memberCount ?? 0} thành viên
                             {g.specialty ? ` · ${g.specialty}` : ""}
-                            {g.leaderName ? ` · TN: ${g.leaderName}` : " · Chưa có trưởng nhóm"}
+                            {g.leaderName
+                              ? ` · TN: ${g.leaderName}`
+                              : " · Chưa có trưởng nhóm"}
                           </p>
                         </div>
-                        {sel && <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded flex-shrink-0">✓</span>}
+                        {sel && (
+                          <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded flex-shrink-0">
+                            ✓
+                          </span>
+                        )}
                       </button>
                     );
                   })}
-                {groups.filter(g => !assignGroupFilter || (g.specialty ?? "").toLowerCase().includes(assignGroupFilter.toLowerCase()) || g.groupName.toLowerCase().includes(assignGroupFilter.toLowerCase())).length === 0 && (
-                  <p className="px-4 py-6 text-sm text-gray-400 text-center">Không có nhóm phù hợp</p>
+                {groups.filter(
+                  (g) =>
+                    !assignGroupFilter ||
+                    (g.specialty ?? "")
+                      .toLowerCase()
+                      .includes(assignGroupFilter.toLowerCase()) ||
+                    g.groupName
+                      .toLowerCase()
+                      .includes(assignGroupFilter.toLowerCase()),
+                ).length === 0 && (
+                  <p className="px-4 py-6 text-sm text-gray-400 text-center">
+                    Không có nhóm phù hợp
+                  </p>
                 )}
               </div>
 
               {/* Xem trước thành viên nhóm đã chọn */}
               {groupMembers.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-600 mb-1.5">Thành viên nhóm</p>
+                  <p className="text-xs font-semibold text-gray-600 mb-1.5">
+                    Thành viên nhóm
+                  </p>
                   <div className="space-y-1 max-h-40 overflow-y-auto border border-gray-200 rounded-xl">
-                    {groupMembers.map(m => {
+                    {groupMembers.map((m) => {
                       const isLeader = Number(m.isGroupLeader) === 1;
                       return (
-                        <EmployeeCard key={m.employeeId} emp={{ ...m, specialty: m.empSpecialty }} side="left">
-                          <div className={`flex items-center gap-3 px-3 py-2 ${isLeader ? "bg-yellow-50" : ""}`}>
+                        <EmployeeCard
+                          key={m.employeeId}
+                          emp={{ ...m, specialty: m.empSpecialty }}
+                          side="left"
+                        >
+                          <div
+                            className={`flex items-center gap-3 px-3 py-2 ${isLeader ? "bg-yellow-50" : ""}`}
+                          >
                             {m.photoPath ? (
-                              <img src={employeeApi.getPhotoUrl(m.photoPath)} alt={m.fullName} className="w-7 h-7 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+                              <img
+                                src={employeeApi.getPhotoUrl(m.photoPath)}
+                                alt={m.fullName}
+                                className="w-7 h-7 rounded-full object-cover border border-gray-200 flex-shrink-0"
+                              />
                             ) : (
                               <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 flex-shrink-0">
                                 {m.fullName?.[0] ?? "?"}
@@ -1431,9 +1677,13 @@ export function WorkOrderDetailPage() {
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <p className="text-sm font-semibold text-gray-800">{m.fullName}</p>
+                                <p className="text-sm font-semibold text-gray-800">
+                                  {m.fullName}
+                                </p>
                                 {isLeader && (
-                                  <span className="text-[10px] font-bold bg-yellow-500 text-white px-1.5 py-0.5 rounded">Trưởng nhóm</span>
+                                  <span className="text-[10px] font-bold bg-yellow-500 text-white px-1.5 py-0.5 rounded">
+                                    Trưởng nhóm
+                                  </span>
                                 )}
                               </div>
                               <p className="text-xs text-gray-500 truncate">
@@ -1447,15 +1697,21 @@ export function WorkOrderDetailPage() {
                       );
                     })}
                   </div>
-                  <p className="text-xs text-gray-500 mt-1.5">Trưởng nhóm sẽ bắt đầu phiếu và ghi chú vật tư.</p>
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Trưởng nhóm sẽ bắt đầu phiếu và ghi chú vật tư.
+                  </p>
                 </div>
               )}
             </>
           )}
 
           <div className="flex justify-end gap-3 pt-1">
-            <Button variant="secondary" onClick={() => setAssignOpen(false)}>Hủy</Button>
-            <Button onClick={handleAssign} loading={saving}>Phân công</Button>
+            <Button variant="secondary" onClick={() => setAssignOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleAssign} loading={saving}>
+              Phân công
+            </Button>
           </div>
         </div>
       </Modal>
@@ -1514,7 +1770,9 @@ export function WorkOrderDetailPage() {
         size="sm"
       >
         <div className="space-y-4">
-          <p className="text-xs text-gray-500">Xác nhận nghiệm thu; có thể chỉnh giờ thực tế.</p>
+          <p className="text-xs text-gray-500">
+            Xác nhận nghiệm thu; có thể chỉnh giờ thực tế.
+          </p>
           <Input
             label="Giờ thực tế (tuỳ chọn)"
             type="text"
@@ -1542,8 +1800,14 @@ export function WorkOrderDetailPage() {
         open={approveOpen}
         onClose={() => {
           setApproveOpen(false);
+          setApproveAssignMode("individual");
           setApproveAssignEmp("");
+          setApproveAssignGroup("");
+          setApproveGroupMembers([]);
           setApproveEstimatedHours("");
+          setApprovePlannedDate("");
+          setApprovePriority("");
+          setApproveDescription("");
         }}
         title="Xử lý phê duyệt"
         size="sm"
@@ -1551,9 +1815,14 @@ export function WorkOrderDetailPage() {
         <div className="space-y-4">
           {twoStepApproval && pendingApprovalLog && (
             <p className="text-xs text-gray-600 rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-              Bước {pendingApprovalLog.currentLevel}/{pendingApprovalLog.totalLevels}
-              {pendingApprovalLog.stepPositionName ? ` — ${pendingApprovalLog.stepPositionName}` : ""}
-              {Number(pendingApprovalLog.currentLevel) === 2 ? ` · ${tpStepName} có thể đổi người phân công khi duyệt.` : ""}
+              Bước {pendingApprovalLog.currentLevel}/
+              {pendingApprovalLog.totalLevels}
+              {pendingApprovalLog.stepPositionName
+                ? ` — ${pendingApprovalLog.stepPositionName}`
+                : ""}
+              {Number(pendingApprovalLog.currentLevel) === 2
+                ? ` · ${tpStepName} có thể đổi người phân công khi duyệt.`
+                : ""}
             </p>
           )}
           <Select
@@ -1566,27 +1835,64 @@ export function WorkOrderDetailPage() {
             <option value="REQUEST_CHANGES">Yêu cầu chỉnh sửa</option>
           </Select>
           {approveAction === "APPROVED" && (
-            <Input
-              label="Giờ ước tính (giờ) — ghi vào phiếu khi duyệt"
-              type="number"
-              min={0}
-              step={0.5}
-              value={approveEstimatedHours}
-              onChange={(e) => setApproveEstimatedHours(e.target.value)}
-              placeholder="Để trống nếu không đổi / giữ giá trị hiện tại"
-            />
+            <div className="space-y-3">
+              <Input
+                label="Ngày dự kiến"
+                type="date"
+                value={approvePlannedDate}
+                onChange={(e) => setApprovePlannedDate(e.target.value)}
+              />
+              <Input
+                label="Giờ ước tính (giờ)"
+                type="number"
+                min={0}
+                step={0.5}
+                value={approveEstimatedHours}
+                onChange={(e) => setApproveEstimatedHours(e.target.value)}
+                placeholder="Để trống nếu không đổi / giữ giá trị hiện tại"
+              />
+              <Select
+                label="Ưu tiên"
+                value={approvePriority}
+                onChange={(e) => setApprovePriority(e.target.value)}
+              >
+                <option value="">— Giữ như hiện tại —</option>
+                <option value="LOW">Thấp</option>
+                <option value="MEDIUM">Trung bình</option>
+                <option value="HIGH">Cao</option>
+                <option value="EMERGENCY">Khẩn cấp</option>
+              </Select>
+              <Textarea
+                label="Mô tả công việc"
+                value={approveDescription}
+                onChange={(e) => setApproveDescription(e.target.value)}
+                placeholder="Cập nhật mô tả trước khi duyệt (nếu cần)"
+                rows={3}
+              />
+            </div>
           )}
-          {isWoFinalApprovalStep &&
-            approveAction === "APPROVED" && (
-              <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-3 space-y-2">
+          {isWoFinalApprovalStep && approveAction === "APPROVED" && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-3 space-y-2">
+              <Select
+                label="Kiểu phân công"
+                value={approveAssignMode}
+                onChange={(e) => {
+                  setApproveAssignMode(e.target.value);
+                  setApproveAssignEmp("");
+                  setApproveAssignGroup("");
+                  setApproveGroupMembers([]);
+                }}
+              >
+                <option value="individual">Cá nhân</option>
+                <option value="group">Nhóm</option>
+              </Select>
+              {approveAssignMode === "individual" ? (
                 <Select
                   label="Phân công ngay (tuỳ chọn)"
                   value={approveAssignEmp}
                   onChange={(e) => setApproveAssignEmp(e.target.value)}
                 >
-                  <option value="">
-                    — Để sau: Phân công trên phiếu —
-                  </option>
+                  <option value="">— Để sau: Phân công trên phiếu —</option>
                   {approveFieldEmployees.map((e) => {
                     const onLeave = Boolean(e.onScheduledLeave);
                     return (
@@ -1601,12 +1907,45 @@ export function WorkOrderDetailPage() {
                     );
                   })}
                 </Select>
-                <p className="text-xs text-blue-900/85 leading-relaxed">
-                  Chỉ ở <strong>bước duyệt cuối</strong>. Chọn người để vừa duyệt
-                  vừa gửi thông báo phân công; để trống nếu sẽ giao việc sau.
-                </p>
-              </div>
-            )}
+              ) : (
+                <>
+                  <Select
+                    label="Nhóm bảo trì (tuỳ chọn)"
+                    value={approveAssignGroup}
+                    onChange={(e) => setApproveAssignGroup(e.target.value)}
+                  >
+                    <option value="">— Để sau: Phân công trên phiếu —</option>
+                    {groups.map((g) => (
+                      <option key={g.groupId} value={g.groupId}>
+                        {g.groupName}
+                        {g.specialty ? ` · ${g.specialty}` : ""}
+                        {g.leaderName ? ` · TN: ${g.leaderName}` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                  {approveGroupMembers.length > 0 && (
+                    <div className="rounded-lg border border-blue-200 bg-white px-3 py-2">
+                      <p className="text-xs font-semibold text-blue-900 mb-1">
+                        Thành viên nhóm sẽ được phân công
+                      </p>
+                      <ul className="space-y-0.5">
+                        {approveGroupMembers.map((m) => (
+                          <li key={m.employeeId} className="text-xs text-gray-700">
+                            {m.fullName}
+                            {Number(m.isGroupLeader) === 1 ? " (Trưởng nhóm)" : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+              <p className="text-xs text-blue-900/85 leading-relaxed">
+                Chỉ ở <strong>bước duyệt cuối</strong>. Chọn người để vừa duyệt
+                vừa gửi thông báo phân công; để trống nếu sẽ giao việc sau.
+              </p>
+            </div>
+          )}
           <Textarea
             label="Ghi chú"
             value={comment}
@@ -1650,7 +1989,9 @@ export function WorkOrderDetailPage() {
             assets={woEditAssets}
             onSuccess={() => {
               setEditWoOpen(false);
-              toast.success("Đã cập nhật phiếu — bấm «Gửi lại phê duyệt» khi sẵn sàng.");
+              toast.success(
+                "Đã cập nhật phiếu — bấm «Gửi lại phê duyệt» khi sẵn sàng.",
+              );
               load();
             }}
             onCancel={() => setEditWoOpen(false)}

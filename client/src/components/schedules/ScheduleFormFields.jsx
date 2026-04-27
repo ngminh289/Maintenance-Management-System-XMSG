@@ -96,7 +96,7 @@ export function buildSchedulePayload(form) {
     priority: (form.priority || 'MEDIUM').toUpperCase(),
     checklistTemplateId: form.checklistTemplateId
       ? Number(form.checklistTemplateId)
-      : undefined,
+      : null,
   };
 }
 

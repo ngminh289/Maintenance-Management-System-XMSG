@@ -90,6 +90,11 @@ export function ChecklistPage() {
   const [activeTagFilter, setActiveTagFilter] = useState("ALL");
   /** WO từ lịch — truyền từ WorkOrderDetail (?woId=) để nộp checklist gắn phiếu. */
   const linkedWoId = searchParams.get("woId")?.trim() || "";
+  const canSubmitLinkedWoChecklist = useMemo(() => {
+    if (!linkedWoId) return true;
+    return qrData?.woChecklist?.canSubmit !== false;
+  }, [linkedWoId, qrData?.woChecklist?.canSubmit]);
+
   const assetIdFromQuery = searchParams.get("assetId")?.trim() || "";
   const assetIdFromUrl = (assetIdFromPath || assetIdFromQuery || "").trim();
 
@@ -241,6 +246,13 @@ export function ChecklistPage() {
 
   const handleSubmit = async () => {
     if (!qrData) return;
+    if (linkedWoId && !canSubmitLinkedWoChecklist) {
+      toast.error(
+        "Checklist gắn phiếu chỉ trưởng nhóm được thực hiện. Bạn chỉ có thể xem khi checklist hoàn thành.",
+      );
+      return;
+    }
+
     if (!activeChecklistTemplate?.templateId) {
       toast.error("Thiết bị chưa có mẫu checklist để nộp.");
       return;
@@ -904,7 +916,7 @@ export function ChecklistPage() {
                       </p>
                     )}
 
-                    {canSubmitChecklist ? (
+                    {canSubmitChecklist && canSubmitLinkedWoChecklist ? (
                       <>
                         {overallSuggestion.suggested && (
                           <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-4 space-y-3">
@@ -1023,12 +1035,21 @@ export function ChecklistPage() {
                       </>
                     ) : (
                       <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-                        Tài khoản của bạn chỉ xem thiết bị / SOP / lịch sử. Soạn
-                        mẫu checklist: trang{" "}
-                        <strong>Mẫu checklist (theo loại)</strong>.
-                        <strong> Gửi kết quả kiểm tra</strong> chỉ dành cho{" "}
-                        <strong>KTV hiện trường</strong> hoặc{" "}
-                        <strong>trưởng phòng</strong>.
+                        {linkedWoId && !canSubmitLinkedWoChecklist ? (
+                          <>
+                            Checklist gắn WO chỉ <strong>trưởng nhóm</strong> được nộp.
+                            Thành viên khác xem sau khi checklist hoàn thành.
+                          </>
+                        ) : (
+                          <>
+                            Tài khoản của bạn chỉ xem thiết bị / SOP / lịch sử. Soạn
+                            mẫu checklist: trang{" "}
+                            <strong>Mẫu checklist (theo loại)</strong>.
+                            <strong> Gửi kết quả kiểm tra</strong> chỉ dành cho{" "}
+                            <strong>KTV hiện trường</strong> hoặc{" "}
+                            <strong>trưởng phòng</strong>.
+                          </>
+                        )}
                       </p>
                     )}
                   </div>
