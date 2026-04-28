@@ -14,6 +14,7 @@ import {
   Pencil,
   Trash2,
   Send,
+  FileSpreadsheet,
 } from "lucide-react";
 import { scheduleApi } from "../../api/schedule.api.js";
 import { assetApi } from "../../api/asset.api.js";
@@ -40,6 +41,7 @@ import {
 } from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo } from "../../utils/rbac.js";
+import { exportRowsToExcel } from "../../utils/excelExport.js";
 import toast from "react-hot-toast";
 
 /** Hiển thị theo đơn vị tần suất (khớp nghiệp vụ 2 loại). */
@@ -337,6 +339,33 @@ export function SchedulesPage() {
       "Ngày hệ thống ghi nhận đã phát sinh WO / cập nhật chu kỳ gần nhất (không phải ngày thợ hoàn thành phiếu).",
   };
 
+  const handleExportExcel = () => {
+    const ok = exportRowsToExcel({
+      rows: schedules.map((s) => ({
+        "ID lịch": s.scheduleId,
+        "Tên lịch": s.scheduleName ?? "",
+        "Tài sản": s.assetName ?? "",
+        "Kiểu lịch":
+          SCHEDULE_KIND_BADGE[scheduleKindKey(s)]?.label ?? scheduleKindKey(s),
+        Checklist: s.checklistTemplateName ?? "",
+        "Trạng thái": STATUS_LABEL[s.status] ?? s.status ?? "",
+        "Loại bảo trì":
+          MAINTENANCE_TYPE_LABEL[s.maintenanceType] ?? s.maintenanceType ?? "",
+        "Tần suất": `${s.frequencyValue ?? ""} ${UNIT_LABEL[s.frequencyUnit] ?? s.frequencyUnit ?? ""}`.trim(),
+        "Ngày bắt đầu": fDate(s.startDate) ?? "",
+        "Ngày đến hạn": fDate(s.nextDueDate) ?? "",
+        "Ngày thực hiện cuối": fDate(s.lastExecutedDate) ?? "",
+      })),
+      sheetName: "Lich bao tri",
+      fileName: `lich-bao-tri-trang-${page}.xlsx`,
+    });
+    if (!ok) {
+      toast.error("Không có dữ liệu để xuất Excel");
+      return;
+    }
+    toast.success("Đã xuất Excel danh sách lịch bảo trì");
+  };
+
   return (
     <div className="space-y-5">
       {/* Banner cảnh báo */}
@@ -446,7 +475,19 @@ export function SchedulesPage() {
       </div>
 
       {canCreateSch && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={handleExportExcel}
+            disabled={loading || schedules.length === 0}
+            title={
+              schedules.length === 0
+                ? "Không có dữ liệu để xuất"
+                : "Xuất Excel theo danh sách đang hiển thị"
+            }
+          >
+            <FileSpreadsheet size={15} /> Xuất Excel
+          </Button>
           <Button
             onClick={() => {
               setForm(EMPTY_SCHEDULE_FORM);
@@ -454,6 +495,22 @@ export function SchedulesPage() {
             }}
           >
             <Plus size={15} /> Thêm lịch bảo trì
+          </Button>
+        </div>
+      )}
+      {!canCreateSch && (
+        <div className="flex justify-end">
+          <Button
+            variant="secondary"
+            onClick={handleExportExcel}
+            disabled={loading || schedules.length === 0}
+            title={
+              schedules.length === 0
+                ? "Không có dữ liệu để xuất"
+                : "Xuất Excel theo danh sách đang hiển thị"
+            }
+          >
+            <FileSpreadsheet size={15} /> Xuất Excel
           </Button>
         </div>
       )}

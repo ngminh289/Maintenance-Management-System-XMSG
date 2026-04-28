@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   ImageIcon,
   ExternalLink,
+  FileSpreadsheet,
 } from "lucide-react";
 import { checklistApi } from "../../api/checklist.api.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
@@ -38,6 +39,7 @@ import {
   formatInputRangeBand,
 } from "../../utils/checklistReviewCompare.js";
 import { checklistStoredPhotoUrl } from "../../utils/checklistPhotoUrl.js";
+import { exportRowsToExcel } from "../../utils/excelExport.js";
 import toast from "react-hot-toast";
 
 const INPUT_TYPE_SHORT = {
@@ -69,7 +71,8 @@ function evidencePhotoUrl(stored) {
 
 function rowShellClass(tone) {
   if (tone === "bad") return "border-l-4 border-l-red-500 bg-red-50/40";
-  if (tone === "good") return "border-l-4 border-l-emerald-500 bg-emerald-50/30";
+  if (tone === "good")
+    return "border-l-4 border-l-emerald-500 bg-emerald-50/30";
   if (tone === "warn") return "border-l-4 border-l-amber-500 bg-amber-50/35";
   return "border-l-4 border-l-slate-200 bg-white";
 }
@@ -160,6 +163,28 @@ export function ChecklistHistoryPage() {
     }));
   }, [detail]);
 
+  const handleExportExcel = () => {
+    const ok = exportRowsToExcel({
+      rows: payload.items.map((row) => ({
+        "ID checklist": row.checklistId,
+        "Tài sản": row.assetName ?? `Tài sản #${row.assetId ?? ""}`,
+        "ID tài sản": row.assetId ?? "",
+        "Trạng thái tổng": row.overallStatus ?? "",
+        "Trạng thái duyệt": row.reviewStatus ?? "",
+        "Người nộp": row.checkerName ?? "",
+        "Thời điểm kiểm tra": fDateTime(row.checkTime) ?? "",
+        "Ghi chú": row.notes ?? "",
+      })),
+      sheetName: "Danh sach checklist",
+      fileName: `danh-sach-checklist-trang-${page}.xlsx`,
+    });
+    if (!ok) {
+      toast.error("Không có dữ liệu để xuất Excel");
+      return;
+    }
+    toast.success("Đã xuất Excel danh sách checklist");
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -168,29 +193,46 @@ export function ChecklistHistoryPage() {
             <ClipboardList className="text-indigo-600" size={24} aria-hidden />
             Danh sách checklist
           </h1>
-          <p className="text-sm text-gray-600 mt-1">
+          {/* <p className="text-sm text-gray-600 mt-1">
             Tra cứu phiếu đã nộp — bấm một dòng để xem chi tiết câu hỏi & ảnh.
-          </p>
+          </p> */}
         </div>
-        <Link
-          to="/checklists"
-          className="text-sm font-semibold text-blue-600 hover:underline inline-flex items-center gap-1"
-        >
-          ← Quét QR / nộp checklist
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleExportExcel}
+            disabled={loading || payload.items.length === 0}
+            title={
+              payload.items.length === 0
+                ? "Không có dữ liệu để xuất"
+                : "Xuất Excel theo danh sách đang hiển thị"
+            }
+          >
+            <FileSpreadsheet size={15} /> Xuất Excel
+          </Button>
+          <Link
+            to="/checklists"
+            className="text-sm font-semibold text-blue-600 hover:underline inline-flex items-center gap-1"
+          >
+            ← Quét QR / nộp checklist
+          </Link>
+        </div>
       </div>
 
-      {isWorker && (
+      {/* {isWorker && (
         <div className="rounded-xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-950">
-          <p className="font-semibold text-blue-900">Quyền xem (KTV hiện trường)</p>
+          <p className="font-semibold text-blue-900">
+            Quyền xem (KTV hiện trường)
+          </p>
           <p className="mt-1 leading-relaxed">
             Bạn thấy các phiếu <strong>đã được duyệt (APPROVED)</strong> của mọi
-            người (để tham khảo) và <strong>mọi phiếu do bạn nộp</strong> — kể cả
-            đang chờ duyệt hoặc bị từ chối. Bạn không xem được phiếu chưa duyệt
-            của đồng nghiệp.
+            người (để tham khảo) và <strong>mọi phiếu do bạn nộp</strong> — kể
+            cả đang chờ duyệt hoặc bị từ chối. Bạn không xem được phiếu chưa
+            duyệt của đồng nghiệp.
           </p>
         </div>
-      )}
+      )} */}
 
       {filterAssetId && (
         <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 flex flex-wrap items-center justify-between gap-2">
@@ -206,19 +248,24 @@ export function ChecklistHistoryPage() {
         </div>
       )}
 
-      {!isWorker && (
+      {/* {!isWorker && (
         <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-700">
-          <p className="font-semibold text-slate-800">Chuyên viên KTS / Giám sát</p>
+          <p className="font-semibold text-slate-800">
+            Chuyên viên KTS / Giám sát
+          </p>
           <p className="mt-1">
             Bạn xem <strong>toàn bộ</strong> kết quả checklist trong hệ thống
             (theo phân trang). Duyệt phiếu chờ tại{" "}
-            <Link to="/checklists/review" className="font-semibold text-indigo-700 underline">
+            <Link
+              to="/checklists/review"
+              className="font-semibold text-indigo-700 underline"
+            >
               Tiếp nhận checklist
             </Link>
             .
           </p>
         </div>
-      )}
+      )} */}
 
       <Card title={`Phiếu (${payload.total})`}>
         {loading ? (
@@ -244,7 +291,9 @@ export function ChecklistHistoryPage() {
                   >
                     <div className="flex flex-wrap gap-2 shrink-0">
                       <Badge
-                        color={CHECKLIST_STATUS_COLOR[row.overallStatus] ?? "gray"}
+                        color={
+                          CHECKLIST_STATUS_COLOR[row.overallStatus] ?? "gray"
+                        }
                       >
                         {row.overallStatus}
                       </Badge>
@@ -412,7 +461,9 @@ export function ChecklistHistoryPage() {
                 <span className="text-xs font-bold text-violet-900 uppercase tracking-wide">
                   Ghi chú người duyệt
                 </span>
-                <p className="mt-1 whitespace-pre-wrap">{detail.supervisorNotes}</p>
+                <p className="mt-1 whitespace-pre-wrap">
+                  {detail.supervisorNotes}
+                </p>
               </div>
             )}
             {photoHref && (
@@ -446,13 +497,16 @@ export function ChecklistHistoryPage() {
                 </h3>
                 <div className="space-y-3">
                   {detailRows.map(({ d, cmp }) => {
-                    const typeLabel = INPUT_TYPE_SHORT[d.inputType] ?? d.inputType;
+                    const typeLabel =
+                      INPUT_TYPE_SHORT[d.inputType] ?? d.inputType;
                     const ans = formatAnswerLabel(
                       d.inputType,
                       d.answerValue,
                       d.isOK,
                     );
-                    const safe = d.threshold ? formatSafeBand(d.threshold) : null;
+                    const safe = d.threshold
+                      ? formatSafeBand(d.threshold)
+                      : null;
                     const range = d.threshold
                       ? formatInputRangeBand(d.threshold)
                       : null;
@@ -474,7 +528,9 @@ export function ChecklistHistoryPage() {
                                 <>
                                   {safe && (
                                     <p>
-                                      <span className="text-slate-500">Ngưỡng </span>
+                                      <span className="text-slate-500">
+                                        Ngưỡng{" "}
+                                      </span>
                                       <span className="font-mono text-indigo-900 bg-indigo-50 px-1 rounded">
                                         {safe}
                                       </span>
@@ -482,7 +538,9 @@ export function ChecklistHistoryPage() {
                                   )}
                                   {range && (
                                     <p>
-                                      <span className="text-slate-500">Khoảng </span>
+                                      <span className="text-slate-500">
+                                        Khoảng{" "}
+                                      </span>
                                       <span className="font-mono">{range}</span>
                                     </p>
                                   )}
@@ -495,26 +553,32 @@ export function ChecklistHistoryPage() {
                             </div>
                           </div>
                           <div className="p-4 flex flex-col justify-center bg-white/40">
-                            <p className="text-xs text-slate-500 mb-1">Trả lời</p>
+                            <p className="text-xs text-slate-500 mb-1">
+                              Trả lời
+                            </p>
                             {d.inputType === "Photo" && d.answerValue ? (
                               <a
-                                href={checklistStoredPhotoUrl(d.answerValue) ?? "#"}
+                                href={
+                                  checklistStoredPhotoUrl(d.answerValue) ?? "#"
+                                }
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="block rounded-lg border border-slate-200 overflow-hidden bg-white max-w-md"
                               >
                                 <img
-                                  src={checklistStoredPhotoUrl(d.answerValue) ?? ""}
+                                  src={
+                                    checklistStoredPhotoUrl(d.answerValue) ?? ""
+                                  }
                                   alt=""
                                   className="max-h-56 w-full object-contain"
                                 />
                               </a>
                             ) : (
-                            <p
-                              className={`text-lg font-bold tabular-nums ${cmp.tone === "bad" ? "text-red-700" : cmp.tone === "good" ? "text-emerald-800" : "text-slate-800"}`}
-                            >
-                              {ans}
-                            </p>
+                              <p
+                                className={`text-lg font-bold tabular-nums ${cmp.tone === "bad" ? "text-red-700" : cmp.tone === "good" ? "text-emerald-800" : "text-slate-800"}`}
+                              >
+                                {ans}
+                              </p>
                             )}
                             <p
                               className={`text-xs mt-1 ${d.isOK ? "text-emerald-700" : "text-red-700"}`}

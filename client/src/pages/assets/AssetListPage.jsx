@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Filter,
   Calendar,
+  FileSpreadsheet,
 } from "lucide-react";
 import { assetApi } from "../../api/asset.api.js";
 import { scheduleApi } from "../../api/schedule.api.js";
@@ -38,6 +39,7 @@ import {
 import { AssetForm } from "./AssetForm.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo } from "../../utils/rbac.js";
+import { exportRowsToExcel } from "../../utils/excelExport.js";
 import toast from "react-hot-toast";
 
 export function AssetListPage() {
@@ -142,6 +144,28 @@ export function AssetListPage() {
     }
   };
 
+  const handleExportExcel = () => {
+    const ok = exportRowsToExcel({
+      rows: assets.map((a) => ({
+        "ID tài sản": a.assetId,
+        "Mã tài sản": a.assetCode ?? "",
+        "Tên tài sản": a.assetName ?? "",
+        "Loại tài sản": a.assetTypeName ?? "",
+        "Dây chuyền": a.productionLineName ?? "",
+        "Vị trí": a.locationName ?? "",
+        "Trạng thái": ASSET_STATUS_LABEL[a.status] ?? a.status ?? "",
+        "Ngày đưa vào sử dụng": fDate(a.commissionDate) ?? "",
+      })),
+      sheetName: "Tai san thiet bi",
+      fileName: `tai-san-thiet-bi-trang-${page}.xlsx`,
+    });
+    if (!ok) {
+      toast.error("Không có dữ liệu để xuất Excel");
+      return;
+    }
+    toast.success("Đã xuất Excel danh sách tài sản");
+  };
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -202,6 +226,18 @@ export function AssetListPage() {
             <Plus size={15} /> Thêm tài sản
           </Button>
         )}
+        <Button
+          variant="secondary"
+          onClick={handleExportExcel}
+          disabled={loading || assets.length === 0}
+          title={
+            assets.length === 0
+              ? "Không có dữ liệu để xuất"
+              : "Xuất Excel theo danh sách đang hiển thị"
+          }
+        >
+          <FileSpreadsheet size={15} /> Xuất Excel
+        </Button>
       </div>
 
       {/* Table */}

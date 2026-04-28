@@ -131,9 +131,7 @@ export function ChecklistPage() {
         toast.success(`Đã tải thông tin: ${res.data.data.asset.assetName}`);
       } catch (err) {
         if (!cancelled)
-          toast.error(
-            err.response?.data?.message ?? "Không tìm thấy tài sản",
-          );
+          toast.error(err.response?.data?.message ?? "Không tìm thấy tài sản");
       } finally {
         if (!cancelled) setScanning(false);
       }
@@ -198,10 +196,7 @@ export function ChecklistPage() {
 
   const overallSuggestion = useMemo(
     () =>
-      deriveChecklistOverallSuggestion(
-        activeChecklistTemplate?.items,
-        answers,
-      ),
+      deriveChecklistOverallSuggestion(activeChecklistTemplate?.items, answers),
     [activeChecklistTemplate, answers],
   );
 
@@ -385,7 +380,7 @@ export function ChecklistPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
-        <p className="font-bold text-indigo-900 mb-1">
+        {/* <p className="font-bold text-indigo-900 mb-1">
           Quét QR — xem đúng thiết bị
         </p>
         <p className="leading-relaxed text-indigo-900/90">
@@ -395,15 +390,15 @@ export function ChecklistPage() {
           <strong>gửi checklist</strong> kiểm tra từ đây. Sau khi gửi,{" "}
           <strong>trưởng ca hoặc trưởng phòng</strong> xử lý tại &quot;Tiếp nhận
           checklist&quot; rồi hệ thống mới cập nhật trạng thái / phiếu việc.
-        </p>
-        <p className="mt-2 text-xs text-indigo-800/90">
+        </p> */}
+        <p className="mt-2 text-xm text-indigo-800/90 leading-">
           <Link
             to="/checklists/history"
             className="font-semibold underline hover:no-underline"
           >
-            Danh sách checklist (phân trang, xem chi tiết)
+            Danh sách checklist
           </Link>{" "}
-          — KTV hiện trường chỉ thấy phiếu đã duyệt + phiếu của mình.
+          {/* — KTV hiện trường chỉ thấy phiếu đã duyệt + phiếu của mình. */}
         </p>
       </div>
 
@@ -668,7 +663,8 @@ export function ChecklistPage() {
                               </div>
                               <div className="sm:col-span-2 rounded-lg bg-sky-100/50 border border-sky-200/80 px-2 py-1.5">
                                 <dt className="text-[10px] font-semibold text-sky-800 uppercase">
-                                  Giờ chạy kể từ mốc PM (dùng so ngưỡng lịch giờ)
+                                  Giờ chạy kể từ mốc PM (dùng so ngưỡng lịch
+                                  giờ)
                                 </dt>
                                 <dd className="font-bold tabular-nums text-sky-950">
                                   {fNumber(hoursSincePm)} h
@@ -733,10 +729,10 @@ export function ChecklistPage() {
                         Nhập chỉ số đồng hồ máy (tuỳ chọn)
                       </p>
                       <p className="text-xs text-sky-900/90 leading-relaxed">
-                        Đây là <strong>chỉ số tổng trên màn hình máy</strong>, khác với{" "}
-                        <strong>tổng tích lũy (delta)</strong> và{" "}
-                        <strong>mốc sau PM</strong> ở tab Tài sản phía trên. Trong hệ thống
-                        đang lưu chỉ số cuối:{" "}
+                        Đây là <strong>chỉ số tổng trên màn hình máy</strong>,
+                        khác với <strong>tổng tích lũy (delta)</strong> và{" "}
+                        <strong>mốc sau PM</strong> ở tab Tài sản phía trên.
+                        Trong hệ thống đang lưu chỉ số cuối:{" "}
                         <strong className="tabular-nums text-sky-950">
                           {fNumber(runtimeMinReading)} h
                         </strong>
@@ -787,7 +783,10 @@ export function ChecklistPage() {
                             }}
                           >
                             {(qrData.checklistTemplates || []).map((tpl) => (
-                              <option key={tpl.templateId} value={tpl.templateId}>
+                              <option
+                                key={tpl.templateId}
+                                value={tpl.templateId}
+                              >
                                 {tpl.templateName}
                               </option>
                             ))}
@@ -868,45 +867,49 @@ export function ChecklistPage() {
                                 ))}
                               </Select>
                             )}
-                            {item.inputType === "Photo" && canSubmitChecklist && (
-                              <div
-                                className={`rounded-lg border p-3 ${
-                                  itemPhotos[item.itemId]
-                                    ? "border-green-300 bg-green-50/50"
-                                    : "border-amber-200 bg-amber-50/60"
-                                }`}
-                              >
-                                <label className="text-xs font-semibold text-gray-800 block mb-1.5">
-                                  Tải ảnh hiện trường <span className="text-red-600">*</span>
-                                </label>
-                                <input
-                                  type="file"
-                                  accept=".jpg,.jpeg,.png,.webp"
-                                  className="w-full text-sm text-gray-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700"
-                                  onChange={(e) => {
-                                    const f = e.target.files?.[0] ?? null;
-                                    setItemPhotos((p) => ({
-                                      ...p,
-                                      [item.itemId]: f,
-                                    }));
-                                  }}
-                                />
-                                {itemPhotos[item.itemId] ? (
-                                  <p className="text-xs text-green-700 mt-1.5 font-medium">
-                                    Đã chọn: {itemPhotos[item.itemId].name}
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-amber-800 mt-1.5">
-                                    Bắt buộc có ảnh cho câu này trước khi gửi.
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                            {item.inputType === "Photo" && !canSubmitChecklist && (
-                              <p className="text-xs text-gray-500 italic">
-                                Ảnh hiện trường — chỉ KTV/Trưởng phòng BT được nộp.
-                              </p>
-                            )}
+                            {item.inputType === "Photo" &&
+                              canSubmitChecklist && (
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    itemPhotos[item.itemId]
+                                      ? "border-green-300 bg-green-50/50"
+                                      : "border-amber-200 bg-amber-50/60"
+                                  }`}
+                                >
+                                  <label className="text-xs font-semibold text-gray-800 block mb-1.5">
+                                    Tải ảnh hiện trường{" "}
+                                    <span className="text-red-600">*</span>
+                                  </label>
+                                  <input
+                                    type="file"
+                                    accept=".jpg,.jpeg,.png,.webp"
+                                    className="w-full text-sm text-gray-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700"
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0] ?? null;
+                                      setItemPhotos((p) => ({
+                                        ...p,
+                                        [item.itemId]: f,
+                                      }));
+                                    }}
+                                  />
+                                  {itemPhotos[item.itemId] ? (
+                                    <p className="text-xs text-green-700 mt-1.5 font-medium">
+                                      Đã chọn: {itemPhotos[item.itemId].name}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-amber-800 mt-1.5">
+                                      Bắt buộc có ảnh cho câu này trước khi gửi.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            {item.inputType === "Photo" &&
+                              !canSubmitChecklist && (
+                                <p className="text-xs text-gray-500 italic">
+                                  Ảnh hiện trường — chỉ KTV/Trưởng phòng BT được
+                                  nộp.
+                                </p>
+                              )}
                           </div>
                         ))}
                       </div>
@@ -989,11 +992,15 @@ export function ChecklistPage() {
                           rows={3}
                         />
 
-                        <div className={`rounded-xl border-2 p-4 transition-colors ${evidencePhoto ? 'border-green-400 bg-green-50/50' : 'border-red-300 bg-red-50/40'}`}>
+                        <div
+                          className={`rounded-xl border-2 p-4 transition-colors ${evidencePhoto ? "border-green-400 bg-green-50/50" : "border-red-300 bg-red-50/40"}`}
+                        >
                           <label className="text-sm font-semibold text-gray-800 flex items-center gap-1.5 mb-2">
                             Ảnh minh chứng
                             <span className="text-red-500 font-bold">*</span>
-                            <span className="text-xs font-normal text-red-600 ml-1">(Bắt buộc)</span>
+                            <span className="text-xs font-normal text-red-600 ml-1">
+                              (Bắt buộc)
+                            </span>
                           </label>
                           <input
                             type="file"
@@ -1005,12 +1012,16 @@ export function ChecklistPage() {
                           />
                           {evidencePhoto ? (
                             <p className="text-xs text-green-700 mt-2 font-semibold flex items-center gap-1">
-                              <CheckCircle size={13} className="text-green-500" />
+                              <CheckCircle
+                                size={13}
+                                className="text-green-500"
+                              />
                               Đã chọn: {evidencePhoto.name}
                             </p>
                           ) : (
                             <p className="text-xs text-red-600 mt-2 font-medium">
-                              Chưa có ảnh — bắt buộc chụp ảnh hiện trường trước khi gửi
+                              Chưa có ảnh — bắt buộc chụp ảnh hiện trường trước
+                              khi gửi
                             </p>
                           )}
                           <p className="text-xs text-gray-400 mt-1">
@@ -1023,7 +1034,11 @@ export function ChecklistPage() {
                           loading={submitting}
                           onClick={handleSubmit}
                           disabled={!evidencePhoto}
-                          title={!evidencePhoto ? "Cần đính kèm ảnh minh chứng trước khi gửi" : undefined}
+                          title={
+                            !evidencePhoto
+                              ? "Cần đính kèm ảnh minh chứng trước khi gửi"
+                              : undefined
+                          }
                         >
                           Gửi kết quả kiểm tra
                         </Button>
@@ -1037,13 +1052,14 @@ export function ChecklistPage() {
                       <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                         {linkedWoId && !canSubmitLinkedWoChecklist ? (
                           <>
-                            Checklist gắn WO chỉ <strong>trưởng nhóm</strong> được nộp.
-                            Thành viên khác xem sau khi checklist hoàn thành.
+                            Checklist gắn WO chỉ <strong>trưởng nhóm</strong>{" "}
+                            được nộp. Thành viên khác xem sau khi checklist hoàn
+                            thành.
                           </>
                         ) : (
                           <>
-                            Tài khoản của bạn chỉ xem thiết bị / SOP / lịch sử. Soạn
-                            mẫu checklist: trang{" "}
+                            Tài khoản của bạn chỉ xem thiết bị / SOP / lịch sử.
+                            Soạn mẫu checklist: trang{" "}
                             <strong>Mẫu checklist (theo loại)</strong>.
                             <strong> Gửi kết quả kiểm tra</strong> chỉ dành cho{" "}
                             <strong>KTV hiện trường</strong> hoặc{" "}
@@ -1141,14 +1157,19 @@ export function ChecklistPage() {
                                 )}
                               </div>
                               <a
-                                href={documentFilePublicUrl(doc.filePath, import.meta.env.VITE_API_BASE)}
+                                href={documentFilePublicUrl(
+                                  doc.filePath,
+                                  import.meta.env.VITE_API_BASE,
+                                )}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 flex-shrink-0"
                                 onClick={() => {
                                   const id = doc.digitalAssetId;
                                   if (id == null) return;
-                                  void api.post(`/digital-assets/${id}/view-log`).catch(() => {});
+                                  void api
+                                    .post(`/digital-assets/${id}/view-log`)
+                                    .catch(() => {});
                                 }}
                               >
                                 <ExternalLink size={15} />
@@ -1162,147 +1183,145 @@ export function ChecklistPage() {
                 </Card>
               )}
 
-              {activeTab === "histChecklist" && (() => {
-                const recent = qrData.recentResults ?? [];
-                const isWorker = (user?.positionLevel ?? 0) <= 1;
-                const myId = user?.employeeId;
-                const mine = isWorker
-                  ? recent.filter(
-                      (r) =>
-                        myId != null &&
-                        Number(r.checkerId) === Number(myId),
-                    )
-                  : [];
-                const others = isWorker
-                  ? recent.filter(
-                      (r) =>
-                        myId == null ||
-                        Number(r.checkerId) !== Number(myId),
-                    )
-                  : recent;
+              {activeTab === "histChecklist" &&
+                (() => {
+                  const recent = qrData.recentResults ?? [];
+                  const isWorker = (user?.positionLevel ?? 0) <= 1;
+                  const myId = user?.employeeId;
+                  const mine = isWorker
+                    ? recent.filter(
+                        (r) =>
+                          myId != null && Number(r.checkerId) === Number(myId),
+                      )
+                    : [];
+                  const others = isWorker
+                    ? recent.filter(
+                        (r) =>
+                          myId == null || Number(r.checkerId) !== Number(myId),
+                      )
+                    : recent;
 
-                const Row = ({ r }) => (
-                  <div className="rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 flex flex-wrap gap-2 items-start">
-                    <div className="flex flex-wrap gap-2 shrink-0">
-                      <Badge
-                        color={CHECKLIST_STATUS_COLOR[r.overallStatus]}
-                      >
-                        {r.overallStatus}
-                      </Badge>
-                      {r.reviewStatus && (
-                        <Badge
-                          color={
-                            APPROVAL_STATUS_COLOR[r.reviewStatus] ?? "gray"
-                          }
-                        >
-                          {r.reviewStatus}
+                  const Row = ({ r }) => (
+                    <div className="rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 flex flex-wrap gap-2 items-start">
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        <Badge color={CHECKLIST_STATUS_COLOR[r.overallStatus]}>
+                          {r.overallStatus}
                         </Badge>
-                      )}
-                      {isWorker &&
-                        myId != null &&
-                        Number(r.checkerId) === Number(myId) && (
-                          <Badge color="blue" className="text-[10px]">
-                            Của tôi
+                        {r.reviewStatus && (
+                          <Badge
+                            color={
+                              APPROVAL_STATUS_COLOR[r.reviewStatus] ?? "gray"
+                            }
+                          >
+                            {r.reviewStatus}
                           </Badge>
                         )}
-                    </div>
-                    <div className="flex-1 min-w-[200px]">
-                      <p className="text-xs font-mono text-gray-500">
-                        #{r.checklistId}
-                      </p>
-                      <p className="text-sm font-semibold text-gray-800">
-                        {fDateTime(r.checkTime)}
-                      </p>
-                      {r.checkerName && (
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          Người nộp: {r.checkerName}
+                        {isWorker &&
+                          myId != null &&
+                          Number(r.checkerId) === Number(myId) && (
+                            <Badge color="blue" className="text-[10px]">
+                              Của tôi
+                            </Badge>
+                          )}
+                      </div>
+                      <div className="flex-1 min-w-[200px]">
+                        <p className="text-xs font-mono text-gray-500">
+                          #{r.checklistId}
                         </p>
-                      )}
-                      {r.readingValue != null && r.readingValue !== "" && (
-                        <p className="text-xs text-gray-600 tabular-nums mt-0.5">
-                          Đồng hồ: {fNumber(r.readingValue)} h
+                        <p className="text-sm font-semibold text-gray-800">
+                          {fDateTime(r.checkTime)}
                         </p>
-                      )}
-                      {r.notes && (
-                        <p className="text-sm text-gray-800 mt-2 whitespace-pre-wrap leading-relaxed border-t border-gray-100 pt-2">
-                          {r.notes}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-
-                return (
-                  <Card title="Lịch sử kiểm tra checklist (5 bản gần nhất)">
-                    <p className="text-xs text-gray-600 mb-4 -mt-1 leading-relaxed">
-                      {isWorker ? (
-                        <>
-                          <strong>KTV hiện trường:</strong> danh sách gồm phiếu{" "}
-                          <strong>đã duyệt (APPROVED)</strong> của mọi người và{" "}
-                          <strong>mọi phiếu do bạn nộp</strong> (kể cả chờ / từ
-                          chối).{" "}
-                        </>
-                      ) : (
-                        <>
-                          <strong>NVKT / giám sát:</strong> xem 5 phiếu mới nhất
-                          trên thiết bị này.{" "}
-                        </>
-                      )}
-                      <Link
-                        to={`/checklists/history?assetId=${asset.assetId}`}
-                        className="font-semibold text-blue-700 underline"
-                      >
-                        Mở danh sách đầy đủ + chi tiết
-                      </Link>
-                      .
-                    </p>
-                    {recent.length === 0 ? (
-                      <p className="text-sm text-gray-400 py-6 text-center">
-                        Chưa có phiếu checklist ghi nhận (theo quyền của bạn)
-                      </p>
-                    ) : (
-                      <div className="space-y-6">
-                        {isWorker && mine.length > 0 && (
-                          <div>
-                            <p className="text-xs font-bold text-blue-900 uppercase tracking-wide mb-2">
-                              Phiếu của tôi
-                            </p>
-                            <div className="space-y-3">
-                              {mine.map((r) => (
-                                <Row key={r.checklistId} r={r} />
-                              ))}
-                            </div>
-                          </div>
+                        {r.checkerName && (
+                          <p className="text-xs text-gray-600 mt-0.5">
+                            Người nộp: {r.checkerName}
+                          </p>
                         )}
-                        {isWorker && others.length > 0 && (
-                          <div>
-                            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">
-                              Đã duyệt — tham khảo (người khác)
-                            </p>
+                        {r.readingValue != null && r.readingValue !== "" && (
+                          <p className="text-xs text-gray-600 tabular-nums mt-0.5">
+                            Đồng hồ: {fNumber(r.readingValue)} h
+                          </p>
+                        )}
+                        {r.notes && (
+                          <p className="text-sm text-gray-800 mt-2 whitespace-pre-wrap leading-relaxed border-t border-gray-100 pt-2">
+                            {r.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+
+                  return (
+                    <Card title="Lịch sử kiểm tra checklist (5 bản gần nhất)">
+                      <p className="text-xs text-gray-600 mb-4 -mt-1 leading-relaxed">
+                        {isWorker ? (
+                          <>
+                            <strong>KTV hiện trường:</strong> danh sách gồm
+                            phiếu <strong>đã duyệt (APPROVED)</strong> của mọi
+                            người và <strong>mọi phiếu do bạn nộp</strong> (kể
+                            cả chờ / từ chối).{" "}
+                          </>
+                        ) : (
+                          <>
+                            <strong>NVKT / giám sát:</strong> xem 5 phiếu mới
+                            nhất trên thiết bị này.{" "}
+                          </>
+                        )}
+                        <Link
+                          to={`/checklists/history?assetId=${asset.assetId}`}
+                          className="font-semibold text-blue-700 underline"
+                        >
+                          Mở danh sách đầy đủ + chi tiết
+                        </Link>
+                        .
+                      </p>
+                      {recent.length === 0 ? (
+                        <p className="text-sm text-gray-400 py-6 text-center">
+                          Chưa có phiếu checklist ghi nhận (theo quyền của bạn)
+                        </p>
+                      ) : (
+                        <div className="space-y-6">
+                          {isWorker && mine.length > 0 && (
+                            <div>
+                              <p className="text-xs font-bold text-blue-900 uppercase tracking-wide mb-2">
+                                Phiếu của tôi
+                              </p>
+                              <div className="space-y-3">
+                                {mine.map((r) => (
+                                  <Row key={r.checklistId} r={r} />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {isWorker && others.length > 0 && (
+                            <div>
+                              <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">
+                                Đã duyệt — tham khảo (người khác)
+                              </p>
+                              <div className="space-y-3">
+                                {others.map((r) => (
+                                  <Row key={r.checklistId} r={r} />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {!isWorker && (
                             <div className="space-y-3">
                               {others.map((r) => (
                                 <Row key={r.checklistId} r={r} />
                               ))}
                             </div>
-                          </div>
-                        )}
-                        {!isWorker && (
-                          <div className="space-y-3">
-                            {others.map((r) => (
-                              <Row key={r.checklistId} r={r} />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })()}
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })()}
 
               {activeTab === "maint" && (
                 <Card title="Lịch sử bảo trì trên thiết bị">
                   <p className="text-xs text-gray-500 mb-3 -mt-1">
-                    Ghi lại khi hoàn thành bảo trì; xem ghi chú và vật tư từng lần bên dưới.
+                    Ghi lại khi hoàn thành bảo trì; xem ghi chú và vật tư từng
+                    lần bên dưới.
                   </p>
                   {maintLoading && (
                     <div className="flex justify-center py-10">

@@ -22,14 +22,37 @@ import {
 } from 'recharts';
 import { statsApi }     from '../api/stats.api.js';
 import { workOrderApi } from '../api/workOrder.api.js';
-import { checklistApi } from '../api/checklist.api.js';
 import { employeeApi }  from '../api/employee.api.js';
 import { StatCard }     from '../components/ui/Card.jsx';
 import { Badge }        from '../components/ui/Badge.jsx';
 import { PageLoader }   from '../components/ui/Spinner.jsx';
 import { useAuth }      from '../contexts/AuthContext.jsx';
-import { getDashboardType, TRUONG_CA_SUMMARY, getFirstAllowedReportPath } from '../utils/rbac.js';
+import { getDashboardType, getFirstAllowedReportPath } from '../utils/rbac.js';
 import { fDate, WO_STATUS_LABEL, WO_STATUS_COLOR, WO_PRIORITY_COLOR, WO_PRIORITY_LABEL } from '../utils/format.js';
+
+const toInt = (v) => Number(v ?? 0) || 0;
+
+function DashboardGreeting({ user, tone = 'blue' }) {
+  const toneClass =
+    tone === 'purple'
+      ? 'bg-purple-50 border-purple-100 text-purple-900'
+      : tone === 'red'
+        ? 'bg-red-50 border-red-100 text-red-900'
+        : 'bg-blue-50 border-blue-100 text-blue-900';
+  const subToneClass =
+    tone === 'purple' ? 'text-purple-700' : tone === 'red' ? 'text-red-700' : 'text-blue-700';
+  return (
+    <div className={`p-4 border rounded-xl flex items-center gap-3 ${toneClass}`}>
+      <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-base font-bold text-white flex-shrink-0">
+        {user?.fullName?.[0] ?? 'U'}
+      </div>
+      <div>
+        <p className="font-bold">Xin chào, {user?.fullName ?? 'người dùng'}!</p>
+        <p className={`text-sm ${subToneClass}`}>{user?.positionName ?? '—'} — {user?.departmentName ?? '—'}</p>
+      </div>
+    </div>
+  );
+}
 
 // ─── OPERATIONAL DASHBOARD (Trưởng ca / Trưởng phòng) ─────────────────────────
 function OperationalDashboard() {
@@ -42,74 +65,67 @@ function OperationalDashboard() {
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       statsApi.summary(),
       statsApi.checklistTrend(),
       statsApi.topFaulty(),
       workOrderApi.getAll({ limit: 8, page: 1 }),
     ]).then(([s, t, f, wo]) => {
-      setSummary(s.data.data);
-      setTrend(t.data.data ?? []);
-      setFaulty(f.data.data ?? []);
-      setRecentWO(wo.data.data?.items ?? []);
-    }).catch(() => {}).finally(() => setLoading(false));
+      if (s.status === 'fulfilled') setSummary(s.value.data?.data ?? null);
+      if (t.status === 'fulfilled') setTrend(t.value.data?.data ?? []);
+      if (f.status === 'fulfilled') setFaulty(f.value.data?.data ?? []);
+      if (wo.status === 'fulfilled') setRecentWO(wo.value.data?.data?.items ?? []);
+    }).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <PageLoader />;
   const a  = summary?.assets     ?? {};
   const wo = summary?.workOrders ?? {};
+  const woPendingApproval = toInt(wo.pendingApproval);
+  const woWaiting = toInt(wo.waiting);
+  const woInProgress = toInt(wo.inProgress);
+  const woAwaitingClosure = toInt(wo.awaitingClosure);
+  const woCompleted = toInt(wo.completed);
 
   return (
     <div className="space-y-6">
-      {/* Trưởng ca: nhiệm vụ + lối tắt luồng phê duyệt / điều phối (rule/truongca.rule) */}
-      <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50/60 p-4 sm:p-5 shadow-sm">
-        <p className="text-sm font-bold text-blue-950">{TRUONG_CA_SUMMARY.title}</p>
-        <p className="text-xs text-blue-900/85 mt-1.5 max-w-2xl">
-          {TRUONG_CA_SUMMARY.tagline}
-        </p>
-        {TRUONG_CA_SUMMARY.flows?.length > 0 && (
-          <ul className="mt-3 text-xs text-blue-900/80 space-y-1 list-disc list-inside border-t border-blue-100/80 pt-3">
-            {TRUONG_CA_SUMMARY.flows.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        )}
-        <div className="flex flex-wrap gap-2 mt-4">
-          {[
-            { to: '/approvals', label: 'Phê duyệt', icon: ShieldCheck, className: 'bg-amber-100 text-amber-900 border-amber-200 hover:bg-amber-200/80' },
-            { to: '/work-orders', label: 'Phiếu việc', icon: Wrench, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
-            { to: '/schedules', label: 'Lịch bảo trì', icon: ClipboardList, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
-            { to: '/checklists', label: 'Checklist', icon: CheckCircle, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
-            ...(reportPath
-              ? [{ to: reportPath, label: 'Báo cáo', icon: BarChart2, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' }]
-              : []),
-          ].map(({ to, label, icon: Icon, className }) => (
-            <Link
-              key={to}
-              to={to}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${className}`}
-            >
-              <Icon size={14} />
-              {label}
-            </Link>
-          ))}
-        </div>
+      <DashboardGreeting user={user} tone="blue" />
+
+      <div className="flex flex-wrap gap-2">
+        {[
+          { to: '/approvals', label: 'Phê duyệt', icon: ShieldCheck, className: 'bg-amber-100 text-amber-900 border-amber-200 hover:bg-amber-200/80' },
+          { to: '/work-orders', label: 'Phiếu việc', icon: Wrench, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+          { to: '/schedules', label: 'Lịch bảo trì', icon: ClipboardList, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+          { to: '/checklists', label: 'Checklist', icon: CheckCircle, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' },
+          ...(reportPath
+            ? [{ to: reportPath, label: 'Báo cáo', icon: BarChart2, className: 'bg-white text-blue-900 border-blue-200 hover:bg-blue-50' }]
+            : []),
+        ].map(({ to, label, icon: Icon, className }) => (
+          <Link
+            key={to}
+            to={to}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${className}`}
+          >
+            <Icon size={14} />
+            {label}
+          </Link>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Tổng tài sản"   value={a.total}  icon={Cpu}           color="blue"   sub={`${a.available ?? 0} sẵn sàng`} />
-        <StatCard label="Cảnh báo/Hỏng"  value={(a.caution ?? 0) + (a.broken ?? 0)} icon={AlertTriangle} color="red" sub={`${a.monitoring ?? 0} đang theo dõi`} />
-        <StatCard label="Phiếu đang mở"  value={(wo.pendingApproval ?? 0) + (wo.waiting ?? 0) + (wo.inProgress ?? 0) + (wo.awaitingClosure ?? 0)} icon={Wrench} color="orange" sub={`${wo.completed ?? 0} hoàn thành`} />
-        <StatCard label="Chờ phê duyệt"  value={summary?.pendingApprovals} icon={ShieldCheck} color="yellow" sub="Phiếu + tài liệu" />
+        <StatCard label="Tổng tài sản"   value={toInt(a.total)}  icon={Cpu}           color="blue"   sub={`${toInt(a.available)} sẵn sàng`} />
+        <StatCard label="Cảnh báo/Hỏng"  value={toInt(a.caution) + toInt(a.broken)} icon={AlertTriangle} color="red" sub={`${toInt(a.monitoring)} đang theo dõi`} />
+        <StatCard label="Phiếu đang mở"  value={woPendingApproval + woWaiting + woInProgress + woAwaitingClosure} icon={Wrench} color="orange" sub={`${woCompleted} hoàn thành`} />
+        <StatCard label="Chờ phê duyệt"  value={toInt(summary?.pendingApprovals)} icon={ShieldCheck} color="yellow" sub="Phiếu + tài liệu" />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'Chờ duyệt',      value: wo.pendingApproval, color: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
-          { label: 'Chờ thực hiện',  value: wo.waiting,         color: 'bg-blue-50 border-blue-200 text-blue-800' },
-          { label: 'Đang thực hiện', value: wo.inProgress,      color: 'bg-indigo-50 border-indigo-200 text-indigo-800' },
-          { label: 'Chờ nghiệm thu', value: wo.awaitingClosure, color: 'bg-violet-50 border-violet-200 text-violet-900' },
-          { label: 'Hoàn thành',     value: wo.completed,       color: 'bg-green-50 border-green-200 text-green-800' },
+          { label: 'Chờ duyệt',      value: woPendingApproval, color: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
+          { label: 'Chờ thực hiện',  value: woWaiting,         color: 'bg-blue-50 border-blue-200 text-blue-800' },
+          { label: 'Đang thực hiện', value: woInProgress,      color: 'bg-indigo-50 border-indigo-200 text-indigo-800' },
+          { label: 'Chờ nghiệm thu', value: woAwaitingClosure, color: 'bg-violet-50 border-violet-200 text-violet-900' },
+          { label: 'Hoàn thành',     value: woCompleted,       color: 'bg-green-50 border-green-200 text-green-800' },
         ].map(({ label, value, color }) => (
           <div key={label} className={`rounded-xl border p-4 text-center ${color}`}>
             <p className="text-2xl font-bold">{value ?? 0}</p>
@@ -214,9 +230,12 @@ function DirectorDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([statsApi.summary(), statsApi.checklistTrend()])
-      .then(([s, t]) => { setSummary(s.data.data); setTrend(t.data.data ?? []); })
-      .catch(() => {}).finally(() => setLoading(false));
+    Promise.allSettled([statsApi.summary(), statsApi.checklistTrend()])
+      .then(([s, t]) => {
+        if (s.status === 'fulfilled') setSummary(s.value.data?.data ?? null);
+        if (t.status === 'fulfilled') setTrend(t.value.data?.data ?? []);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <PageLoader />;
@@ -233,6 +252,7 @@ function DirectorDashboard() {
 
   return (
     <div className="space-y-6">
+      <DashboardGreeting user={user} tone="purple" />
       <div className="p-4 bg-purple-50 border border-purple-100 rounded-xl">
         <p className="text-sm font-semibold text-purple-800">
           Bảng tổng hợp KPI — Hệ thống bảo trì thiết bị Xi măng Sông Gianh
@@ -302,16 +322,18 @@ function DirectorDashboard() {
 
 // ─── ADMIN DASHBOARD (Quản trị hệ thống) ─────────────────────────────────────
 function AdminDashboard() {
+  const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [summary,   setSummary]   = useState(null);
   const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
-    Promise.all([employeeApi.getAll({ limit: 10, page: 1 }), statsApi.summary()])
+    Promise.allSettled([employeeApi.getAll({ limit: 10, page: 1 }), statsApi.summary()])
       .then(([e, s]) => {
-        setEmployees(e.data.data?.items ?? []);
-        setSummary(s.data.data);
-      }).catch(() => {}).finally(() => setLoading(false));
+        if (e.status === 'fulfilled') setEmployees(e.value.data?.data?.items ?? []);
+        if (s.status === 'fulfilled') setSummary(s.value.data?.data ?? null);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <PageLoader />;
@@ -319,6 +341,7 @@ function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      <DashboardGreeting user={user} tone="red" />
       <div className="p-4 bg-red-50 border border-red-100 rounded-xl">
         <p className="text-sm font-semibold text-red-800">
           Bảng quản trị hệ thống — Quản lý tài khoản, phân quyền và cấu hình
@@ -452,7 +475,6 @@ function currentEmployeeId(user) {
 function FieldDashboard() {
   const { user, refetchMe } = useAuth();
   const [myWOs, setMyWOs] = useState([]);
-  const [recentChecklists, setRecentChecklists] = useState([]);
   const [fieldSummary, setFieldSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -469,15 +491,13 @@ function FieldDashboard() {
     (async () => {
       setLoading(true);
       try {
-        const [me, wo, cl] = await Promise.all([
+        const [me, wo] = await Promise.allSettled([
           refetchMe?.().catch(() => null),
           workOrderApi.getAll({ assignedTo: employeeId, limit: 5, page: 1 }),
-          checklistApi.getResults ? checklistApi.getResults({ limit: 5 }) : Promise.resolve({ data: { data: [] } }),
         ]);
         if (cancelled) return;
-        setFieldSummary(me?.fieldWorkSummary ?? null);
-        setMyWOs(wo.data.data?.items ?? []);
-        setRecentChecklists(Array.isArray(cl.data.data) ? cl.data.data : cl.data.data?.items ?? []);
+        if (me.status === 'fulfilled') setFieldSummary(me.value?.fieldWorkSummary ?? null);
+        if (wo.status === 'fulfilled') setMyWOs(wo.value.data?.data?.items ?? []);
       } catch {
         if (!cancelled) setFieldSummary(null);
       } finally {

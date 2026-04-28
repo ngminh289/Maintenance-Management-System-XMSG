@@ -19,6 +19,7 @@ import { getPool } from "../config/database.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 
 const APPROVAL_TERMINAL = new Set(["APPROVED", "REJECTED", "REQUEST_CHANGES"]);
+const toInt = (v) => Number(v ?? 0) || 0;
 
 function sqlDateKey(v) {
   if (v == null) return "";
@@ -69,11 +70,36 @@ export const summary = asyncHandler(async (_req, res) => {
   FROM DigitalAssets`);
 
   return ok(res, {
-    assets,
-    workOrders,
-    checklistsLast30Days: checklists,
-    pendingApprovals: pendingApprovals.count,
-    digitalAssets,
+    assets: {
+      total: toInt(assets.total),
+      available: toInt(assets.available),
+      maintenance: toInt(assets.maintenance),
+      broken: toInt(assets.broken),
+      caution: toInt(assets.caution),
+      decommissioned: toInt(assets.decommissioned),
+    },
+    workOrders: {
+      total: toInt(workOrders.total),
+      pendingApproval: toInt(workOrders.pendingApproval),
+      waiting: toInt(workOrders.waiting),
+      inProgress: toInt(workOrders.inProgress),
+      awaitingClosure: toInt(workOrders.awaitingClosure),
+      completed: toInt(workOrders.completed),
+      cancelled: toInt(workOrders.cancelled),
+    },
+    checklistsLast30Days: {
+      total: toInt(checklists.total),
+      ok: toInt(checklists.ok),
+      warning: toInt(checklists.warning),
+      ng: toInt(checklists.ng),
+    },
+    pendingApprovals: toInt(pendingApprovals.count),
+    digitalAssets: {
+      total: toInt(digitalAssets.total),
+      approved: toInt(digitalAssets.approved),
+      pending: toInt(digitalAssets.pending),
+      draft: toInt(digitalAssets.draft),
+    },
   });
 });
 
@@ -291,14 +317,15 @@ export const topFaultyAssets = asyncHandler(async (req, res) => {
     SELECT
       cr.AssetID       AS assetId,
       a.AssetName      AS assetName,
-      a.Location       AS location,
+      l.LocationName   AS location,
       SUM(cr.OverallStatus = 'NG')      AS ngCount,
       SUM(cr.OverallStatus = 'WARNING') AS warningCount,
       COUNT(*)                          AS totalChecks
     FROM ChecklistResults cr
     JOIN Assets a ON cr.AssetID = a.AssetID
+    LEFT JOIN Locations l ON l.LocationID = a.LocationID
     WHERE cr.CheckTime >= DATE_SUB(NOW(), INTERVAL 90 DAY)
-    GROUP BY cr.AssetID, a.AssetName, a.Location
+    GROUP BY cr.AssetID, a.AssetName, l.LocationName
     ORDER BY ngCount DESC, warningCount DESC
     LIMIT ?
   `,

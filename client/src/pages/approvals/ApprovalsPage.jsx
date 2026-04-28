@@ -470,21 +470,8 @@ export function ApprovalsPage() {
           Phê duyệt &amp; xử lý
         </h1>
         <p className="text-sm text-gray-600 mt-1 max-w-3xl">
-          Xem đủ thông tin từng yêu cầu (phiếu việc, lịch bảo trì, tài liệu)
-          trước khi duyệt, từ chối hoặc yêu cầu chỉnh sửa. Danh sách chỉ hiện
-          các bước thuộc chức danh của bạn trong mẫu luồng.
-        </p>
-        <p className="text-sm text-gray-700 mt-3 pt-3 border-t border-amber-100/80 leading-relaxed">
-          <strong>Duyệt</strong> và <strong>phân công</strong> là hai việc khác
-          nhau: duyệt chuyển phiếu sang <em>Chờ thực hiện</em> (hoặc bước tiếp
-          theo nếu đa cấp). Phân công = gán KTV hiện trường / Chuyên viên KTS —
-          có thể <strong>làm ngay khi duyệt bước cuối</strong> (ô bên dưới) hoặc{" "}
-          <strong>để sau</strong> tại Chi tiết phiếu.{" "}
-          <strong>Phiếu WO khẩn 2 bước</strong> (ưu tiên Khẩn cấp, hoặc sự cố
-          khắc phục mức Cao): bước 1 Trưởng ca → bước 2 Trưởng phòng xác nhận;
-          Trưởng phòng có thể <strong>chọn lại người phân công</strong> khi
-          duyệt cuối. Các phiếu thường chỉ cần <strong>một bước</strong> (Trưởng
-          ca).
+          Xem thông tin chi tiết từng yêu cầu (phiếu việc, lịch bảo trì, tài
+          liệu) trước khi duyệt, từ chối hoặc yêu cầu chỉnh sửa.
         </p>
       </div>
 

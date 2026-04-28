@@ -12,9 +12,10 @@ import { Input, Select } from '../../components/ui/Input.jsx';
 import { Pagination } from '../../components/ui/Pagination.jsx';
 import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
-import { MessageSquare, FileText, ExternalLink } from 'lucide-react';
+import { MessageSquare, FileText, ExternalLink, FileSpreadsheet } from 'lucide-react';
 import { fDateTime } from '../../utils/format.js';
 import { documentFilePublicUrl } from '../../utils/documentUrl.js';
+import { exportRowsToExcel } from '../../utils/excelExport.js';
 import toast from 'react-hot-toast';
 
 const FILE_BASE = import.meta.env.VITE_API_BASE;
@@ -94,6 +95,29 @@ export function DocumentFeedbackInboxPage() {
 
   const fileUrl = (filePath) => documentFilePublicUrl(filePath, FILE_BASE);
 
+  const handleExportExcel = () => {
+    const ok = exportRowsToExcel({
+      rows: items.map((row) => ({
+        'ID phản hồi': row.feedbackId,
+        'ID tài liệu': row.digitalAssetId ?? '',
+        'Tài liệu': row.fileName ?? '',
+        'Người góp ý': row.authorName ?? '',
+        'Nội dung': row.body ?? '',
+        'Trạng thái phản hồi': STATUS_LABEL[row.status] ?? row.status ?? '',
+        'Trạng thái tài liệu': row.documentStatus ?? '',
+        'Ghi chú kỹ thuật': row.reviewNote ?? '',
+        'Thời gian gửi': fDateTime(row.createdAt) ?? '',
+      })),
+      sheetName: 'Phan hoi tai lieu',
+      fileName: `phan-hoi-tai-lieu-trang-${page}.xlsx`,
+    });
+    if (!ok) {
+      toast.error('Không có dữ liệu để xuất Excel');
+      return;
+    }
+    toast.success('Đã xuất Excel phản hồi tài liệu');
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -106,12 +130,27 @@ export function DocumentFeedbackInboxPage() {
             Tiếp nhận góp ý từ KTV hiện trường, Trưởng ca, Trưởng phòng, Admin, Ban GĐ — cập nhật trạng thái và ghi chú xử lý.
           </p>
         </div>
-        <Link
-          to="/documents"
-          className="text-sm font-semibold text-blue-600 hover:text-blue-800"
-        >
-          ← Về kho tài liệu
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleExportExcel}
+            disabled={loading || items.length === 0}
+            title={
+              items.length === 0
+                ? 'Không có dữ liệu để xuất'
+                : 'Xuất Excel theo danh sách đang hiển thị'
+            }
+          >
+            <FileSpreadsheet size={15} /> Xuất Excel
+          </Button>
+          <Link
+            to="/documents"
+            className="text-sm font-semibold text-blue-600 hover:text-blue-800"
+          >
+            ← Về kho tài liệu
+          </Link>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">

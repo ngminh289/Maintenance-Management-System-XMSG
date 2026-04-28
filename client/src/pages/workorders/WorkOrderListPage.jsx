@@ -13,6 +13,7 @@ import {
   Calendar,
   AlertCircle,
   RotateCcw,
+  FileSpreadsheet,
 } from "lucide-react";
 import { workOrderApi } from "../../api/workOrder.api.js";
 import { assetApi } from "../../api/asset.api.js";
@@ -35,16 +36,46 @@ import {
 import { WorkOrderForm } from "./WorkOrderForm.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { canDo } from "../../utils/rbac.js";
+import { exportRowsToExcel } from "../../utils/excelExport.js";
 import toast from "react-hot-toast";
 
 const STATUS_TABS = [
-  { key: "", label: "Tất cả" },
-  { key: "PENDING_APPROVAL", label: "Chờ duyệt" },
-  { key: "WAITING", label: "Chờ TH" },
-  { key: "IN_PROGRESS", label: "Đang TH" },
-  { key: "AWAITING_CLOSURE", label: "Chờ NT" },
-  { key: "COMPLETED", label: "Hoàn thành" },
-  { key: "CANCELLED", label: "Đã hủy" },
+  {
+    key: "",
+    label: "Tất cả",
+    color:
+      "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+  },
+  {
+    key: "PENDING_APPROVAL",
+    label: "Chờ duyệt",
+    color: "bg-yellow-50 border-yellow-200 text-yellow-800",
+  },
+  {
+    key: "WAITING",
+    label: "Chờ thực hiện",
+    color: "bg-blue-50 border-blue-200 text-blue-800",
+  },
+  {
+    key: "IN_PROGRESS",
+    label: "Đang thực hiện",
+    color: "bg-indigo-50 border-indigo-200 text-indigo-800",
+  },
+  {
+    key: "AWAITING_CLOSURE",
+    label: "Chờ nghiệm thu",
+    color: "bg-violet-50 border-violet-200 text-violet-900",
+  },
+  {
+    key: "COMPLETED",
+    label: "Hoàn thành",
+    color: "bg-green-50 border-green-200 text-green-800",
+  },
+  {
+    key: "CANCELLED",
+    label: "Đã hủy",
+    color: "bg-gray-50 border-gray-200 text-gray-800",
+  },
 ];
 
 function isTruthyDbFlag(v) {
@@ -100,7 +131,17 @@ export function WorkOrderListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, status, priority, woSource, assetId, locationId, resourceType, period, q]);
+  }, [
+    page,
+    status,
+    priority,
+    woSource,
+    assetId,
+    locationId,
+    resourceType,
+    period,
+    q,
+  ]);
 
   useEffect(() => {
     assetApi
@@ -116,6 +157,32 @@ export function WorkOrderListPage() {
     load();
   }, [load]);
 
+  const handleExportExcel = () => {
+    const ok = exportRowsToExcel({
+      rows: orders.map((wo) => ({
+        "Mã phiếu việc": `WO-${String(wo.woId ?? "").padStart(4, "0")}`,
+        "ID phiếu": wo.woId,
+        "Tài sản": wo.assetName ?? "",
+        "Vị trí": wo.locationName ?? "",
+        "Trạng thái": WO_STATUS_LABEL[wo.status] ?? wo.status ?? "",
+        "Ưu tiên": WO_PRIORITY_LABEL[wo.priority] ?? wo.priority ?? "",
+        "Nguồn tạo": wo.woSource ?? "",
+        "Mô tả": wo.description ?? "",
+        "Ngày kế hoạch": fDate(wo.plannedDate) ?? "",
+        "Ngày hoàn tất": fDate(wo.actualDate) ?? "",
+        "Giờ ước tính": wo.estimatedHours ?? "",
+        "Giờ thực tế": wo.actualHours ?? "",
+      })),
+      sheetName: "Phieu viec",
+      fileName: `phieu-viec-trang-${page}.xlsx`,
+    });
+    if (!ok) {
+      toast.error("Không có dữ liệu để xuất Excel");
+      return;
+    }
+    toast.success("Đã xuất Excel danh sách phiếu việc");
+  };
+
   return (
     <div className="space-y-5 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
@@ -123,16 +190,45 @@ export function WorkOrderListPage() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
             Phiếu việc
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            <span className="text-amber-700 font-medium">YC sửa</span> = giám sát yêu cầu chỉnh sửa — mở phiếu và{" "}
-            <span className="font-medium text-slate-700">gửi lại duyệt</span>.
-            {" "}
-            <span className="text-amber-600 font-medium">Chờ duyệt</span> = đang có bước phê duyệt PENDING.
-          </p>
+          {/* <p className="text-sm text-slate-500 mt-1">
+            <span className="text-amber-700 font-medium">YC sửa</span> = giám
+            sát yêu cầu chỉnh sửa — mở phiếu và{" "}
+            <span className="font-medium text-slate-700">gửi lại duyệt</span>.{" "}
+            <span className="text-amber-600 font-medium">Chờ duyệt</span> = đang
+            có bước phê duyệt PENDING.
+          </p> */}
         </div>
         {canDo(user, "WORK_ORDER:CREATE") && (
-          <Button onClick={() => setCreateOpen(true)} className="shrink-0">
-            <Plus size={16} /> Tạo phiếu
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={handleExportExcel}
+              disabled={loading || orders.length === 0}
+              title={
+                orders.length === 0
+                  ? "Không có dữ liệu để xuất"
+                  : "Xuất Excel theo danh sách đang hiển thị"
+              }
+            >
+              <FileSpreadsheet size={15} /> Xuất Excel
+            </Button>
+            <Button onClick={() => setCreateOpen(true)} className="shrink-0">
+              <Plus size={16} /> Tạo phiếu
+            </Button>
+          </div>
+        )}
+        {!canDo(user, "WORK_ORDER:CREATE") && (
+          <Button
+            variant="secondary"
+            onClick={handleExportExcel}
+            disabled={loading || orders.length === 0}
+            title={
+              orders.length === 0
+                ? "Không có dữ liệu để xuất"
+                : "Xuất Excel theo danh sách đang hiển thị"
+            }
+          >
+            <FileSpreadsheet size={15} /> Xuất Excel
           </Button>
         )}
       </div>
@@ -151,7 +247,7 @@ export function WorkOrderListPage() {
                 ${
                   status === tab.key
                     ? "bg-slate-900 text-white border-slate-900 shadow-md"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    : tab.color
                 }`}
             >
               {tab.label}
@@ -224,7 +320,9 @@ export function WorkOrderListPage() {
           <option value="">Tất cả khu vực</option>
           {locations.map((l) => (
             <option key={l.locationId} value={l.locationId}>
-              {l.parentLocationName ? `${l.parentLocationName} › ${l.locationName}` : l.locationName}
+              {l.parentLocationName
+                ? `${l.parentLocationName} › ${l.locationName}`
+                : l.locationName}
             </option>
           ))}
         </Select>
@@ -305,9 +403,9 @@ export function WorkOrderListPage() {
                             YC sửa
                           </Badge>
                         )}
-                        {wo.status === "PENDING_APPROVAL" && pending && !resubmit && (
-                          <Badge color="yellow">Chờ duyệt</Badge>
-                        )}
+                        {wo.status === "PENDING_APPROVAL" &&
+                          pending &&
+                          !resubmit && <Badge color="yellow">Chờ duyệt</Badge>}
                         <Badge color={WO_STATUS_COLOR[wo.status] ?? "gray"}>
                           {stLabel}
                         </Badge>
@@ -327,33 +425,52 @@ export function WorkOrderListPage() {
                       </div>
                       <p className="text-sm text-slate-700 leading-snug line-clamp-2">
                         {wo.description?.trim() || (
-                          <span className="text-slate-400 italic">Không có mô tả</span>
+                          <span className="text-slate-400 italic">
+                            Không có mô tả
+                          </span>
                         )}
                       </p>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1 font-medium text-slate-600">
-                          <Wrench size={12} className="text-slate-400 shrink-0" />
+                          <Wrench
+                            size={12}
+                            className="text-slate-400 shrink-0"
+                          />
                           {wo.assetName}
                         </span>
                         <span className="inline-flex items-center gap-1">
-                          <MapPin size={12} className="text-slate-400 shrink-0" />
+                          <MapPin
+                            size={12}
+                            className="text-slate-400 shrink-0"
+                          />
                           {wo.locationName ?? "—"}
                         </span>
                         <span className="inline-flex items-center gap-1">
-                          <Calendar size={12} className="text-slate-400 shrink-0" />
+                          <Calendar
+                            size={12}
+                            className="text-slate-400 shrink-0"
+                          />
                           {fDate(wo.plannedDate)}
                         </span>
-                        {wo.actualDate && <span>Hoàn tất: {fDate(wo.actualDate)}</span>}
-                        {wo.estimatedHours != null && Number(wo.estimatedHours) > 0 && (
-                          <span>Ước tính ~{wo.estimatedHours}h</span>
+                        {wo.actualDate && (
+                          <span>Hoàn tất: {fDate(wo.actualDate)}</span>
                         )}
-                        {wo.actualHours != null && Number(wo.actualHours) > 0 && (
-                          <span>Thực tế {wo.actualHours}h</span>
-                        )}
+                        {wo.estimatedHours != null &&
+                          Number(wo.estimatedHours) > 0 && (
+                            <span>Ước tính ~{wo.estimatedHours}h</span>
+                          )}
+                        {wo.actualHours != null &&
+                          Number(wo.actualHours) > 0 && (
+                            <span>Thực tế {wo.actualHours}h</span>
+                          )}
                       </div>
                       {resubmit && (
                         <p className="text-xs text-amber-800/90 flex items-center gap-1.5">
-                          <AlertCircle size={14} className="shrink-0" aria-hidden />
+                          <AlertCircle
+                            size={14}
+                            className="shrink-0"
+                            aria-hidden
+                          />
                           <span>Chi tiết → sửa (nếu cần) → gửi lại duyệt.</span>
                         </p>
                       )}

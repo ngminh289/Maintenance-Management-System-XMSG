@@ -101,7 +101,10 @@ export function LoginPage() {
             )}
 
             <div className="flex justify-end">
-              <Link to="/forgot-password" className="text-xs text-blue-600 hover:underline font-medium">
+              <Link
+                to="/forgot-password"
+                className="text-xs text-blue-600 hover:underline font-medium"
+              >
                 Quên mật khẩu?
               </Link>
             </div>
@@ -117,11 +120,12 @@ export function LoginPage() {
         </div>
 
         <p className="text-center text-sm text-gray-500 mt-4">
-          Cần tài khoản? Liên hệ <strong>Admin</strong> để được cấp quyền truy cập.
+          Cần tài khoản? Liên hệ <strong>Admin</strong> để được cấp quyền truy
+          cập.
         </p>
 
         <p className="text-center text-xs text-gray-400 mt-5">
-          © 2025 Nhà máy Xi măng Sông Gianh · Phiên bản 1.0
+          © 2026 Nhà máy Xi măng Sông Gianh · Phiên bản 1.0
         </p>
       </div>
     </div>

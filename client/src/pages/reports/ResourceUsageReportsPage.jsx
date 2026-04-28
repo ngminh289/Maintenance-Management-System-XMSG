@@ -4,35 +4,69 @@
  * Dữ liệu: ChecklistResults, AssetQrAccessLogs, DigitalAssetViewLogs, DigitalAssetFeedback, AssetVersions.
  * Liên quan: api/stats.api.js, rbac (report-resource-usage).
  */
-import { useEffect, useState, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 import {
-  QrCode, FileText, Flame, History, MessageCircle, Inbox, ArrowLeft, Printer,
-} from 'lucide-react';
-import { statsApi } from '../../api/stats.api.js';
-import { Card } from '../../components/ui/Card.jsx';
-import { Badge } from '../../components/ui/Badge.jsx';
-import { PageLoader } from '../../components/ui/Spinner.jsx';
-import { fDateTime } from '../../utils/format.js';
-import toast from 'react-hot-toast';
+  QrCode,
+  FileText,
+  Flame,
+  History,
+  MessageCircle,
+  Inbox,
+  ArrowLeft,
+  Printer,
+} from "lucide-react";
+import { statsApi } from "../../api/stats.api.js";
+import { Card } from "../../components/ui/Card.jsx";
+import { Badge } from "../../components/ui/Badge.jsx";
+import { PageLoader } from "../../components/ui/Spinner.jsx";
+import { fDateTime } from "../../utils/format.js";
+import toast from "react-hot-toast";
 
 const TABS = [
-  { key: 'qr',         label: 'QR & phiếu checklist',       short: 'QR',   icon: QrCode,       },
-  { key: 'docfreq',    label: 'Tần suất mở tài liệu',         short: 'Mở file', icon: FileText,  },
-  { key: 'dochot',     label: 'Tài liệu nhiều lượt xem',     short: 'Hot',  icon: Flame,       },
-  { key: 'stale',      label: 'Tài liệu 12–24 tháng (lỗi thời)', short: 'Lỗi thời', icon: History },
-  { key: 'feedback',   label: 'Góp ý / phiên bản (kỳ)',      short: 'Tỷ lệ',  icon: MessageCircle },
-  { key: 'pending',    label: 'Góp ý chưa có bản mới',        short: 'Mở',   icon: Inbox,      },
+  { key: "qr", label: "QR & phiếu checklist", short: "QR", icon: QrCode },
+  {
+    key: "docfreq",
+    label: "Tần suất mở tài liệu",
+    short: "Mở file",
+    icon: FileText,
+  },
+  {
+    key: "dochot",
+    label: "Tài liệu nhiều lượt xem",
+    short: "Hot",
+    icon: Flame,
+  },
+  {
+    key: "stale",
+    label: "Tài liệu 12–24 tháng (lỗi thời)",
+    short: "Lỗi thời",
+    icon: History,
+  },
+  {
+    key: "feedback",
+    label: "Góp ý / phiên bản (kỳ)",
+    short: "Tỷ lệ",
+    icon: MessageCircle,
+  },
+  { key: "pending", label: "Góp ý chưa có bản mới", short: "Mở", icon: Inbox },
 ];
 
 export function ResourceUsageReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab');
-  const activeTab = TABS.some((t) => t.key === tabParam) ? tabParam : 'qr';
+  const tabParam = searchParams.get("tab");
+  const activeTab = TABS.some((t) => t.key === tabParam) ? tabParam : "qr";
 
   const [months, setMonths] = useState(6);
   const setActiveTab = (key) => {
@@ -41,13 +75,13 @@ export function ResourceUsageReportsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const urlTab = searchParams.get('tab');
+  const urlTab = searchParams.get("tab");
   useEffect(() => {
-    if (urlTab === 'explain') {
+    if (urlTab === "explain") {
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
-          p.set('tab', 'qr');
+          p.set("tab", "qr");
           return p;
         },
         { replace: true },
@@ -56,7 +90,7 @@ export function ResourceUsageReportsPage() {
   }, [urlTab, setSearchParams]);
 
   useEffect(() => {
-    const m = searchParams.get('months');
+    const m = searchParams.get("months");
     if (m) {
       const n = Math.min(24, Math.max(1, parseInt(m, 10) || 6));
       if (n !== months) setMonths(n);
@@ -74,15 +108,17 @@ export function ResourceUsageReportsPage() {
         if (!c) {
           setData(null);
           const msg =
-            err?.response?.data?.message
-            || 'Không tải được dữ liệu báo cáo. Vui lòng thử lại hoặc liên hệ quản trị.';
+            err?.response?.data?.message ||
+            "Không tải được dữ liệu báo cáo. Vui lòng thử lại hoặc liên hệ quản trị.";
           toast.error(msg);
         }
       } finally {
         if (!c) setLoading(false);
       }
     })();
-    return () => { c = true; };
+    return () => {
+      c = true;
+    };
   }, [months]);
 
   const onMonthsChange = (n) => {
@@ -90,23 +126,31 @@ export function ResourceUsageReportsPage() {
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev);
-        p.set('months', String(n));
-        p.set('tab', prev.get('tab') || activeTab);
+        p.set("months", String(n));
+        p.set("tab", prev.get("tab") || activeTab);
         return p;
       },
       { replace: true },
     );
   };
 
-  const qrByDay = useMemo(() => (data?.qrFieldUsage?.byDay ?? []).map((r) => ({
-    day: r.dayKey,
-    count: Number(r.accessCount),
-  })), [data]);
+  const qrByDay = useMemo(
+    () =>
+      (data?.qrFieldUsage?.byDay ?? []).map((r) => ({
+        day: r.dayKey,
+        count: Number(r.accessCount),
+      })),
+    [data],
+  );
 
-  const docByDay = useMemo(() => (data?.documentAccess?.byDay ?? []).map((r) => ({
-    day: r.dayKey,
-    count: Number(r.viewCount),
-  })), [data]);
+  const docByDay = useMemo(
+    () =>
+      (data?.documentAccess?.byDay ?? []).map((r) => ({
+        day: r.dayKey,
+        count: Number(r.viewCount),
+      })),
+    [data],
+  );
 
   if (loading && !data) return <PageLoader />;
 
@@ -128,14 +172,19 @@ export function ResourceUsageReportsPage() {
               <ArrowLeft size={18} />
             </Link>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Báo cáo sử dụng tài nguyên</h1>
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+                Báo cáo sử dụng tài nguyên
+              </h1>
               <p className="text-sm text-indigo-100/90 mt-1 max-w-xl">
-                QR, mở tài liệu, góp ý tài sản theo dữ liệu vận hành — cập nhật theo lượt chuyên viên tại hiện trường và tài khoản có quyền.
+                QR, mở tài liệu, góp ý tài sản theo dữ liệu vận hành — cập nhật
+                theo lượt chuyên viên tại hiện trường và tài khoản có quyền.
               </p>
             </div>
           </div>
           <div className="flex items-center flex-wrap gap-2 sm:justify-end">
-            <span className="text-xs sm:text-sm text-indigo-200/90">Kỳ thống kê</span>
+            <span className="text-xs sm:text-sm text-indigo-200/90">
+              Kỳ thống kê
+            </span>
             <select
               value={months}
               onChange={(e) => onMonthsChange(Number(e.target.value))}
@@ -168,9 +217,11 @@ export function ResourceUsageReportsPage() {
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap
               transition-all duration-200
-              ${activeTab === key
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30 scale-[1.01]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}`}
+              ${
+                activeTab === key
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/30 scale-[1.01]"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
           >
             <Icon size={16} className="flex-shrink-0 opacity-90" />
             <span className="hidden sm:inline">{label}</span>
@@ -185,15 +236,18 @@ export function ResourceUsageReportsPage() {
         </p>
       )}
 
-      {data && activeTab === 'qr' && (
+      {data && activeTab === "qr" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card title="Lượt mở màn hình QR (getQRInfo)">
-              <p className="text-3xl font-bold text-indigo-600">{data.qrFieldUsage?.totalOpens ?? 0}</p>
-              <p className="text-xs text-gray-500 mt-1">Bảng AssetQrAccessLogs — mỗi lần tải thông tin thiết bị qua QR.</p>
+              <p className="text-3xl font-bold text-indigo-600">
+                {data.qrFieldUsage?.totalOpens ?? 0}
+              </p>
             </Card>
             <Card title="Phiếu checklist đã nộp (trong kỳ)">
-              <p className="text-sm text-gray-600">Xếp hạng theo tài sản + người nộp (số bản ghi ChecklistResults).</p>
+              <p className="text-sm text-gray-600">
+                Xếp hạng theo tài sản và người nộp bản ghi Checklist.{" "}
+              </p>
             </Card>
           </div>
           {qrByDay.length > 0 && (
@@ -204,7 +258,12 @@ export function ResourceUsageReportsPage() {
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                   <Tooltip />
-                  <Line type="monotone" dataKey="count" stroke="#6366f1" name="Lượt mở QR" />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    stroke="#6366f1"
+                    name="Lượt mở QR"
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </Card>
@@ -215,17 +274,28 @@ export function ResourceUsageReportsPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      {['Tài sản', 'Người nộp', 'Số phiếu'].map((h) => (
-                        <th key={h} className="text-left px-3 py-2 text-xs font-bold text-gray-700">{h}</th>
+                      {["Tài sản", "Người nộp", "Số phiếu"].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left px-3 py-2 text-xs font-bold text-gray-700"
+                        >
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {data.checklistSubmissions.byAssetChecker.map((r, i) => (
                       <tr key={i} className="hover:bg-gray-50/80">
-                        <td className="px-3 py-2 font-medium text-gray-900">{r.assetName}</td>
-                        <td className="px-3 py-2 text-gray-700">{r.checkerName}</td>
-                        <td className="px-3 py-2"><Badge color="indigo">{r.submissionCount}</Badge></td>
+                        <td className="px-3 py-2 font-medium text-gray-900">
+                          {r.assetName}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {r.checkerName}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge color="indigo">{r.submissionCount}</Badge>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -237,7 +307,10 @@ export function ResourceUsageReportsPage() {
             <Card title="Thiết bị nhiều lượt mở QR">
               <div className="space-y-1.5">
                 {data.qrFieldUsage.topAssets.map((a) => (
-                  <div key={a.assetId} className="flex justify-between py-1 border-b border-gray-100 last:border-0">
+                  <div
+                    key={a.assetId}
+                    className="flex justify-between py-1 border-b border-gray-100 last:border-0"
+                  >
                     <span className="text-sm text-gray-800">{a.assetName}</span>
                     <Badge color="blue">{a.openCount}</Badge>
                   </div>
@@ -248,11 +321,12 @@ export function ResourceUsageReportsPage() {
         </div>
       )}
 
-      {data && activeTab === 'docfreq' && (
+      {data && activeTab === "docfreq" && (
         <div className="space-y-4">
-          <Card title="Tổng lượt mở file từ ứng dụng (log client)">
-            <p className="text-3xl font-bold text-emerald-600">{data.documentAccess?.totalViews ?? 0}</p>
-            <p className="text-xs text-gray-500 mt-1">Bảng DigitalAssetViewLogs — bấm mở file trên màn hình checklist.</p>
+          <Card title="Tổng lượt mở file từ ứng dụng ">
+            <p className="text-3xl font-bold text-emerald-600">
+              {data.documentAccess?.totalViews ?? 0}
+            </p>
           </Card>
           {docByDay.length > 0 && (
             <Card title="Lượt mở tài liệu theo ngày">
@@ -262,7 +336,12 @@ export function ResourceUsageReportsPage() {
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                   <Tooltip />
-                  <Bar dataKey="count" fill="#10b981" name="Lượt mở" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="count"
+                    fill="#10b981"
+                    name="Lượt mở"
+                    radius={[4, 4, 0, 0]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </Card>
@@ -270,127 +349,189 @@ export function ResourceUsageReportsPage() {
         </div>
       )}
 
-      {data && activeTab === 'dochot' && (
+      {data && activeTab === "dochot" && (
         <div className="space-y-4">
           <Card title="Tài liệu được mở nhiều nhất (kỳ đã chọn)">
-            {data.documentHot?.length === 0
-              ? <p className="text-sm text-gray-400">Chưa có log mở file trong kỳ.</p>
-              : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        {['Tài liệu', 'Tài sản (nếu có)', 'Lượt mở'].map((h) => (
-                          <th key={h} className="text-left px-3 py-2 text-xs font-bold text-gray-700">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data.documentHot.map((d) => (
-                        <tr key={d.digitalAssetId} className="hover:bg-amber-50/40">
-                          <td className="px-3 py-2 font-medium">{d.fileName}</td>
-                          <td className="px-3 py-2 text-gray-600">{d.assetName}</td>
-                          <td className="px-3 py-2"><Badge color="amber">{d.viewCount}</Badge></td>
-                        </tr>
+            {data.documentHot?.length === 0 ? (
+              <p className="text-sm text-gray-400">
+                Chưa có log mở file trong kỳ.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      {["Tài liệu", "Tài sản (nếu có)", "Lượt mở"].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left px-3 py-2 text-xs font-bold text-gray-700"
+                        >
+                          {h}
+                        </th>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.documentHot.map((d) => (
+                      <tr
+                        key={d.digitalAssetId}
+                        className="hover:bg-amber-50/40"
+                      >
+                        <td className="px-3 py-2 font-medium">{d.fileName}</td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {d.assetName}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge color="amber">{d.viewCount}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
         </div>
       )}
 
-      {data && activeTab === 'stale' && (
+      {data && activeTab === "stale" && (
         <div className="space-y-4">
           <p className="text-sm text-slate-600 bg-slate-50/80 border border-slate-100 rounded-xl px-4 py-2.5">
-            Tiêu chí: tài liệu <strong>đã duyệt</strong>, tuổi upload từ <strong>12–24 tháng</strong>, và chưa có thay đổi phiên bản
-            nào trong <strong>12 tháng gần</strong> (dựa trên <code className="text-xs bg-white px-1 rounded">MAX(ChangeDate)</code> ở AssetVersions).
+            Tiêu chí: tài liệu đã duyệt, tuổi upload từ 12–24 tháng, và chưa có
+            thay đổi phiên bản nào trong 12 tháng gần đây
           </p>
           <Card title="Danh sách tài liệu cần ưu tiên rà soát / phiên bản mới">
-            {data.staleDocuments?.length === 0
-              ? <p className="text-sm text-emerald-600">Không có tài liệu khớp tiêu chí lỗi thời trong bộ lọc này.</p>
-              : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        {['Tài liệu', 'v.', 'Upload', 'Ngày từ upload', 'Lần đổi pb gần nhất'].map((h) => (
-                          <th key={h} className="text-left px-3 py-2 text-xs font-bold text-gray-700 whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data.staleDocuments.map((d) => (
-                        <tr key={d.digitalAssetId}>
-                          <td className="px-3 py-2 font-medium max-w-[200px] truncate">{d.fileName}</td>
-                          <td className="px-3 py-2">v{d.currentVersion}</td>
-                          <td className="px-3 py-2 text-gray-700">{fDateTime(d.uploadDate)}</td>
-                          <td className="px-3 py-2">{d.daysSinceUpload} ngày</td>
-                          <td className="px-3 py-2 text-gray-600">{d.lastVersionChangeAt ? fDateTime(d.lastVersionChangeAt) : '—'}</td>
-                        </tr>
+            {data.staleDocuments?.length === 0 ? (
+              <p className="text-sm text-emerald-600">
+                Không có tài liệu khớp tiêu chí lỗi thời trong bộ lọc này.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      {[
+                        "Tài liệu",
+                        "v.",
+                        "Upload",
+                        "Ngày từ upload",
+                        "Lần đổi pb gần nhất",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left px-3 py-2 text-xs font-bold text-gray-700 whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.staleDocuments.map((d) => (
+                      <tr key={d.digitalAssetId}>
+                        <td className="px-3 py-2 font-medium max-w-[200px] truncate">
+                          {d.fileName}
+                        </td>
+                        <td className="px-3 py-2">v{d.currentVersion}</td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {fDateTime(d.uploadDate)}
+                        </td>
+                        <td className="px-3 py-2">{d.daysSinceUpload} ngày</td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {d.lastVersionChangeAt
+                            ? fDateTime(d.lastVersionChangeAt)
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
         </div>
       )}
 
-      {data && activeTab === 'feedback' && (
+      {data && activeTab === "feedback" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Card title="Góp ý tạo trong kỳ">
-              <p className="text-2xl font-bold text-gray-900">{data.feedbackImprovement?.feedbackInPeriod ?? 0}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {data.feedbackImprovement?.feedbackInPeriod ?? 0}
+              </p>
             </Card>
-            <Card title="Bản ghi AssetVersions tạo trong kỳ">
-              <p className="text-2xl font-bold text-gray-900">{data.feedbackImprovement?.versionAddsInPeriod ?? 0}</p>
+            <Card title="Số phiên bản tài liệu tạo trong kỳ">
+              <p className="text-2xl font-bold text-gray-900">
+                {data.feedbackImprovement?.versionAddsInPeriod ?? 0}
+              </p>
             </Card>
             <Card title="Tỷ lệ (góp ý / phiên bản)">
               <p className="text-2xl font-bold text-violet-600">
-                {data.feedbackImprovement?.ratio != null ? data.feedbackImprovement.ratio : '—'}
+                {data.feedbackImprovement?.ratio != null
+                  ? data.feedbackImprovement.ratio
+                  : "—"}
               </p>
               {data.feedbackImprovement?.ratio == null && (
-                <p className="text-xs text-amber-600 mt-1">Mẫu số = 0, không tính tỷ lệ.</p>
+                <p className="text-xs text-amber-600 mt-1">
+                  Chưa có tài liệu nào có phiên bản khác
+                </p>
               )}
             </Card>
           </div>
         </div>
       )}
 
-      {data && activeTab === 'pending' && (
+      {data && activeTab === "pending" && (
         <div className="space-y-4">
-          <Card title="Góp ý OPEN / IN_REVIEW, chưa có phiên bản tài liệu sau thời điểm góp ý">
-            {data.feedbackWithoutNewVersion?.length === 0
-              ? <p className="text-sm text-emerald-600">Không có bản ghi cần theo dõi.</p>
-              : (
-                <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b sticky top-0">
-                      <tr>
-                        {['Tài liệu', 'Trạng thái', 'Gửi lúc', 'Nội dung rút gọn'].map((h) => (
-                          <th key={h} className="text-left px-3 py-2 text-xs font-bold text-gray-700">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data.feedbackWithoutNewVersion.map((f) => (
-                        <tr key={f.feedbackId}>
-                          <td className="px-3 py-2 font-medium max-w-[180px] truncate">{f.fileName}</td>
-                          <td className="px-3 py-2"><Badge color="red">{f.status}</Badge></td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{fDateTime(f.createdAt)}</td>
-                          <td className="px-3 py-2 text-gray-700 line-clamp-2 max-w-md">{f.body}</td>
-                        </tr>
+          <Card title="Góp ý chưa làm / đang thực hiện, chưa có phiên bản tài liệu sau thời điểm góp ý. ">
+            {data.feedbackWithoutNewVersion?.length === 0 ? (
+              <p className="text-sm text-emerald-600">
+                Không có bản ghi cần theo dõi.
+              </p>
+            ) : (
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b sticky top-0">
+                    <tr>
+                      {[
+                        "Tài liệu",
+                        "Trạng thái",
+                        "Gửi lúc",
+                        "Nội dung rút gọn",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left px-3 py-2 text-xs font-bold text-gray-700"
+                        >
+                          {h}
+                        </th>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.feedbackWithoutNewVersion.map((f) => (
+                      <tr key={f.feedbackId}>
+                        <td className="px-3 py-2 font-medium max-w-[180px] truncate">
+                          {f.fileName}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge color="red">{f.status}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                          {fDateTime(f.createdAt)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 line-clamp-2 max-w-md">
+                          {f.body}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
         </div>
       )}
-
     </div>
   );
 }
