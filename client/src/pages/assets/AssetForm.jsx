@@ -13,6 +13,7 @@ import { assetTypeApi }      from '../../api/assetType.api.js';
 import { productionLineApi } from '../../api/productionLine.api.js';
 import { Button }   from '../../components/ui/Button.jsx';
 import { Input, Select, Textarea } from '../../components/ui/Input.jsx';
+import { toDateInputValue } from '../../utils/format.js';
 
 const STATUS_OPTIONS = [
   { value: 'AVAILABLE',      label: 'Hoạt động bình thường' },
@@ -59,10 +60,10 @@ export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuc
     model:             asset?.model              ?? '',
     yearOfManufacture: asset?.yearOfManufacture  ?? '',
     technicalSpecs:    asset?.technicalSpecs     ?? '',
-    purchaseDate:      asset?.purchaseDate        ? asset.purchaseDate.slice(0, 10)       : '',
-    commissionDate:    asset?.commissionDate      ? asset.commissionDate.slice(0, 10)     : '',
-    warrantyDate:      asset?.warrantyDate        ? asset.warrantyDate.slice(0, 10)       : '',
-    decommissionDate:  asset?.decommissionDate    ? asset.decommissionDate.slice(0, 10)   : '',
+    purchaseDate:      toDateInputValue(asset?.purchaseDate),
+    commissionDate:    toDateInputValue(asset?.commissionDate),
+    warrantyDate:      toDateInputValue(asset?.warrantyDate),
+    decommissionDate:  toDateInputValue(asset?.decommissionDate),
     description:       asset?.description        ?? '',
     productionLine:    asset?.productionLineId   ?? '',
   });

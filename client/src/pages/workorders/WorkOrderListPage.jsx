@@ -389,7 +389,6 @@ export function WorkOrderListPage() {
         size="lg"
       >
         <WorkOrderForm
-          assets={assets}
           onSuccess={() => {
             setCreateOpen(false);
             load();

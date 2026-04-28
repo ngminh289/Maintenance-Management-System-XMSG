@@ -106,7 +106,6 @@ export function WorkOrderDetailPage() {
   const [shutdownReason, setShutdownReason] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
   const [editWoOpen, setEditWoOpen] = useState(false);
-  const [woEditAssets, setWoEditAssets] = useState([]);
 
   const load = async () => {
     try {
@@ -219,14 +218,6 @@ export function WorkOrderDetailPage() {
       .then((r) => setApproveGroupMembers(r.data.data?.members ?? []))
       .catch(() => setApproveGroupMembers([]));
   }, [approveOpen, approveAssignMode, approveAssignGroup]);
-
-  useEffect(() => {
-    if (!editWoOpen) return;
-    assetApi
-      .getAll({ limit: 200 })
-      .then((r) => setWoEditAssets(r.data.data?.items ?? []))
-      .catch(() => setWoEditAssets([]));
-  }, [editWoOpen]);
 
   const handleResubmitApproval = async () => {
     if (!wo) return;
@@ -2074,7 +2065,6 @@ export function WorkOrderDetailPage() {
         {wo && (
           <WorkOrderForm
             wo={wo}
-            assets={woEditAssets}
             onSuccess={() => {
               setEditWoOpen(false);
               toast.success(

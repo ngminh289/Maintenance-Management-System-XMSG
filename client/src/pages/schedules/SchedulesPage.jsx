@@ -17,12 +17,11 @@ import {
 } from "lucide-react";
 import { scheduleApi } from "../../api/schedule.api.js";
 import { assetApi } from "../../api/asset.api.js";
-import { assetTypeApi } from "../../api/assetType.api.js";
 import { checklistApi } from "../../api/checklist.api.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
-import { Input, Select, Textarea } from "../../components/ui/Input.jsx";
+import { Select } from "../../components/ui/Input.jsx";
 import { Pagination } from "../../components/ui/Pagination.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
@@ -152,173 +151,6 @@ function DueDateChip({ nextDueDate, frequencyUnit, status }) {
   );
 }
 
-// ── Form component dùng chung cho cả Tạo và Sửa ────────────────────────────
-function ScheduleForm({ form, setF, patchForm, assets }) {
-  const isPredictive = form.scheduleKind === "predictive";
-
-  // Autofill PM từ DefaultPMValue/Unit của loại tài sản khi chọn tài sản
-  const handleAssetChange = async (assetId) => {
-    setF("assetId", assetId);
-    if (!assetId || isPredictive) return;
-    try {
-      const asset = assets.find((a) => String(a.assetId) === String(assetId));
-      if (!asset?.assetTypeId) return;
-      const res = await assetTypeApi.getById(asset.assetTypeId);
-      const t = res.data.data;
-      if (
-        t?.defaultPMValue &&
-        t?.defaultPMUnit &&
-        t.defaultPMUnit !== "HOURS"
-      ) {
-        patchForm({
-          frequencyValue: t.defaultPMValue,
-          frequencyUnit: t.defaultPMUnit,
-        });
-      }
-    } catch {
-      /* bỏ qua lỗi fetch, không block */
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <Input
-          label="Tên lịch *"
-          value={form.scheduleName ?? ""}
-          onChange={(e) => setF("scheduleName", e.target.value)}
-          placeholder="VD: PM máy lọc bụi tháng 1"
-        />
-        <Select
-          label="Tài sản *"
-          value={form.assetId ?? ""}
-          onChange={(e) => handleAssetChange(e.target.value)}
-        >
-          <option value="">— Chọn tài sản —</option>
-          {assets.map((a) => (
-            <option key={a.assetId} value={a.assetId}>
-              {a.assetName}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Kiểu lịch *"
-          value={form.scheduleKind ?? "periodic"}
-          onChange={(e) => {
-            const kind = e.target.value;
-            if (kind === "predictive") {
-              patchForm({
-                scheduleKind: "predictive",
-                maintenanceType: "PREDICTIVE",
-                frequencyUnit: "HOURS",
-                frequencyValue:
-                  form.frequencyUnit === "HOURS"
-                    ? Number(form.frequencyValue) || 720
-                    : 720,
-              });
-            } else {
-              const u =
-                form.frequencyUnit === "HOURS"
-                  ? "DAYS"
-                  : (form.frequencyUnit ?? "DAYS");
-              patchForm({
-                scheduleKind: "periodic",
-                maintenanceType: "PREVENTIVE",
-                frequencyUnit: u,
-                frequencyValue:
-                  form.frequencyUnit === "HOURS"
-                    ? 30
-                    : Number(form.frequencyValue) || 30,
-              });
-            }
-          }}
-        >
-          <option value="periodic">Định kỳ (ngày / tuần / tháng / năm)</option>
-          <option value="predictive">Dự báo (theo giờ chạy máy)</option>
-        </Select>
-        {isPredictive ? (
-          <Input
-            label="Ngưỡng giờ chạy (tích lũy) *"
-            type="number"
-            min={1}
-            value={form.frequencyValue ?? 720}
-            onChange={(e) => setF("frequencyValue", e.target.value)}
-          />
-        ) : (
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <Input
-                label="Tần suất *"
-                type="number"
-                min={1}
-                value={form.frequencyValue ?? 30}
-                onChange={(e) => setF("frequencyValue", e.target.value)}
-              />
-            </div>
-            <div className="flex-1">
-              <Select
-                label="Đơn vị *"
-                value={form.frequencyUnit ?? "DAYS"}
-                onChange={(e) => setF("frequencyUnit", e.target.value)}
-              >
-                <option value="DAYS">Ngày</option>
-                <option value="WEEKS">Tuần</option>
-                <option value="MONTHS">Tháng</option>
-                <option value="YEARS">Năm</option>
-              </Select>
-            </div>
-          </div>
-        )}
-        {isPredictive && (
-          <p className="text-sm text-gray-600 col-span-2">
-            Đơn vị: <strong>giờ chạy tích lũy</strong> — khi nhập đồng hồ máy
-            vượt ngưỡng, hệ thống tự tạo phiếu PM chờ duyệt (không dùng nút WO
-            trên dòng lịch).
-          </p>
-        )}
-        {!isPredictive && (
-          <p className="text-xs text-blue-600 col-span-2 -mt-1">
-            💡 Chọn tài sản sẽ tự gợi ý tần suất từ loại thiết bị (có thể sửa
-            lại).
-          </p>
-        )}
-        <Input
-          label="Ngày bắt đầu *"
-          type="date"
-          value={form.startDate ?? ""}
-          onChange={(e) => setF("startDate", e.target.value)}
-        />
-        <Input
-          label="Ngày kết thúc"
-          type="date"
-          value={form.endDate ?? ""}
-          onChange={(e) => setF("endDate", e.target.value)}
-        />
-      </div>
-      <Textarea
-        label="Mô tả công việc *"
-        value={form.description ?? ""}
-        onChange={(e) => setF("description", e.target.value)}
-        placeholder="Mô tả nội dung bảo trì cần thực hiện..."
-      />
-      {!isPredictive && form.startDate && (
-        <p className="text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
-          Ngày đến hạn đầu tiên: <strong>{fDate(form.startDate)}</strong> +{" "}
-          {form.frequencyValue}{" "}
-          {UNIT_LABEL[form.frequencyUnit] ?? form.frequencyUnit}. Sau khi
-          tạo/hoàn thành WO, hệ thống tự tính chu kỳ tiếp theo.
-        </p>
-      )}
-      {isPredictive && (
-        <p className="text-xs text-indigo-700 bg-indigo-50 rounded-lg px-3 py-2">
-          Lịch dự báo theo giờ — dựa trên bộ đếm tài sản và trung bình giờ/ngày;
-          không tạo phiếu từ nút WO trên lịch.
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Main component ──────────────────────────────────────────────────────────
 export function SchedulesPage() {
   const { user } = useAuth();
@@ -415,22 +247,6 @@ export function SchedulesPage() {
   const patchForm = useCallback((patch) => {
     setForm((p) => ({ ...p, ...patch }));
   }, []);
-
-  const validateForm = (f) => {
-    if (!f.assetId || !f.scheduleName?.trim() || !f.startDate) {
-      toast.error("Vui lòng điền đầy đủ: Tài sản, Tên lịch, Ngày bắt đầu");
-      return false;
-    }
-    if (!f.description?.trim()) {
-      toast.error("Vui lòng nhập mô tả công việc");
-      return false;
-    }
-    if (!f.frequencyValue || Number(f.frequencyValue) < 1) {
-      toast.error("Tần suất hoặc ngưỡng giờ phải ≥ 1");
-      return false;
-    }
-    return true;
-  };
 
   const handleCreate = async (e) => {
     e.preventDefault();

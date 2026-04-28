@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Input, Select, Textarea } from '../ui/Input.jsx';
 import { fDate, todayDateInput, toDateInputValue } from '../../utils/format.js';
+import { AssetIdSearchPicker } from '../AssetIdSearchPicker.jsx';
+import { assetApi } from '../../api/asset.api.js';
 import { assetTypeApi } from '../../api/assetType.api.js';
 
 export const EMPTY_SCHEDULE_FORM = {
@@ -104,23 +106,51 @@ export function ScheduleFormFields({
   form,
   setF,
   patchForm,
-  assets,
+  assets = [],
   checklistTemplates = [],
   fixedAsset = null,
 }) {
   const isPredictive = form.scheduleKind === 'predictive';
+  const [selectedAssetMeta, setSelectedAssetMeta] = useState(fixedAsset ?? null);
 
   const visibleAssets = useMemo(() => {
     if (fixedAsset) return [fixedAsset];
     return assets;
   }, [assets, fixedAsset]);
 
-  const selectedAssetTypeId = useMemo(() => {
-    const selectedAsset = visibleAssets.find(
+  useEffect(() => {
+    if (fixedAsset) {
+      setSelectedAssetMeta(fixedAsset);
+      return;
+    }
+    if (!form.assetId) {
+      setSelectedAssetMeta(null);
+      return;
+    }
+    const localMatch = visibleAssets.find(
       (a) => String(a.assetId) === String(form.assetId),
     );
-    return Number(selectedAsset?.assetTypeId) || null;
-  }, [visibleAssets, form.assetId]);
+    if (localMatch) {
+      setSelectedAssetMeta(localMatch);
+      return;
+    }
+    let cancelled = false;
+    assetApi
+      .getById(form.assetId)
+      .then((res) => {
+        if (!cancelled) setSelectedAssetMeta(res.data?.data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedAssetMeta(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fixedAsset, form.assetId, visibleAssets]);
+
+  const selectedAssetTypeId = useMemo(() => {
+    return Number(selectedAssetMeta?.assetTypeId) || null;
+  }, [selectedAssetMeta?.assetTypeId]);
 
   const templateOptions = useMemo(() => {
     if (!selectedAssetTypeId) return [];
@@ -133,9 +163,12 @@ export function ScheduleFormFields({
     setF('assetId', assetId);
     if (!assetId || isPredictive) return;
     try {
-      const asset = visibleAssets.find(
-        (a) => String(a.assetId) === String(assetId),
-      );
+      let asset = visibleAssets.find((a) => String(a.assetId) === String(assetId));
+      if (!asset) {
+        const res = await assetApi.getById(assetId);
+        asset = res.data?.data ?? null;
+      }
+      setSelectedAssetMeta(asset ?? null);
       if (!asset?.assetTypeId) return;
       const res = await assetTypeApi.getById(asset.assetTypeId);
       const type = res.data.data;
@@ -163,19 +196,13 @@ export function ScheduleFormFields({
           onChange={(e) => setF('scheduleName', e.target.value)}
           placeholder="VD: PM máy lọc bụi tháng 1"
         />
-        <Select
+        <AssetIdSearchPicker
+          id="schedule-asset-picker"
           label="Tài sản *"
           value={form.assetId ?? ''}
-          onChange={(e) => handleAssetChange(e.target.value)}
+          onChange={handleAssetChange}
           disabled={Boolean(fixedAsset)}
-        >
-          <option value="">-- Chọn tài sản --</option>
-          {visibleAssets.map((asset) => (
-            <option key={asset.assetId} value={asset.assetId}>
-              {asset.assetName}
-            </option>
-          ))}
-        </Select>
+        />
 
         <Select
           label="Kiểu lịch *"
