@@ -609,8 +609,8 @@ export async function getPendingReviewResults(limit = 50) {
   return resultModel.findPendingReview(limit);
 }
 
-/** Trưởng ca (3) + Trưởng/Phó phòng bảo trì (6,8) xử lý tiếp nhận; không tuyến PKT. */
-const PID_CHECKLIST_REVIEW = new Set([3, 6, 8]);
+/** Chỉ Trưởng ca (PositionID = 3) xử lý tiếp nhận checklist. */
+const PID_CHECKLIST_REVIEW = new Set([3]);
 
 export async function reviewChecklistResult(
   checklistId,
@@ -618,7 +618,7 @@ export async function reviewChecklistResult(
 ) {
   const pid = Number(supervisorPositionId);
   if (!PID_CHECKLIST_REVIEW.has(pid)) {
-    throw createError("Chỉ Trưởng ca / Trưởng phòng bảo trì (hoặc phó tương ứng) xác nhận checklist tại trường này", 403);
+    throw createError("Chỉ Trưởng ca được xác nhận checklist tại trường này", 403);
   }
   const row = await resultModel.findById(checklistId);
   if (!row) throw createError("Không tìm thấy kết quả checklist", 404);

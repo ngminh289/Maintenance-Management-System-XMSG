@@ -151,6 +151,9 @@ export function getFirstAllowedReportPath(user) {
 }
 
 export function canAccess(user, routeKey) {
+  if (routeKey === "checklist-review") {
+    return Number(user?.positionId ?? 0) === 3;
+  }
   if (routeKey === 'report-performance') return canAccessPerformanceReport(user);
   if (routeKey === 'report-resource-usage') return canAccessResourceUsageReport(user);
   if (routeKey === 'report-operations') {
@@ -220,7 +223,7 @@ export function canDo(user, action) {
     return k === "congNhan" || k === "truongPhong";
   }
   if (action === "CHECKLIST_RESULT:APPROVE" || action === "CHECKLIST_REVIEW:WRITE") {
-    return canApproveByPid(pid, PIDS_TUYEN_BAO_TRI);
+    return pid === 3; // Chỉ Trưởng ca
   }
   if (action === "SCHEDULE:APPROVE" || action === "WORK_ORDER:APPROVE") {
     return canApproveByPid(pid, PIDS_TUYEN_BAO_TRI);

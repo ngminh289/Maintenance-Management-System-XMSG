@@ -15,13 +15,18 @@ const PAGE_TITLES = {
   '/work-orders': 'Phiếu việc (Work Orders)',
   '/checklists':  'Checklist & QR Scan',
   '/checklists/history': 'Danh sách checklist',
+  '/checklists/review': 'Tiếp nhận checklist',
+  '/checklists/templates': 'Mẫu checklist',
   '/documents':   'Kho tài liệu số',
+  '/documents/feedback-inbox': 'Phản hồi tài liệu',
   '/approvals':   'Phê duyệt',
   '/workflows':   'Luồng phê duyệt',
   '/employees':   'Quản lý nhân sự',
   '/reports/operations':   'Báo cáo nghiệp vụ và vận hành',
   '/reports/resource-usage': 'Báo cáo sử dụng tài nguyên',
   '/reports/performance':  'Báo cáo hiệu suất tài sản',
+  '/admin':       'Cấu hình hệ thống',
+  '/notifications': 'Thông báo',
   '/settings':    'Cài đặt hệ thống',
   '/profile':     'Hồ sơ cá nhân',
 };
@@ -32,8 +37,14 @@ export function MainLayout() {
 
   const title =
     PAGE_TITLES[pathname] ??
-    (pathname.startsWith('/checklists/history')
-      ? PAGE_TITLES['/checklists/history']
+  (pathname.startsWith('/checklists/history')
+    ? PAGE_TITLES['/checklists/history']
+    : pathname.startsWith('/checklists/review')
+      ? PAGE_TITLES['/checklists/review']
+      : pathname.startsWith('/checklists/templates')
+        ? PAGE_TITLES['/checklists/templates']
+        : pathname.startsWith('/documents/feedback-inbox')
+          ? PAGE_TITLES['/documents/feedback-inbox']
       : PAGE_TITLES[
           Object.keys(PAGE_TITLES).find(
             (k) => pathname.startsWith(k) && k !== '/',

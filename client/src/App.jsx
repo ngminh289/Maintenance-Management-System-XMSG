@@ -83,8 +83,11 @@ export default function App() {
             <Route element={<RoleGuard routeKey="checklists" />}>
               <Route path="/checklists"                element={<ChecklistPage />} />
               <Route path="/checklists/history"        element={<ChecklistHistoryPage />} />
-              <Route path="/checklists/review"         element={<ChecklistReviewPage />} />
               <Route path="/checklists/scan/:assetId"  element={<ChecklistPage />} />
+            </Route>
+
+            <Route element={<RoleGuard routeKey="checklist-review" />}>
+              <Route path="/checklists/review" element={<ChecklistReviewPage />} />
             </Route>
 
             <Route element={<RoleGuard routeKey="checklist-manage" />}>

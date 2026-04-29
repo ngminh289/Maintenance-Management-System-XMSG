@@ -19,6 +19,16 @@ export const checklistRouter = Router();
 
 checklistRouter.use(requireAuth);
 
+function requireTruongCaReview(req, res, next) {
+  if (Number(req.user?.positionId ?? 0) !== 3) {
+    return res.status(403).json({
+      success: false,
+      message: 'Chỉ Trưởng ca mới được tiếp nhận checklist.',
+    });
+  }
+  return next();
+}
+
 // ── Templates ──────────────────────────────────────────────────────────────
 checklistRouter.get('/templates',
   requirePermission('CHECKLIST_TEMPLATE', 'READ'),
@@ -64,6 +74,7 @@ checklistRouter.get('/qr/:assetId', ctrl.getQRInfo);
 
 // Hàng chờ Trưởng ca (BFD mục 3) — trước /results/:id để không nhầm id
 checklistRouter.get('/results/pending-review',
+  requireTruongCaReview,
   requirePermission('CHECKLIST_RESULT', 'UPDATE'),
   ctrl.getPendingReviewResults,
 );
@@ -75,6 +86,7 @@ checklistRouter.get('/results', ctrl.getResults);
 checklistRouter.get('/results/asset/:assetId', ctrl.getResultsByAsset);
 
 checklistRouter.post('/results/:id/review',
+  requireTruongCaReview,
   requirePermission('CHECKLIST_RESULT', 'UPDATE'),
   validate(reviewChecklistSchema),
   ctrl.reviewChecklistResult,
