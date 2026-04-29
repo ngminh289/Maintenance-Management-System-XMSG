@@ -5,9 +5,9 @@
  * Liên quan: api/stats.api.js, utils/rbac.js (canAccessPerformanceReport), routes stats.routes.js.
  */
 import { useEffect, useState, useCallback } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import pdfMake from "pdfmake/build/pdfmake";
+import * as pdfFonts from "pdfmake/build/vfs_fonts";
 import {
   BarChart,
   Bar,
@@ -43,46 +43,88 @@ import {
   XCircle,
 } from "lucide-react";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function downloadCSV(data, filename) {
-  if (!data?.length) {
-    toast.error("Không có dữ liệu để xuất");
-    return;
+// pdfmake/build/vfs_fonts export mặc định là object map font-file -> base64.
+pdfMake.vfs = pdfFonts?.default ?? pdfFonts?.vfs ?? {};
+pdfMake.fonts = {
+  Roboto: {
+    normal: "Roboto-Regular.ttf",
+    bold: "Roboto-Medium.ttf",
+    italics: "Roboto-Italic.ttf",
+    bolditalics: "Roboto-MediumItalic.ttf",
+  },
+};
+
+function downloadPdf(docDef, fileName) {
+  try {
+    pdfMake.createPdf(docDef).download(fileName);
+  } catch (err) {
+    console.error("PDF download failed:", err);
+    toast.error("Xuất PDF thất bại");
   }
-  const headers = Object.keys(data[0]);
-  const rows = data.map((r) =>
-    headers.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","),
-  );
-  const csv = [headers.join(","), ...rows].join("\r\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
-const LOGO_URL = "/assets/logo/logo.png";
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const LOGO_CANDIDATE_URLS = [
+  "/assets/logo/logo.jpg",
+  "/dist/assets/logo/logo.jpg",
+  "./assets/logo/logo.jpg",
+];
+
+const PDF_REPORT_STYLES = {
+  sysTitle: { fontSize: 12, bold: true },
+  reportTitle: { fontSize: 22, bold: true, alignment: "center" },
+  meta: { fontSize: 10 },
+  sign: { fontSize: 12, bold: true, alignment: "center" },
+};
 
 async function loadLogoDataUrl() {
-  try {
-    const res = await fetch(LOGO_URL);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
+  for (const url of LOGO_CANDIDATE_URLS) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(bitmap, 0, 0);
+      return canvas.toDataURL("image/png");
+    } catch {
+      // thử candidate URL tiếp theo
+    }
   }
+  return null;
+}
+
+function buildPdfDocDef(content) {
+  return {
+    pageOrientation: "landscape",
+    pageSize: "A4",
+    pageMargins: [28, 24, 28, 24],
+    content,
+    styles: PDF_REPORT_STYLES,
+    defaultStyle: { fontSize: 10, font: "Roboto" },
+  };
 }
 
 /** Label tooltip chung */
 const fH = (v) => (v == null ? "—" : `${v} giờ`);
 const fP = (v) => (v == null ? "—" : `${v}%`);
+const fDateTimeVi = (v) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("vi-VN", {
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
 // ── KPI Card nhỏ ─────────────────────────────────────────────────────────────
 function KpiCard({
@@ -164,6 +206,7 @@ export function ReportPerformancePage() {
   const [months, setMonths] = useState(12);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [logoDataUrl, setLogoDataUrl] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,306 +224,402 @@ export function ReportPerformancePage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    loadLogoDataUrl()
+      .then((v) => setLogoDataUrl(v))
+      .catch(() => setLogoDataUrl(null));
+  }, []);
+
   if (loading) return <PageLoader />;
 
   const { mtbf, mttr, downtime, planVsActual, pareto } = data ?? {};
 
-  // ── Export helpers ──────────────────────────────────────────────────────────
-  const exportCurrent = () => {
-    if (tab === "mtbf") {
-      downloadCSV(
-        (mtbf?.byAsset ?? []).map((r) => ({
-          "Tài sản": r.assetName,
-          "Vị trí": r.locationName ?? "",
-          "Giờ chạy": r.totalRunHours,
-          "Lần hỏng": r.failureCount,
-          "MTBF (giờ)": r.mtbf ?? "",
-        })),
-        `mtbf-${months}thang.csv`,
-      );
-    } else if (tab === "mttr") {
-      downloadCSV(
-        (mttr?.byAsset ?? []).map((r) => ({
-          "Tài sản": r.assetName,
-          "Vị trí": r.locationName ?? "",
-          "Số lần sửa": r.repairCount,
-          "Tổng giờ": Math.round(Number(r.totalRepairHours || 0)),
-          "MTTR (giờ)": r.mttr ?? "",
-        })),
-        `mttr-${months}thang.csv`,
-      );
-    } else if (tab === "downtime") {
-      downloadCSV(
-        (downtime?.byAsset ?? []).map((r) => ({
-          "Tài sản": r.assetName,
-          "Vị trí": r.locationName ?? "",
-          "Giờ chạy": r.totalRunHours,
-          "Giờ dừng": r.downtimeHours,
-          "Planned dừng": r.plannedDowntimeHours,
-          "Unplanned dừng": r.unplannedDowntimeHours,
-          "Tỷ lệ (%)": r.downtimePercent,
-        })),
-        `downtime-${months}thang.csv`,
-      );
-    } else if (tab === "plan") {
-      downloadCSV(
-        (planVsActual?.byMonth ?? []).map((r) => ({
-          Tháng: r.month,
-          "Tổng KH": r.total,
-          "Hoàn thành": r.completed,
-          "Đúng hạn": r.onTime,
-          Trễ: r.late,
-        })),
-        `ke-hoach-thuc-te-${months}thang.csv`,
-      );
-    } else if (tab === "pareto") {
-      downloadCSV(
-        (pareto?.rows ?? []).map((r) => ({
-          "Tài sản": r.assetName,
-          "Giờ dừng": r.downtimeHours,
-          Planned: r.plannedHours,
-          Unplanned: r.unplannedHours,
-          "Tích lũy (%)": r.cumulativePercent,
-        })),
-        `pareto-${months}thang.csv`,
-      );
-    }
-  };
+  // ── Export helpers theo từng tab (không gộp) ───────────────────────────────
+  const exportedBy =
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    `NV #${user?.employeeId ?? "?"}`;
 
-  const exportPerformanceExcel = () => {
+  const guardExport = () => {
     if (!canExport) {
-      toast.error("Bạn chưa có quyền REPORT:EXPORT để xuất báo cáo");
-      return;
+      toast.error("Bạn chưa có quyền xuất báo cáo");
+      return false;
     }
-    const wb = XLSX.utils.book_new();
-    const mtbfSheet = XLSX.utils.json_to_sheet(
-      (mtbf?.byAsset ?? []).map((r) => ({
-        "Mã tài sản": r.assetId,
-        "Tên tài sản": r.assetName,
-        "Vị trí": r.locationName ?? "",
-        "Tổng giờ chạy (h)": Number(r.totalRunHours || 0),
-        "Số lần hỏng (Emergency)": Number(r.failureCount || 0),
-        "MTBF (h)": r.mtbf ?? "",
-      })),
-    );
-    const mttrSheet = XLSX.utils.json_to_sheet(
-      (mttr?.byAsset ?? []).map((r) => ({
-        "Mã tài sản": r.assetId,
-        "Tên tài sản": r.assetName,
-        "Vị trí": r.locationName ?? "",
-        "Số lần sửa": Number(r.repairCount || 0),
-        "Tổng giờ sửa (h)": Math.round(Number(r.totalRepairHours || 0)),
-        "MTTR (h)": r.mttr ?? "",
-      })),
-    );
-    const paretoSheet = XLSX.utils.json_to_sheet(
-      (pareto?.rows ?? []).map((r) => ({
-        "Mã tài sản": r.assetId,
-        "Tên tài sản": r.assetName,
-        "Vị trí": r.locationName ?? "",
-        "Downtime (h)": Number(r.downtimeHours || 0),
-        "Planned (h)": Number(r.plannedHours || 0),
-        "Unplanned (h)": Number(r.unplannedHours || 0),
-        "Tích lũy (%)": Number(r.cumulativePercent || 0),
-        "Ưu tiên 80/20":
-          Number(r.cumulativePercent || 0) <= 80 ? "Ưu tiên 1" : "Ưu tiên 2",
-      })),
-    );
-    const downtimeLogSheet = XLSX.utils.json_to_sheet(
-      (downtime?.byAsset ?? []).map((r) => ({
-        "Mã tài sản": r.assetId,
-        "Tên tài sản": r.assetName,
-        "Vị trí": r.locationName ?? "",
-        "Downtime tổng (h)": Number(r.downtimeHours || 0),
-        "Planned (h)": Number(r.plannedDowntimeHours || 0),
-        "Unplanned (h)": Number(r.unplannedDowntimeHours || 0),
-        "Tỷ lệ dừng (%)": Number(r.downtimePercent || 0),
-      })),
-    );
-    XLSX.utils.book_append_sheet(wb, mtbfSheet, "Tong hieu suat");
-    XLSX.utils.book_append_sheet(wb, mttrSheet, "MTTR");
-    XLSX.utils.book_append_sheet(wb, paretoSheet, "Pareto");
-    XLSX.utils.book_append_sheet(wb, downtimeLogSheet, "Nhat ky dung may");
-    XLSX.writeFile(wb, `bao-cao-hieu-suat-${months}thang.xlsx`);
+    return true;
   };
 
-  const exportPerformancePdf = async () => {
-    try {
-      if (!canExport) {
-        toast.error("Bạn chưa có quyền xuất báo cáo");
-        return;
-      }
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const now = new Date();
-      const generatedAt = `${now.toLocaleTimeString("vi-VN")} ${now.toLocaleDateString("vi-VN")}`;
-      const exportedBy =
-        user?.fullName ||
-        user?.name ||
-        user?.username ||
-        user?.email ||
-        `Employee #${user?.employeeId ?? "unknown"}`;
-      const logoDataUrl = await loadLogoDataUrl();
-
-      const drawHeaderFooter = (title) => {
-        doc.setFillColor(15, 23, 42);
-        doc.rect(0, 0, pageW, 18, "F");
-        if (logoDataUrl) {
-          try {
-            doc.addImage(logoDataUrl, "PNG", 8, 3, 12, 12);
-          } catch {
-            // Bỏ qua lỗi logo để vẫn xuất được PDF
-          }
-        }
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(12);
-        doc.text("BAO CAO HIEU SUAT TAI SAN", 24, 11);
-        doc.setFontSize(9);
-        doc.text(`Ky: ${months} thang`, pageW - 40, 7);
-        doc.text(`Trang ${doc.getNumberOfPages()}`, pageW - 40, 12);
-        doc.setTextColor(20, 20, 20);
-        doc.setFontSize(14);
-        doc.text(title, 14, 28);
-        doc.setFontSize(9);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Nguoi xuat: ${exportedBy}`, 14, pageH - 12);
-        doc.text(
-          `Bao cao trich xuat tu he thong luc ${generatedAt}`,
-          14,
-          pageH - 8,
-        );
-        doc.setTextColor(20, 20, 20);
+  const buildHstsRows = () =>
+    (mtbf?.byAsset ?? []).map((r) => {
+      const mttrRow = (mttr?.byAsset ?? []).find(
+        (m) => Number(m.assetId) === Number(r.assetId),
+      );
+      return {
+        assetId: r.assetId,
+        assetName: r.assetName,
+        totalRunHours: Number(r.totalRunHours || 0),
+        failureCount: Number(r.failureCount || 0),
+        totalRepairHours: Math.round(Number(mttrRow?.totalRepairHours || 0)),
+        mtbf: r.mtbf ?? "",
+        mttr: mttrRow?.mttr ?? "",
       };
+    });
 
-      drawHeaderFooter("1) Tong quan KPI");
-      autoTable(doc, {
-        startY: 34,
-        head: [["Chi so", "Gia tri"]],
-        body: [
-          ["MTBF trung binh (h)", mtbf?.overall ?? "—"],
-          ["MTTR trung binh (h)", mttr?.overall ?? "—"],
-          ["Downtime trung binh (%)", downtime?.overall ?? "—"],
-          [
-            "Tong planned downtime (h)",
-            Number(downtime?.plannedOverallHours ?? 0).toFixed(2),
-          ],
-          [
-            "Tong unplanned downtime (h)",
-            Number(downtime?.unplannedOverallHours ?? 0).toFixed(2),
-          ],
+  const buildPdfHeader = (title) => {
+    const nowText = new Date().toLocaleString("vi-VN");
+    return [
+      {
+        columns: [
+          logoDataUrl
+            ? { image: logoDataUrl, width: 64, margin: [0, 0, 10, 0] }
+            : { text: "", width: 64 },
+          {
+            width: "*",
+            stack: [
+              {
+                text: "PHẦN MỀM BẢO TRÌ TÀI SẢN SẢN XUẤT TÍCH HỢP TÀI NGUYÊN SỐ CÔNG TY CP XMSG",
+                style: "sysTitle",
+              },
+              {
+                text: `Thời gian xuất: ${nowText}    Người xuất: ${exportedBy}`,
+                style: "meta",
+                margin: [0, 2, 0, 0],
+              },
+            ],
+          },
         ],
-        styles: { fontSize: 10 },
-        headStyles: { fillColor: [30, 41, 59] },
-      });
+      },
+      { text: title, style: "reportTitle", margin: [0, 10, 0, 4] },
+      { text: `Bộ lọc: ${months} tháng`, alignment: "right", style: "meta" },
+    ];
+  };
 
-      doc.addPage();
-      drawHeaderFooter("2) MTBF & MTTR chi tiet");
-      autoTable(doc, {
-        startY: 34,
-        head: [
-          [
-            "Ma TS",
-            "Ten tai san",
-            "Tong gio chay",
-            "Lan hong",
-            "Tong gio sua",
-            "MTBF",
-            "MTTR",
-          ],
-        ],
-        body: (mtbf?.byAsset ?? []).map((r) => {
-          const mttrRow = (mttr?.byAsset ?? []).find(
-            (m) => Number(m.assetId) === Number(r.assetId),
-          );
-          return [
-            r.assetId,
-            r.assetName,
-            Number(r.totalRunHours || 0).toFixed(2),
-            Number(r.failureCount || 0),
-            Math.round(Number(mttrRow?.totalRepairHours || 0)),
-            r.mtbf ?? "—",
-            mttrRow?.mttr ?? "—",
-          ];
-        }),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [30, 41, 59] },
-        columnStyles: { 1: { cellWidth: 42 } },
-      });
+  const exportHstsExcel = () => {
+    if (!guardExport()) return;
+    const rows = buildHstsRows().map((r) => ({
+      "Mã máy": r.assetId,
+      "Tên máy": r.assetName,
+      "Tổng giờ chạy (h)": r.totalRunHours,
+      "Số lần hỏng (Emergency)": r.failureCount,
+      "Tổng giờ sửa (h)": r.totalRepairHours,
+      "MTBF (h)": r.mtbf,
+      "MTTR (h)": r.mttr,
+    }));
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows),
+      "Chi so HSTS",
+    );
+    XLSX.writeFile(wb, `bao-cao-chi-so-hsts-${months}thang.xlsx`);
+    toast.success("Đã xuất Excel chỉ số HSTS");
+  };
 
-      doc.addPage();
-      drawHeaderFooter("3) Pareto downtime");
-      autoTable(doc, {
-        startY: 34,
-        head: [
-          [
-            "#",
-            "Ma TS",
-            "Ten tai san",
-            "Downtime (h)",
-            "Planned (h)",
-            "Unplanned (h)",
-            "Tich luy (%)",
-            "Uu tien",
+  const exportHstsPdf = () => {
+    if (!guardExport()) return;
+    const rows = buildHstsRows();
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    try {
+      const content = buildPdfHeader(
+        "BÁO CÁO TỔNG HỢP CHỈ SỐ HIỆU SUẤT TÀI SẢN",
+      );
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: [50, "*", 82, 84, 70, 50, 50],
+          body: [
+            [
+              "Mã máy",
+              "Tên máy",
+              "Tổng giờ chạy (h)",
+              "Số lần hỏng (Emergency)",
+              "Tổng giờ sửa (h)",
+              "MTBF (h)",
+              "MTTR (h)",
+            ],
+            ...rows.map((r) => [
+              String(r.assetId),
+              r.assetName,
+              String(r.totalRunHours),
+              String(r.failureCount),
+              String(r.totalRepairHours),
+              String(r.mtbf),
+              String(r.mttr),
+            ]),
           ],
-        ],
-        body: (pareto?.rows ?? []).map((r, idx) => [
-          idx + 1,
-          r.assetId,
-          r.assetName,
-          Number(r.downtimeHours || 0).toFixed(2),
-          Number(r.plannedHours || 0).toFixed(2),
-          Number(r.unplannedHours || 0).toFixed(2),
-          Number(r.cumulativePercent || 0).toFixed(1),
-          Number(r.cumulativePercent || 0) <= 80 ? "Uu tien 1" : "Uu tien 2",
-        ]),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [30, 41, 59] },
-        didParseCell: (hookData) => {
-          if (hookData.section === "body") {
-            const cum = Number(hookData.row.raw?.[6] || 0);
-            if (cum <= 80) hookData.cell.styles.fillColor = [254, 226, 226];
-          }
         },
+        layout: "lightHorizontalLines",
+        margin: [0, 12, 0, 0],
       });
-
-      doc.addPage();
-      drawHeaderFooter("4) Nhat ky downtime theo tai san");
-      autoTable(doc, {
-        startY: 34,
-        head: [
-          [
-            "Ma TS",
-            "Ten tai san",
-            "Tong dung (h)",
-            "Planned",
-            "Unplanned",
-            "Ty le (%)",
-          ],
+      content.push({
+        columns: [
+          { text: "Người lập báo cáo\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Quản lý hệ thống\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Giám đốc\n(Ký và ghi rõ họ tên)", style: "sign" },
         ],
-        body: (downtime?.byAsset ?? []).map((r) => [
-          r.assetId,
-          r.assetName,
-          Number(r.downtimeHours || 0).toFixed(2),
-          Number(r.plannedDowntimeHours || 0).toFixed(2),
-          Number(r.unplannedDowntimeHours || 0).toFixed(2),
-          Number(r.downtimePercent || 0).toFixed(2),
-        ]),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [30, 41, 59] },
-        columnStyles: { 1: { cellWidth: 52 } },
+        columnGap: 12,
+        margin: [0, 34, 0, 0],
       });
-
-      doc.save(`bao-cao-hieu-suat-${months}thang.pdf`);
-      toast.success("Đã tạo file PDF báo cáo");
+      const docDef = buildPdfDocDef(content);
+      downloadPdf(docDef, `bao-cao-chi-so-hsts-${months}thang.pdf`);
+      toast.success("Đã xuất PDF chỉ số HSTS");
     } catch (err) {
-      console.error("Export PDF failed:", err);
-      toast.error("Xuất PDF lỗi. Mở Console (F12) để xem chi tiết.");
+      console.error(err);
+      toast.error("Xuất PDF chỉ số HSTS thất bại");
+    }
+  };
+
+  const exportParetoExcel = () => {
+    if (!guardExport()) return;
+    const rows = (pareto?.rows ?? []).map((r) => ({
+      "Mã tài sản": r.assetId,
+      "Tên tài sản": r.assetName,
+      "Tổng giờ dừng máy (h)": Number(r.downtimeHours || 0),
+      "% Tỷ trọng":
+        pareto?.total > 0
+          ? Number(
+              (
+                (Number(r.downtimeHours || 0) / Number(pareto.total || 1)) *
+                100
+              ).toFixed(2),
+            )
+          : 0,
+      "% Tích lũy": Number(r.cumulativePercent || 0),
+      "Trạng thái":
+        Number(r.cumulativePercent || 0) <= 80
+          ? "Ưu tiên 1 (Bôi đỏ)"
+          : Number(r.cumulativePercent || 0) <= 95
+            ? "Ưu tiên 2 (Bôi đỏ)"
+            : "Bình thường",
+    }));
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows),
+      "Pareto Downtime",
+    );
+    XLSX.writeFile(wb, `bao-cao-pareto-downtime-${months}thang.xlsx`);
+    toast.success("Đã xuất Excel Pareto Downtime");
+  };
+
+  const exportParetoPdf = () => {
+    if (!guardExport()) return;
+    const rows = pareto?.rows ?? [];
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    try {
+      const content = buildPdfHeader("BÁO CÁO PHÂN TÍCH PARETO DOWNTIME");
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: [60, "*", 90, 72, 62, 90],
+          body: [
+            [
+              "Mã tài sản",
+              "Tên tài sản",
+              "Tổng giờ dừng máy (h)",
+              "% Tỷ trọng",
+              "% Tích lũy",
+              "Trạng thái",
+            ],
+            ...rows.map((r) => {
+              const pct =
+                Number(pareto?.total || 0) > 0
+                  ? (Number(r.downtimeHours || 0) / Number(pareto.total || 1)) *
+                    100
+                  : 0;
+              const cum = Number(r.cumulativePercent || 0);
+              const status =
+                cum <= 80
+                  ? "Ưu tiên 1 (Bôi đỏ)"
+                  : cum <= 95
+                    ? "Ưu tiên 2 (Bôi đỏ)"
+                    : "Bình thường";
+              return [
+                String(r.assetId),
+                r.assetName,
+                `${Number(r.downtimeHours || 0).toFixed(2)}`,
+                `${pct.toFixed(2)}%`,
+                `${cum.toFixed(2)}%`,
+                status,
+              ];
+            }),
+          ],
+        },
+        layout: "lightHorizontalLines",
+        margin: [0, 12, 0, 0],
+      });
+      content.push({
+        columns: [
+          { text: "Người lập báo cáo\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Quản lý hệ thống\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Giám đốc\n(Ký và ghi rõ họ tên)", style: "sign" },
+        ],
+        columnGap: 12,
+        margin: [0, 34, 0, 0],
+      });
+      const docDef = buildPdfDocDef(content);
+      downloadPdf(docDef, `bao-cao-pareto-downtime-${months}thang.pdf`);
+      toast.success("Đã xuất PDF Pareto Downtime");
+    } catch (err) {
+      console.error(err);
+      toast.error("Xuất PDF Pareto thất bại");
+    }
+  };
+
+  const exportDowntimeExcel = () => {
+    if (!guardExport()) return;
+    const rows = (downtime?.logs ?? []).map((r) => ({
+      "Mã tài sản": r.assetCode ?? r.assetId,
+      "Tên máy": r.assetName ?? "",
+      "Dừng lúc nào": fDateTimeVi(r.startAt),
+      "Sửa xong lúc nào": fDateTimeVi(r.endAt),
+      "Tổng giờ dừng (h)": Number(r.downtimeHours || 0),
+      "Nguyên nhân sự cố":
+        r.reason ||
+        (r.downtimeType === "PLANNED_MAINTENANCE"
+          ? "Bảo trì có kế hoạch"
+          : "Sự cố đột xuất"),
+    }));
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows),
+      "Nhat ky dung may",
+    );
+    XLSX.writeFile(wb, `nhat-ky-dung-may-${months}thang.xlsx`);
+    toast.success("Đã xuất Excel nhật ký dừng máy");
+  };
+
+  const exportDowntimeDetailExcel = () => {
+    if (!guardExport()) return;
+    const rows = (downtime?.byAsset ?? []).map((r) => ({
+      "Mã tài sản": r.assetId,
+      "Tên máy": r.assetName ?? "",
+      "Vị trí": r.locationName ?? "",
+      "Giờ vận hành (h)": Number(r.totalRunHours || 0),
+      "Giờ dừng có kế hoạch (h)": Number(r.plannedDowntimeHours || 0),
+      "Giờ dừng không kế hoạch (h)": Number(r.unplannedDowntimeHours || 0),
+      "Tổng giờ dừng (h)": Number(r.downtimeHours || 0),
+      "Tỷ lệ dừng máy (%)": Number(r.downtimePercent || 0),
+    }));
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows),
+      "Chi tiet dung may",
+    );
+    XLSX.writeFile(wb, `chi-tiet-dung-may-${months}thang.xlsx`);
+    toast.success("Đã xuất Excel chi tiết dừng máy");
+  };
+
+  const exportDowntimePdf = () => {
+    if (!guardExport()) return;
+    const rows = downtime?.logs ?? [];
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    try {
+      const content = buildPdfHeader("NHẬT KÝ DỪNG MÁY");
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: [55, 68, 86, 86, 62, "*"],
+          body: [
+            [
+              "Mã tài sản",
+              "Tên máy",
+              "Dừng lúc nào",
+              "Sửa xong lúc nào",
+              "Tổng giờ dừng (h)",
+              "Nguyên nhân sự cố",
+            ],
+            ...rows.map((r) => [
+              String(r.assetCode ?? r.assetId),
+              r.assetName ?? "",
+              fDateTimeVi(r.startAt),
+              fDateTimeVi(r.endAt),
+              `${Number(r.downtimeHours || 0).toFixed(2)}`,
+              r.reason ||
+                (r.downtimeType === "PLANNED_MAINTENANCE"
+                  ? "Bảo trì có kế hoạch"
+                  : "Sự cố đột xuất"),
+            ]),
+          ],
+        },
+        layout: "lightHorizontalLines",
+        margin: [0, 12, 0, 0],
+      });
+      content.push({
+        columns: [
+          { text: "Người lập báo cáo\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Quản lý hệ thống\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Giám đốc\n(Ký và ghi rõ họ tên)", style: "sign" },
+        ],
+        columnGap: 12,
+        margin: [0, 34, 0, 0],
+      });
+      const docDef = buildPdfDocDef(content);
+      downloadPdf(docDef, `nhat-ky-dung-may-${months}thang.pdf`);
+      toast.success("Đã xuất PDF nhật ký dừng máy");
+    } catch (err) {
+      console.error(err);
+      toast.error("Xuất PDF nhật ký dừng máy thất bại");
+    }
+  };
+
+  const exportDowntimeDetailPdf = () => {
+    if (!guardExport()) return;
+    const rows = downtime?.byAsset ?? [];
+    if (!rows.length) return toast.error("Không có dữ liệu để xuất");
+    try {
+      const content = buildPdfHeader("BÁO CÁO CHI TIẾT DỪNG MÁY");
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: [50, "*", 80, 68, 60, 62, 70, 54],
+          body: [
+            [
+              "Mã tài sản",
+              "Tên máy",
+              "Vị trí",
+              "Giờ vận hành (h)",
+              "Planned (h)",
+              "Unplanned (h)",
+              "Tổng giờ dừng (h)",
+              "Tỷ lệ (%)",
+            ],
+            ...rows.map((r) => [
+              String(r.assetId),
+              r.assetName ?? "",
+              r.locationName ?? "—",
+              Number(r.totalRunHours || 0).toFixed(2),
+              Number(r.plannedDowntimeHours || 0).toFixed(2),
+              Number(r.unplannedDowntimeHours || 0).toFixed(2),
+              Number(r.downtimeHours || 0).toFixed(2),
+              Number(r.downtimePercent || 0).toFixed(2),
+            ]),
+          ],
+        },
+        layout: "lightHorizontalLines",
+        margin: [0, 12, 0, 0],
+      });
+      content.push({
+        columns: [
+          { text: "Người lập báo cáo\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Quản lý hệ thống\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Giám đốc\n(Ký và ghi rõ họ tên)", style: "sign" },
+        ],
+        columnGap: 12,
+        margin: [0, 34, 0, 0],
+      });
+      const docDef = buildPdfDocDef(content);
+      downloadPdf(docDef, `chi-tiet-dung-may-${months}thang.pdf`);
+      toast.success("Đã xuất PDF chi tiết dừng máy");
+    } catch (err) {
+      console.error(err);
+      toast.error("Xuất PDF chi tiết dừng máy thất bại");
     }
   };
 
@@ -521,47 +660,138 @@ export function ReportPerformancePage() {
           >
             <RefreshCw size={14} /> Làm mới
           </button>
-          <>
-            <button
-              onClick={exportPerformancePdf}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                canExport
-                  ? "text-white bg-blue-600 hover:bg-blue-700"
-                  : "text-gray-400 bg-gray-200 cursor-not-allowed"
-              }`}
-              title={
-                canExport ? "Xuất PDF báo cáo" : "Thiếu quyền REPORT:EXPORT"
-              }
-            >
-              <Download size={14} /> Xuất PDF đẹp
-            </button>
-            <button
-              onClick={exportPerformanceExcel}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
-                canExport
-                  ? "text-gray-700 border-gray-200 hover:bg-gray-50"
-                  : "text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed"
-              }`}
-              title={
-                canExport ? "Xuất Excel báo cáo" : "Thiếu quyền REPORT:EXPORT"
-              }
-            >
-              <Download size={14} /> Xuất Excel
-            </button>
-            <button
-              onClick={exportCurrent}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
-                canExport
-                  ? "text-gray-700 border-gray-200 hover:bg-gray-50"
-                  : "text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed"
-              }`}
-              title={
-                canExport ? "Xuất CSV báo cáo" : "Thiếu quyền REPORT:EXPORT"
-              }
-            >
-              <Download size={14} /> Xuất CSV
-            </button>
-          </>
+          {(tab === "mtbf" || tab === "mttr") && (
+            <>
+              <button
+                onClick={exportHstsPdf}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  canExport
+                    ? "text-white bg-blue-600 hover:bg-blue-700"
+                    : "text-gray-400 bg-gray-200 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất PDF báo cáo chỉ số hiệu suất tài sản"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> PDF chỉ số HSTS
+              </button>
+              <button
+                onClick={exportHstsExcel}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  canExport
+                    ? "text-gray-700 border-gray-200 hover:bg-gray-50"
+                    : "text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất Excel báo cáo chỉ số hiệu suất tài sản"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> Excel chỉ số HSTS
+              </button>
+            </>
+          )}
+          {tab === "pareto" && (
+            <>
+              <button
+                onClick={exportParetoPdf}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  canExport
+                    ? "text-white bg-blue-600 hover:bg-blue-700"
+                    : "text-gray-400 bg-gray-200 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất PDF báo cáo Pareto downtime"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> PDF Pareto
+              </button>
+              <button
+                onClick={exportParetoExcel}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  canExport
+                    ? "text-gray-700 border-gray-200 hover:bg-gray-50"
+                    : "text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất Excel báo cáo Pareto downtime"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> Excel Pareto
+              </button>
+            </>
+          )}
+          {tab === "downtime" && (
+            <>
+              <button
+                onClick={exportDowntimeDetailPdf}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  canExport
+                    ? "text-white bg-blue-600 hover:bg-blue-700"
+                    : "text-gray-400 bg-gray-200 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất PDF chi tiết dừng máy"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> PDF chi tiết dừng máy
+              </button>
+              <button
+                onClick={exportDowntimeDetailExcel}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  canExport
+                    ? "text-gray-700 border-gray-200 hover:bg-gray-50"
+                    : "text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất Excel chi tiết dừng máy"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> Excel chi tiết dừng máy
+              </button>
+              <button
+                onClick={exportDowntimePdf}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  canExport
+                    ? "text-white bg-blue-600 hover:bg-blue-700"
+                    : "text-gray-400 bg-gray-200 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất PDF nhật ký dừng máy"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> PDF nhật ký dừng máy
+              </button>
+              <button
+                onClick={exportDowntimeExcel}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  canExport
+                    ? "text-gray-700 border-gray-200 hover:bg-gray-50"
+                    : "text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed"
+                }`}
+                title={
+                  canExport
+                    ? "Xuất Excel nhật ký dừng máy"
+                    : "Thiếu quyền REPORT:EXPORT"
+                }
+              >
+                <Download size={14} /> Excel nhật ký dừng máy
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1055,6 +1285,65 @@ export function ReportPerformancePage() {
                           >
                             {r.downtimePercent}%
                           </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Nhật ký dừng máy">
+            {(downtime?.logs ?? []).length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">
+                Chưa có sự kiện dừng máy trong kỳ
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {[
+                        "Mã tài sản",
+                        "Tên máy",
+                        "Dừng lúc nào",
+                        "Sửa xong lúc nào",
+                        "Tổng giờ dừng (h)",
+                        "Nguyên nhân sự cố",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left text-xs font-bold text-gray-600 px-3 py-2"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(downtime?.logs ?? []).map((r) => (
+                      <tr key={r.eventId} className="hover:bg-blue-50/30">
+                        <td className="px-3 py-2 font-mono text-xs text-gray-700">
+                          {r.assetCode ?? `#${r.assetId}`}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-gray-900">
+                          {r.assetName}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {fDateTimeVi(r.startAt)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {fDateTimeVi(r.endAt)}
+                        </td>
+                        <td className="px-3 py-2 text-red-700 font-semibold">
+                          {Number(r.downtimeHours || 0).toFixed(2)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {r.reason ||
+                            (r.downtimeType === "PLANNED_MAINTENANCE"
+                              ? "Bảo trì có kế hoạch"
+                              : "Sự cố đột xuất")}
                         </td>
                       </tr>
                     ))}

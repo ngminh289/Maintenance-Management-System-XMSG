@@ -906,8 +906,7 @@ export function ChecklistPage() {
                             {item.inputType === "Photo" &&
                               !canSubmitChecklist && (
                                 <p className="text-xs text-gray-500 italic">
-                                  Ảnh hiện trường — chỉ KTV/Trưởng phòng BT được
-                                  nộp.
+                                  Bạn không được phép upload
                                 </p>
                               )}
                           </div>
@@ -1052,19 +1051,12 @@ export function ChecklistPage() {
                       <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                         {linkedWoId && !canSubmitLinkedWoChecklist ? (
                           <>
-                            Checklist gắn WO chỉ <strong>trưởng nhóm</strong>{" "}
-                            được nộp. Thành viên khác xem sau khi checklist hoàn
-                            thành.
+                            Checklist gắn phiếu việc chỉ{" "}
+                            <strong>trưởng nhóm</strong> được nộp. Thành viên
+                            khác xem sau khi checklist hoàn thành.
                           </>
                         ) : (
-                          <>
-                            Tài khoản của bạn chỉ xem thiết bị / SOP / lịch sử.
-                            Soạn mẫu checklist: trang{" "}
-                            <strong>Mẫu checklist (theo loại)</strong>.
-                            <strong> Gửi kết quả kiểm tra</strong> chỉ dành cho{" "}
-                            <strong>KTV hiện trường</strong> hoặc{" "}
-                            <strong>trưởng phòng</strong>.
-                          </>
+                          <>Bạn không có quyền kiểm tra hiện trường</>
                         )}
                       </p>
                     )}

@@ -391,7 +391,7 @@ export const digitalAssetReport = asyncHandler(async (_req, res) => {
 /**
  * BFD 6.4 — Báo cáo hiệu suất & tình trạng tài sản.
  * ?months=12 (mặc định) — khoảng thời gian phân tích.
- * Trả về: mtbf, mttr, downtime, planVsActual, pareto.
+ * Trả về: mtbf, mttr, downtime (kèm logs), planVsActual, pareto.
  * RBAC: CV KTS (L2), Trưởng phòng (L3, PID 6), Giám đốc (L5+) — kiểm tra tại route.
  */
 export const performanceReport = asyncHandler(async (req, res) => {
@@ -587,6 +587,36 @@ export const performanceReport = asyncHandler(async (req, res) => {
       ? Math.round((sumDownAll / (sumRunAll + sumDownAll)) * 10000) / 100
       : 0;
 
+  // ── 3b. Nhật ký dừng máy chi tiết (theo AssetDowntimeEvents) ──────────────
+  const [downtimeLogs] = await pool.query(
+    `
+    SELECT
+      ade.EventID AS eventId,
+      ade.AssetID AS assetId,
+      CONCAT('#', a.AssetID) AS assetCode,
+      a.AssetName AS assetName,
+      ade.StartAt AS startAt,
+      ade.EndAt AS endAt,
+      ROUND(
+        TIMESTAMPDIFF(
+          SECOND,
+          GREATEST(ade.StartAt, DATE_SUB(NOW(), INTERVAL ? MONTH)),
+          LEAST(COALESCE(ade.EndAt, NOW()), NOW())
+        ) / 3600,
+        2
+      ) AS downtimeHours,
+      ade.DowntimeType AS downtimeType,
+      ade.Reason AS reason
+    FROM AssetDowntimeEvents ade
+    JOIN Assets a ON a.AssetID = ade.AssetID
+    WHERE ade.StartAt < NOW()
+      AND COALESCE(ade.EndAt, NOW()) > DATE_SUB(NOW(), INTERVAL ? MONTH)
+    ORDER BY ade.StartAt DESC
+    LIMIT 200
+  `,
+    [months, months],
+  );
+
   // ── 4. Kế hoạch vs Thực tế ────────────────────────────────────────────────
   const [[planSummary]] = await pool.query(
     `
@@ -706,6 +736,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
       plannedOverallHours: Math.round(sumPlannedAll * 100) / 100,
       unplannedOverallHours: Math.round(sumUnplannedAll * 100) / 100,
       byAsset: downtimeRows,
+      logs: downtimeLogs,
     },
     planVsActual: { summary: planSummary, byMonth: planByMonth },
     pareto: { total: paretoTotal, rows: paretoRows },

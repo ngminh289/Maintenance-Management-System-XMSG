@@ -2,7 +2,7 @@
  * stats.routes.js — /api/stats (Dashboard & Báo cáo).
  * project.rule Phân hệ 6: thống kê tài sản, phiếu việc, checklist.
  * /performance — Trưởng/Phó bảo trì + Trưởng/Phó PKT (L3, PID 6/8/7/9), Admin (L4+), Ban GĐ.
- * /resource-usage — thêm CV KTS (L2).
+ * /resource-usage — chỉ Trưởng/Phó hai phòng (L3, PID 6/8/7/9), Admin (L4+), Ban GĐ.
  * /checklist-schedule-compliance, /approval-step-latencies, /checklist-ng-by-asset — cùng tuyến TP hai phòng + Admin + GĐ.
  * Liên quan: controllers/stats.controller.js.
  */
@@ -35,17 +35,17 @@ function requirePerformanceAccess(req, res, next) {
   return next();
 }
 
-/** Báo cáo tài nguyên: L2 (CV KTS), Trưởng/Phó (6/7/8/9), Admin, Ban GĐ. */
+/** Báo cáo tài nguyên: Trưởng/Phó (6/7/8/9), Admin, Ban GĐ. */
 function requireKTSorTruongPhongOrBGD(req, res, next) {
   const { positionLevel, positionId } = req.user ?? {};
   const lvl = positionLevel ?? 0;
   const pid = Number(positionId ?? 0);
   const l3ok = lvl === 3 && TP_HEAD_BOTH.includes(pid);
-  const allowed = lvl === 2 || l3ok || lvl >= 4;
+  const allowed = l3ok || lvl >= 4;
   if (!allowed) {
     return fail(
       res,
-      'Chỉ Chuyên viên KTS, Trưởng/Phó phòng (hai tuyến), Quản trị hoặc Ban Giám đốc được xem báo cáo này',
+      'Chỉ Trưởng/Phó phòng (hai tuyến), Quản trị hoặc Ban Giám đốc được xem báo cáo này',
       403,
     );
   }

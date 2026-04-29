@@ -139,13 +139,44 @@ export async function create({
   return getById(id, viewerForRead ?? { sub: uploadedBy, positionLevel: 0 });
 }
 
-export async function update(id, { description, assetId, documentCategoryId }, ctx) {
+export async function update(
+  id,
+  { description, assetId, documentCategoryId, tagIds },
+  ctx,
+) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
   assertOwnerOrAdmin(da, ctx, 'cập nhật');
-  assertNotPending(da, 'cập nhật mô tả / tài sản / phân loại');
+  assertNotPending(da, 'cập nhật mô tả / tài sản / phân loại / thẻ');
   if (documentCategoryId !== undefined) await assertCategoryId(documentCategoryId);
   await model.update(id, { description, assetId, documentCategoryId });
+  if (tagIds !== undefined) {
+    if (!Array.isArray(tagIds)) {
+      throw createError('tagIds phải là mảng số', 400);
+    }
+    const normalized = [...new Set(
+      tagIds
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v) && v > 0),
+    )];
+    for (const tid of normalized) {
+      // Kiểm tra tag tồn tại để tránh lưu tham chiếu rỗng.
+      // eslint-disable-next-line no-await-in-loop
+      const found = await tagModel.findById(tid);
+      if (!found) throw createError(`Tag không tồn tại: ${tid}`, 404);
+    }
+    const existing = await tagModel.getTagsByDigitalAsset(id);
+    const existingSet = new Set(existing.map((t) => Number(t.tagId)));
+    const targetSet = new Set(normalized);
+    const toAdd = normalized.filter((tid) => !existingSet.has(tid));
+    const toRemove = existing
+      .map((t) => Number(t.tagId))
+      .filter((tid) => !targetSet.has(tid));
+    await Promise.all([
+      ...toAdd.map((tid) => tagModel.addTag(id, tid)),
+      ...toRemove.map((tid) => tagModel.removeTag(id, tid)),
+    ]);
+  }
   return getById(id, { sub: ctx.actorId, positionLevel: ctx.positionLevel ?? 0 });
 }
 

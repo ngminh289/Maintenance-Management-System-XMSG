@@ -53,8 +53,8 @@ const uniqueName = (file) => {
   return `${uid}${extname(file.originalname).toLowerCase()}`;
 };
 
-// ── uploadDocument (PDF, Word, Excel, ảnh, DWG, ZIP ≤50 MB) ──────────────
-const DOC_EXT = new Set(['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.png', '.jpg', '.jpeg', '.dwg', '.zip']);
+// ── uploadDocument (PDF, Word, Excel, CSV, ảnh, MP4, DWG, ZIP ≤50 MB) ─────
+const DOC_EXT = new Set(['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.ppt', '.pptx', '.png', '.jpg', '.jpeg', '.mp4', '.dwg', '.zip']);
 const docStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename:    (_req, file, cb) => cb(null, uniqueName(file)),

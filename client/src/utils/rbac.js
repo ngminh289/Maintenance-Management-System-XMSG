@@ -10,7 +10,8 @@
  *   5 — bGD          : Ban Giám đốc
  *
  * Liên quan: Sidebar.jsx, DashboardPage.jsx, App.jsx; migration 019 (tách TC / Trưởng phòng).
- * Báo cáo: ba tab con /reports/operations|resource-usage|performance — TP/Phó hai phòng + Admin + GĐ; CV KTS chỉ tài nguyên.
+ * Báo cáo: ba tab con /reports/operations|resource-usage|performance — TP/Phó hai phòng + Admin + GĐ;
+ * riêng CV KTS chỉ được xem /reports/performance.
  * ACTION_ACCESS DAM: DOCUMENT:SUBMIT — CV KTS + Trưởng/Phó PKT (057); Admin không SUBMIT (034).
  * Phản hồi: DOCUMENT_FEEDBACK:CREATE mọi vai trừ KTS & PKT; REVIEW — KTS & PKT (cùng rule 038).
  * 055: Trưởng/Phó bảo trì 6,8; Trưởng/Phó PKT 7,9; ma trận cột 6 = headPtkT (7/9).
@@ -122,21 +123,22 @@ export function canAccessPerformanceReport(user) {
   return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
 
-/**
- * Báo cáo sử dụng tài nguyên: thêm CV KTS (L2); cùng tuyến lãnh đạo hai phòng + Admin + GĐ.
- */
+/** Báo cáo sử dụng tài nguyên: chỉ tuyến lãnh đạo hai phòng + Admin + GĐ. */
 export function canAccessResourceUsageReport(user) {
   if (!user) return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
-  if (lvl === 2) return true;
   if (lvl >= 4) return true;
   return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
 
-/** Báo cáo nghiệp vụ checklist: cùng quyền với báo cáo hiệu suất. */
+/** Báo cáo nghiệp vụ checklist: chỉ tuyến lãnh đạo hai phòng + Admin + GĐ. */
 export function canAccessChecklistOperationsReport(user) {
-  return canAccessPerformanceReport(user);
+  if (!user) return false;
+  const lvl = user.positionLevel ?? 0;
+  const pid = Number(user.positionId ?? 0);
+  if (lvl >= 4) return true;
+  return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
 
 /** Lối tắt báo cáo (không còn hub /reports): nghiệp vụ → tài nguyên → hiệu suất. */

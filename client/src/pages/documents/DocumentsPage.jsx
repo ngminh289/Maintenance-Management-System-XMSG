@@ -424,6 +424,7 @@ export function DocumentsPage() {
         documentCategoryId: editDoc.documentCategoryId
           ? Number(editDoc.documentCategoryId)
           : null,
+        tagIds: Array.isArray(editDoc.tagIds) ? editDoc.tagIds : [],
       });
       toast.success("Đã cập nhật tài liệu");
       setEditDoc(null);
@@ -799,6 +800,7 @@ export function DocumentsPage() {
                                 assetId: doc.assetId ?? "",
                                 documentCategoryId:
                                   doc.documentCategoryId ?? "",
+                                tagIds: (doc.tags ?? []).map((t) => t.tagId),
                               })
                             }
                             className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors"
@@ -889,10 +891,10 @@ export function DocumentsPage() {
                 if (f) setMeta((p) => ({ ...p, customFileName: f.name }));
               }}
               className="w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-600 file:font-medium hover:file:bg-blue-100 transition-colors"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.dwg,.zip"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.mp4,.dwg,.zip"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Hỗ trợ: PDF, Word, Excel, ảnh, DWG, ZIP.
+              Hỗ trợ: PDF, Word, Excel, CSV, ảnh, MP4, DWG, ZIP.
             </p>
           </div>
           <Input
@@ -1238,6 +1240,39 @@ export function DocumentsPage() {
                 ))}
               </Select>
             )}
+            {tags.length > 0 && (
+              <div>
+                <label className="text-sm font-semibold text-gray-700 block mb-2 flex items-center gap-1.5">
+                  <Tag size={13} /> Thẻ (có thể chọn nhiều)
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((t) => {
+                    const selected = (editDoc.tagIds ?? []).includes(t.tagId);
+                    return (
+                      <button
+                        key={t.tagId}
+                        type="button"
+                        onClick={() =>
+                          setEditDoc((d) => ({
+                            ...d,
+                            tagIds: selected
+                              ? (d.tagIds ?? []).filter((x) => x !== t.tagId)
+                              : [...(d.tagIds ?? []), t.tagId],
+                          }))
+                        }
+                        className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                          selected
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                        }`}
+                      >
+                        #{t.tagName}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -1476,7 +1511,7 @@ export function DocumentsPage() {
                     type="file"
                     onChange={(e) => setNewVerFile(e.target.files[0] ?? null)}
                     className="w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-600 file:font-medium hover:file:bg-blue-100"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.dwg,.zip"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.mp4,.dwg,.zip"
                   />
                 </div>
                 <Input
