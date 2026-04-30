@@ -90,7 +90,7 @@ const ROUTE_ACCESS = {
   workflows:              [false, false, false, true,  false, false],
   'admin-settings':       [false, false, false, true,  false, false],
   approvals:              [false, false, true,  false, false, true],
-  employees:              [false, false, true,  true,  false, false],
+  employees:              [false, true,  true,  true,  false, false],
 };
 
 const ROLE_IDX = {
@@ -199,9 +199,9 @@ const ACTION_ACCESS = {
   "CHECKLIST_TEMPLATE:DELETE": [false, true,  false, false, false, true],
   "CHECKLIST_TEMPLATE:APPROVE": [false, false, false, false, false, false],
   "CHECKLIST_RESULT:CREATE": [false, false, false, false, false, false],
-  "EMPLOYEE:CREATE":         [false, false, false, true,  false, false],
-  "EMPLOYEE:UPDATE":         [false, false, false, true,  false, false],
-  "EMPLOYEE:DELETE":         [false, false, false, true,  false, false],
+  "EMPLOYEE:CREATE":         [false, true,  false, true,  false, false],
+  "EMPLOYEE:UPDATE":         [false, true,  false, true,  false, false],
+  "EMPLOYEE:DELETE":         [false, true,  false, true,  false, false],
   "REPORT:EXPORT":         [false, false, false, false, true,  false],
   "MAINTENANCE_GROUP:WRITE": [false, true,  true,  true,  false, true],
   "MAINTENANCE_GROUP:DELETE":[false, false, true,  true,  false, false],
@@ -220,7 +220,7 @@ export function canDo(user, action) {
   const pid = Number(user?.positionId ?? 0);
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);
-    return k === "congNhan" || k === "truongPhong";
+    return k === "congNhan" || k === "truongCa" || k === "truongPhong";
   }
   if (action === "CHECKLIST_RESULT:APPROVE" || action === "CHECKLIST_REVIEW:WRITE") {
     return pid === 3; // Chỉ Trưởng ca

@@ -472,7 +472,7 @@ export function ChecklistPage() {
             { key: "checklist", label: "Checklist", icon: CheckSquare },
             {
               key: "docs",
-              label: `SOP (${qrData.documents?.length ?? 0})`,
+              label: `Tài liệu liên quan (${qrData.documents?.length ?? 0})`,
               icon: FileText,
             },
             {

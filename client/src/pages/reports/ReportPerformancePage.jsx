@@ -24,6 +24,7 @@ import {
   Cell,
 } from "recharts";
 import { statsApi } from "../../api/stats.api.js";
+import logoSrc from "../../assets/logo/logo.png";
 import { Card } from "../../components/ui/Card.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
@@ -65,9 +66,10 @@ function downloadPdf(docDef, fileName) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const LOGO_CANDIDATE_URLS = [
-  "/assets/logo/logo.jpg",
-  "/dist/assets/logo/logo.jpg",
-  "./assets/logo/logo.jpg",
+  logoSrc,
+  "/assets/logo/logo.png",
+  "/dist/assets/logo/logo.png",
+  "./assets/logo/logo.png",
 ];
 
 const PDF_REPORT_STYLES = {
@@ -277,7 +279,7 @@ export function ReportPerformancePage() {
             width: "*",
             stack: [
               {
-                text: "PHẦN MỀM BẢO TRÌ TÀI SẢN SẢN XUẤT TÍCH HỢP TÀI NGUYÊN SỐ CÔNG TY CP XMSG",
+                text: "PHẦN MỀM BẢO TRÌ TÀI SẢN SẢN XUẤT TÍCH HỢP TÀI NGUYÊN SỐ CÔNG TY CỔ PHẦN XI MĂNG SÔNG GIANH",
                 style: "sysTitle",
               },
               {
@@ -585,8 +587,8 @@ export function ReportPerformancePage() {
               "Tên máy",
               "Vị trí",
               "Giờ vận hành (h)",
-              "Planned (h)",
-              "Unplanned (h)",
+              "Có kế hoạch (h)",
+              "Không kế hoạch (h)",
               "Tổng giờ dừng (h)",
               "Tỷ lệ (%)",
             ],
