@@ -11,7 +11,7 @@ import {
   LayoutDashboard, Cpu, ClipboardList, Wrench, FileText,
   CheckSquare, ClipboardCheck, Layers, Users, ShieldCheck, ChevronRight,
   ListChecks, Factory, Activity, GitBranch, MessageSquare, Settings,
-  ScrollText, ChevronsUpDown,
+  ScrollText, ChevronsUpDown, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
@@ -135,6 +135,13 @@ const MENU_GROUPS = [
         routeKey: 'admin-settings',
         icon: Settings,
         label: 'Cấu hình hệ thống',
+        end: true,
+      },
+      {
+        to: '/admin/permissions',
+        routeKey: 'admin-settings',
+        icon: KeyRound,
+        label: 'Phân quyền hệ thống',
       },
     ],
   },

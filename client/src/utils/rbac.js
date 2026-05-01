@@ -110,6 +110,64 @@ const PIDS_TRUONG_PHO_HAI_PHONG = [
   PID_PHO_PHONG_KT,
 ];
 
+const ACTION_RESOURCE_MAP = {
+  ASSET: "ASSET",
+  WORK_ORDER: "WORK_ORDER",
+  DOCUMENT: "DIGITAL_ASSET",
+  DIGITAL_ASSET: "DIGITAL_ASSET",
+  SCHEDULE: "MAINTENANCE_PLAN",
+  MAINTENANCE_PLAN: "MAINTENANCE_PLAN",
+  CHECKLIST_TEMPLATE: "CHECKLIST_TEMPLATE",
+  CHECKLIST_RESULT: "CHECKLIST_RESULT",
+  RUNTIME_LOG: "RUNTIME_LOG",
+  EMPLOYEE: "EMPLOYEE",
+  TAG: "TAG",
+  WORKFLOW: "WORKFLOW",
+  REPORT: "REPORT",
+  DOCUMENT_CATEGORY: "DOCUMENT_CATEGORY",
+  DOCUMENT_FEEDBACK: "DOCUMENT_FEEDBACK",
+};
+
+const ROUTE_PERMISSION_MAP = {
+  assets: { resourceType: "ASSET", permissionName: "READ" },
+  schedules: { resourceType: "MAINTENANCE_PLAN", permissionName: "READ" },
+  "work-orders": { resourceType: "WORK_ORDER", permissionName: "READ" },
+  checklists: { resourceType: "CHECKLIST_RESULT", permissionName: "READ" },
+  "checklist-manage": { resourceType: "CHECKLIST_TEMPLATE", permissionName: "READ" },
+  documents: { resourceType: "DIGITAL_ASSET", permissionName: "READ" },
+  "document-feedback-inbox": {
+    resourceType: "DOCUMENT_FEEDBACK",
+    permissionName: "REVIEW",
+  },
+  employees: { resourceType: "EMPLOYEE", permissionName: "READ" },
+};
+
+function getPermissionSet(user) {
+  const list = Array.isArray(user?.permissions) ? user.permissions : null;
+  if (!list) return null;
+  return new Set(
+    list.map((p) =>
+      `${String(p.resourceType || "").toUpperCase()}:${String(p.permissionName || "").toUpperCase()}`,
+    ),
+  );
+}
+
+function hasPermissionBySet(permissionSet, resourceType, permissionName) {
+  if (!permissionSet) return null;
+  const key = `${String(resourceType || "").toUpperCase()}:${String(permissionName || "").toUpperCase()}`;
+  return permissionSet.has(key);
+}
+
+function canDoByDbPermission(user, action) {
+  const permissionSet = getPermissionSet(user);
+  if (!permissionSet || typeof action !== "string") return null;
+  const [resourceKey, permissionName] = action.split(":");
+  if (!resourceKey || !permissionName) return null;
+  const resourceType = ACTION_RESOURCE_MAP[String(resourceKey).toUpperCase()];
+  if (!resourceType) return null;
+  return hasPermissionBySet(permissionSet, resourceType, permissionName);
+}
+
 /**
  * Báo cáo hiệu suất tài sản: CV KTS (L2), Trưởng/Phó bảo trì & PKT (L3), Quản trị (L4+), Ban GĐ.
  * Theo yêu cầu nghiệp vụ: ai xem được báo cáo này thì cũng được quyền xuất.
@@ -151,13 +209,24 @@ export function getFirstAllowedReportPath(user) {
 }
 
 export function canAccess(user, routeKey) {
+  const permissionSet = getPermissionSet(user);
   if (routeKey === "checklist-review") {
-    return Number(user?.positionId ?? 0) === 3;
+    const byPosition = Number(user?.positionId ?? 0) === 3;
+    const byDb = hasPermissionBySet(permissionSet, "CHECKLIST_RESULT", "UPDATE");
+    return byDb === null ? byPosition : byPosition && byDb;
   }
   if (routeKey === 'report-performance') return canAccessPerformanceReport(user);
   if (routeKey === 'report-resource-usage') return canAccessResourceUsageReport(user);
   if (routeKey === 'report-operations') {
     return canAccessChecklistOperationsReport(user);
+  }
+  const routePermission = ROUTE_PERMISSION_MAP[routeKey];
+  if (routePermission && permissionSet) {
+    return hasPermissionBySet(
+      permissionSet,
+      routePermission.resourceType,
+      routePermission.permissionName,
+    );
   }
   const matrix = ROUTE_ACCESS[routeKey];
   if (!matrix) return true; // route không kiểm soát → cho qua
@@ -217,6 +286,10 @@ function canApproveByPid(pid, list) {
 }
 
 export function canDo(user, action) {
+  const canByDb = canDoByDbPermission(user, action);
+  if (canByDb !== null) {
+    return canByDb;
+  }
   const pid = Number(user?.positionId ?? 0);
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);

@@ -26,6 +26,7 @@ const PAGE_TITLES = {
   '/reports/resource-usage': 'Báo cáo sử dụng tài nguyên',
   '/reports/performance':  'Báo cáo hiệu suất tài sản',
   '/admin':       'Cấu hình hệ thống',
+  '/admin/permissions': 'Phân quyền hệ thống',
   '/notifications': 'Thông báo',
   '/settings':    'Cài đặt hệ thống',
   '/profile':     'Hồ sơ cá nhân',

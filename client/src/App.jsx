@@ -35,6 +35,7 @@ import { ResourceUsageReportsPage } from './pages/reports/ResourceUsageReportsPa
 import { WorkflowsPage }        from './pages/workflows/WorkflowsPage.jsx';
 import { ProfilePage }          from './pages/ProfilePage.jsx';
 import { AdminPage }            from './pages/admin/AdminPage.jsx';
+import { PermissionAdminPage }  from './pages/admin/PermissionAdminPage.jsx';
 import { NotificationsPage }    from './pages/NotificationsPage.jsx';
 
 export default function App() {
@@ -138,6 +139,7 @@ export default function App() {
             {/* Cấu hình hệ thống — Admin only */}
             <Route element={<RoleGuard routeKey="admin-settings" />}>
               <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin/permissions" element={<PermissionAdminPage />} />
             </Route>
 
             {/* Hồ sơ cá nhân + thông báo — mọi user */}

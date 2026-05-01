@@ -12,6 +12,7 @@ import { env } from '../config/env.js';
 import { createError } from '../utils/createError.js';
 import * as employeeModel from '../models/employee.model.js';
 import * as workOrderModel from '../models/workOrder.model.js';
+import * as permissionModel from '../models/permission.model.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -221,6 +222,12 @@ function buildFieldWorkSummary(emp, rows) {
 export async function getMe(employeeId) {
   const emp = await employeeModel.findById(employeeId);
   if (!emp) throw createError('Không tìm thấy nhân viên', 404);
+  const rolePermissions = await permissionModel.findAll(Number(emp.positionId));
+  emp.permissions = rolePermissions.map((p) => ({
+    permissionId: Number(p.permissionId),
+    resourceType: String(p.resourceType || '').toUpperCase(),
+    permissionName: String(p.permissionName || '').toUpperCase(),
+  }));
   const lvl = Number(emp.positionLevel) || 0;
   if (lvl >= 1 && lvl <= 2) {
     const rows = await workOrderModel.findOpenAssignmentsForEmployee(employeeId);
