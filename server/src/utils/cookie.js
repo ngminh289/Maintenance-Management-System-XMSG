@@ -5,8 +5,9 @@
  */
 import { env } from '../config/env.js';
 
-const SECURE = env.nodeEnv === 'production';
 const SAME_SITE = env.cookie.sameSite;
+// SameSite=None bắt buộc phải đi cùng Secure, nếu không browser sẽ block cookie.
+const SECURE = env.nodeEnv === 'production' || SAME_SITE === 'none';
 export const ACCESS_COOKIE = 'accessToken';
 export const REFRESH_COOKIE = 'refreshToken';
 export const ACCESS_COOKIE_PATH = '/';
