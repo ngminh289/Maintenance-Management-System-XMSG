@@ -7,7 +7,8 @@
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ok, fail } from '../utils/response.js';
-import { setTokenCookies, clearTokenCookies, REFRESH_COOKIE } from '../utils/cookie.js';
+import { env } from '../config/env.js';
+import { setTokenCookies, clearTokenCookies, ACCESS_COOKIE, REFRESH_COOKIE } from '../utils/cookie.js';
 import { logAction } from '../utils/audit.js';
 import * as authService     from '../services/auth.service.js';
 import * as employeeService from '../services/employee.service.js';
@@ -41,10 +42,10 @@ export const refresh = asyncHandler(async (req, res) => {
   const token = req.cookies?.[REFRESH_COOKIE];
   const { accessToken } = await authService.refreshTokens(token);
   // Chỉ cập nhật access cookie, giữ nguyên refresh
-  res.cookie('accessToken', accessToken, {
+  res.cookie(ACCESS_COOKIE, accessToken, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: env.cookie.sameSite,
+    secure: env.nodeEnv === 'production',
     maxAge: 15 * 60 * 1000,
   });
   return ok(res, { message: 'Làm mới token thành công.' });
