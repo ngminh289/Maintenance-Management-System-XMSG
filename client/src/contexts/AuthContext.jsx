@@ -2,8 +2,14 @@
  * AuthContext.jsx — Quản lý trạng thái đăng nhập toàn ứng dụng.
  * Gọi /auth/me khi load app để kiểm tra session.
  */
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { authApi } from '../api/auth.api.js';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
+import { authApi } from "../api/auth.api.js";
 
 const AuthContext = createContext(null);
 
@@ -25,7 +31,9 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  useEffect(() => { fetchMe(); }, [fetchMe]);
+  useEffect(() => {
+    fetchMe();
+  }, [fetchMe]);
 
   const login = async (credentials) => {
     const res = await authApi.login(credentials);
@@ -39,7 +47,9 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refetchMe: fetchMe }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, logout, refetchMe: fetchMe }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -47,6 +57,6 @@ export function AuthProvider({ children }) {
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth phải dùng bên trong AuthProvider');
+  if (!ctx) throw new Error("useAuth phải dùng bên trong AuthProvider");
   return ctx;
 };
