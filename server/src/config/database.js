@@ -7,14 +7,28 @@ import { env } from './env.js';
 
 let pool;
 
+function resolveSslConfig() {
+  if (!env.db.sslEnabled) return undefined;
+
+  const ssl = {
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: env.db.sslRejectUnauthorized,
+  };
+
+  if (env.db.sslCa) ssl.ca = env.db.sslCa;
+  return ssl;
+}
+
 export function getPool() {
   if (!pool) {
+    const ssl = resolveSslConfig();
     pool = mysql.createPool({
       host: env.db.host,
       port: env.db.port,
       user: env.db.user,
       password: env.db.password,
       database: env.db.database,
+      ...(ssl ? { ssl } : {}),
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,

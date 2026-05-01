@@ -12,6 +12,14 @@ function required(name, fallback = undefined) {
   return v;
 }
 
+function toBool(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 4000,
@@ -23,6 +31,9 @@ export const env = {
     user: required('DB_USER', 'root'),
     password: process.env.DB_PASSWORD ?? '',
     database: required('DB_NAME', 'warehouse_maintenance'),
+    sslEnabled: toBool(process.env.DB_SSL, false),
+    sslRejectUnauthorized: toBool(process.env.DB_SSL_REJECT_UNAUTHORIZED, true),
+    sslCa: process.env.DB_SSL_CA || '',
   },
 
   jwt: {
