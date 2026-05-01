@@ -20,10 +20,25 @@ function toBool(value, fallback = false) {
   return fallback;
 }
 
+function parseOrigins(value, fallback) {
+  const raw = value ?? fallback;
+  return String(raw)
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((v) => v.replace(/\/+$/, ''));
+}
+
+function resolveSameSite(nodeEnv, explicitValue) {
+  const normalized = String(explicitValue || '').trim().toLowerCase();
+  if (['lax', 'strict', 'none'].includes(normalized)) return normalized;
+  return nodeEnv === 'production' ? 'none' : 'lax';
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 4000,
-  clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  clientOrigins: parseOrigins(process.env.CLIENT_ORIGIN, 'http://localhost:5173'),
 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
@@ -52,4 +67,7 @@ export const env = {
   },
 
   appPublicUrl: process.env.APP_PUBLIC_URL || 'http://localhost:5173',
+  cookie: {
+    sameSite: resolveSameSite(process.env.NODE_ENV || 'development', process.env.COOKIE_SAME_SITE),
+  },
 };

@@ -20,8 +20,13 @@ import { errorHandler } from "./middleware/errorHandler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function normalizeOrigin(origin) {
+  return String(origin || '').trim().replace(/\/+$/, '');
+}
+
 export function createApp() {
   const app = express();
+  const allowOrigins = new Set((env.clientOrigins || []).map(normalizeOrigin));
 
   app.set("trust proxy", 1);
   app.use(
@@ -31,7 +36,11 @@ export function createApp() {
   );
   app.use(
     cors({
-      origin: env.clientOrigin,
+      origin: (origin, cb) => {
+        // Cho phép server-to-server / healthcheck không có Origin header.
+        if (!origin) return cb(null, true);
+        return cb(null, allowOrigins.has(normalizeOrigin(origin)));
+      },
       credentials: true,
     }),
   );

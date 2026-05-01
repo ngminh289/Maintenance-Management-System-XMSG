@@ -6,6 +6,7 @@
 import { env } from '../config/env.js';
 
 const SECURE = env.nodeEnv === 'production';
+const SAME_SITE = env.cookie.sameSite;
 export const ACCESS_COOKIE = 'accessToken';
 export const REFRESH_COOKIE = 'refreshToken';
 export const REFRESH_COOKIE_PATH = '/api/auth/refresh';
@@ -13,7 +14,7 @@ export const REFRESH_COOKIE_PATH = '/api/auth/refresh';
 const ACCESS_MAX_AGE = 15 * 60 * 1000;       // 15 phút
 const REFRESH_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 ngày
 
-const BASE_OPTS = { httpOnly: true, sameSite: 'lax', secure: SECURE };
+const BASE_OPTS = { httpOnly: true, sameSite: SAME_SITE, secure: SECURE };
 
 export function setTokenCookies(res, { accessToken, refreshToken }) {
   res.cookie(ACCESS_COOKIE, accessToken, { ...BASE_OPTS, maxAge: ACCESS_MAX_AGE });
