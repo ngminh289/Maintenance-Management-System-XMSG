@@ -7,13 +7,14 @@
  * Đọc danh sách: DRAFT/REJECTED/PENDING chỉ chủ + Admin; APPROVED/ARCHIVED công khai trong kho. Người duyệt xem PENDING ở tab Phê duyệt.
  * Liên quan: models/digitalAsset.model.js, migration 036, 056.
  */
+import { unlink } from 'fs/promises';
 import { createError } from '../utils/createError.js';
+import { isRemoteStorageUrl, deleteStoredFile } from '../utils/storageUrl.js';
 import { getPagination, paginatedResult } from '../utils/paginate.js';
 import * as model            from '../models/digitalAsset.model.js';
 import * as tagModel         from '../models/tag.model.js';
 import * as documentCategoryModel from '../models/documentCategory.model.js';
 import * as approvalSvc from './approval.service.js';
-import { unlink } from 'fs/promises';
 import { resolveDocumentAbsolutePath } from '../config/upload.js';
 
 function assertOwnerOrAdmin(da, ctx, actionLabel) {
@@ -247,10 +248,7 @@ export async function remove(id, ctx) {
   if (!['DRAFT', 'REJECTED'].includes(da.status)) {
     throw createError('Chỉ có thể xóa tài liệu ở trạng thái DRAFT hoặc REJECTED', 400);
   }
-  const abs = resolveDocumentAbsolutePath(da.filePath);
-  if (abs) {
-    try { await unlink(abs); } catch { /* file có thể đã bị xóa */ }
-  }
+  await removeDamPhysicalFile(da.filePath);
   await model.remove(id);
 }
 
@@ -258,9 +256,22 @@ export async function remove(id, ctx) {
 export async function forceRemove(id) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
-  const abs = resolveDocumentAbsolutePath(da.filePath);
-  if (abs) {
-    try { await unlink(abs); } catch { /* file có thể đã bị xóa */ }
-  }
+  await removeDamPhysicalFile(da.filePath);
   await model.remove(id);
+}
+
+async function removeDamPhysicalFile(filePath) {
+  if (!filePath) return;
+  if (isRemoteStorageUrl(filePath)) {
+    await deleteStoredFile(filePath);
+    return;
+  }
+  const abs = resolveDocumentAbsolutePath(filePath);
+  if (abs) {
+    try {
+      await unlink(abs);
+    } catch {
+      /* file có thể đã bị xóa */
+    }
+  }
 }

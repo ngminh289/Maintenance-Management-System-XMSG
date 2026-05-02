@@ -110,14 +110,35 @@ export async function findDigitalAssetIdByDocumentBasename(basename) {
   const likeEnd = `%/${bn}`;
   const likeWin = `%\\\\${bn}`;
   const likeUploads = `uploads/documents/${bn}`;
+  const likeUrlTail = `%/${bn}`;
   const [rows] = await getPool().query(
     `SELECT da.DigitalAssetID AS id
      FROM DigitalAssets da
      WHERE da.FilePath = ? OR da.FilePath LIKE ? OR da.FilePath LIKE ? OR da.FilePath = ?
+        OR (da.FilePath LIKE 'http%' AND da.FilePath LIKE ?)
      LIMIT 1`,
-    [bn, likeEnd, likeWin, likeUploads],
+    [bn, likeEnd, likeWin, likeUploads, likeUrlTail],
   );
   return rows[0]?.id ?? null;
+}
+
+/** Lấy FilePath để redirect Cloudinary hoặc đọc file local (legacy). */
+export async function findDocumentPathByBasename(basename) {
+  const bn = basename != null ? String(basename).trim() : '';
+  if (!bn) return null;
+  const likeEnd = `%/${bn}`;
+  const likeWin = `%\\\\${bn}`;
+  const likeUploads = `uploads/documents/${bn}`;
+  const likeUrlTail = `%/${bn}`;
+  const [rows] = await getPool().query(
+    `SELECT da.FilePath AS filePath
+     FROM DigitalAssets da
+     WHERE da.FilePath = ? OR da.FilePath LIKE ? OR da.FilePath LIKE ? OR da.FilePath = ?
+        OR (da.FilePath LIKE 'http%' AND da.FilePath LIKE ?)
+     LIMIT 1`,
+    [bn, likeEnd, likeWin, likeUploads, likeUrlTail],
+  );
+  return rows[0]?.filePath ?? null;
 }
 
 export async function findAll(filters = {}) {

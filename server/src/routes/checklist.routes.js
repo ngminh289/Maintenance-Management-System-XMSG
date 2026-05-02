@@ -10,6 +10,7 @@ import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { validate }          from '../middleware/validate.js';
 import { uploadChecklistSubmit } from '../config/upload.js';
+import { cloudinaryAfterAny } from '../middleware/cloudinaryUpload.middleware.js';
 import {
   templateSchema, templateItemSchema, submitChecklistSchema, reviewChecklistSchema,
 } from '../validators/checklist.validator.js';
@@ -98,6 +99,7 @@ checklistRouter.get('/results/:id', ctrl.getResultById);
 checklistRouter.post('/results',
   requirePermission('CHECKLIST_RESULT', 'CREATE'),
   uploadChecklistSubmit,
+  cloudinaryAfterAny('warehouse/checklist-photos', 'image'),
   validate(submitChecklistSchema),
   ctrl.submitResult,
 );

@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "db:setup": "node scripts/setup-db.js"
+    "db:setup": "node scripts/setup-db.js",
+    "migrate:cloudinary": "node scripts/migrate-uploads-to-cloudinary.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "cloudinary": "^2.10.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

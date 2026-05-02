@@ -12,9 +12,7 @@
  */
 import { createError } from "../utils/createError.js";
 import { getPagination, paginatedResult } from "../utils/paginate.js";
-import { unlink } from "fs/promises";
-import { join } from "path";
-import { fileURLToPath } from "url";
+import { deleteStoredFile } from "../utils/storageUrl.js";
 import * as model from "../models/workOrder.model.js";
 import * as photoModel from "../models/workOrderPhoto.model.js";
 import * as workOrderMaintSync from "./workOrderMaintenanceSync.service.js";
@@ -29,9 +27,6 @@ import * as employeeModel from "../models/employee.model.js";
 import * as checklistResultModel from "../models/checklistResult.model.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 import * as downtimeEventModel from "../models/assetDowntimeEvent.model.js";
-
-/** Thư mục gốc server (…/server) — resolve đường dẫn file ảnh WO */
-const SERVER_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 /** Level ≥ 3: Trưởng ca / Trưởng phòng — nghiệm thu đóng phiếu */
 const SUPERVISOR_MIN_LEVEL = 3;
@@ -663,15 +658,11 @@ export async function addWorkOrderPhotos(
   const list = files || [];
   if (!list.length) throw createError("Chọn ít nhất một ảnh", 400);
   for (const f of list) {
-    const rel = `uploads/work-orders/${f.filename}`;
+    const rel =
+      f.secure_url || `uploads/work-orders/${f.filename}`;
     await photoModel.insertRow(woId, rel, employeeId);
   }
   return photoModel.listByWo(woId);
-}
-
-function absUploadPath(filePath) {
-  const parts = String(filePath).split("/").filter(Boolean);
-  return join(SERVER_ROOT, ...parts);
 }
 
 /** Xóa một ảnh WO (người upload hoặc giám sát). */
@@ -690,7 +681,7 @@ export async function deleteWorkOrderPhoto(
   if (!own && !isSupervisor) {
     throw createError("Không có quyền xóa ảnh này", 403);
   }
-  await unlink(absUploadPath(row.filePath)).catch(() => {});
+  await deleteStoredFile(row.filePath);
   await photoModel.remove(photoId);
   return photoModel.listByWo(woId);
 }

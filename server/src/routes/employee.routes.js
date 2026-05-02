@@ -17,6 +17,7 @@ import {
   leaveScheduleSchema,
 } from "../validators/employee.validator.js";
 import { uploadEmployeePhoto }   from "../config/upload.js";
+import { cloudinaryAfterSingle } from "../middleware/cloudinaryUpload.middleware.js";
 import { hasPermission }         from "../middleware/requirePermission.js";
 import { asyncHandler }          from "../utils/asyncHandler.js";
 import * as ctrl from "../controllers/employee.controller.js";
@@ -56,6 +57,7 @@ employeeRouter.patch("/:id/password", validate(changePasswordSchema), ctrl.chang
 employeeRouter.patch(
   "/:id/photo",
   uploadEmployeePhoto.single("photo"),
+  cloudinaryAfterSingle("warehouse/employees", "image"),
   asyncHandler(async (req, _res, next) => {
     req.hasUpdatePermission = await hasPermission(req.user?.positionId, "EMPLOYEE", "UPDATE");
     next();

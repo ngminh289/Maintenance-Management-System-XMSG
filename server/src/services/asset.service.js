@@ -6,24 +6,13 @@
  * FilePath lưu dạng "uploads/assets/:filename" — nhất quán với WO photos.
  * AssetStatusHistory: ghi mỗi khi Status thay đổi để tính Downtime chính xác (BFD 6.4).
  */
-import { unlink } from 'fs/promises';
-import { join }   from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { createError }                    from '../utils/createError.js';
 import { getPagination, paginatedResult } from '../utils/paginate.js';
 import * as model      from '../models/asset.model.js';
 import * as photoModel from '../models/assetPhoto.model.js';
 import * as downtimeEventModel from '../models/assetDowntimeEvent.model.js';
 import { getPool }     from '../config/database.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-/** "uploads/assets/abc.jpg" → đường dẫn tuyệt đối để xóa file */
-const absAssetPhotoPath = (filePath) => {
-  const parts = String(filePath).split('/').filter(Boolean);
-  return join(__dirname, '..', '..', ...parts);
-};
+import { deleteStoredFile } from '../utils/storageUrl.js';
 
 export async function getAll(query) {
   const { page, limit, offset } = getPagination(query);
@@ -126,7 +115,7 @@ export async function addPhotos(assetId, files, { uploadedBy } = {}) {
   if (!list.length) throw createError('Chọn ít nhất một ảnh', 400);
 
   for (const f of list) {
-    const rel = `uploads/assets/${f.filename}`;
+    const rel = f.secure_url || `uploads/assets/${f.filename}`;
     await photoModel.insert(assetId, rel, null, uploadedBy ?? null);
   }
   return photoModel.listByAsset(assetId);
@@ -140,7 +129,7 @@ export async function deletePhoto(assetId, photoId) {
   if (!row || Number(row.assetId) !== Number(assetId)) {
     throw createError('Không tìm thấy ảnh', 404);
   }
-  await unlink(absAssetPhotoPath(row.filePath)).catch(() => {});
+  await deleteStoredFile(row.filePath);
   await photoModel.remove(photoId);
   return photoModel.listByAsset(assetId);
 }

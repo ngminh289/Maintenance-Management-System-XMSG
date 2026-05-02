@@ -51,10 +51,11 @@ export const getQRInfo = asyncHandler(async (req, res) =>
   ));
 
 // ── Results ───────────────────────────────────────────────────────────────────
-/** Chuẩn hoá đường dẫn lưu DB: luôn bắt đầu bằng uploads/photos/… */
+/** Chuẩn hoá đường dẫn lưu DB: URL Cloudinary giữ nguyên; local → uploads/photos/… */
 function normalizedChecklistPhotoPath(filePath) {
   if (!filePath) return null;
   const s = String(filePath).replace(/\\/g, '/');
+  if (/^https?:\/\//i.test(s)) return s;
   const u = s.toLowerCase().indexOf('uploads/');
   if (u >= 0) return s.slice(u);
   const parts = s.split('/').filter(Boolean);
@@ -68,12 +69,13 @@ export const submitResult = asyncHandler(async (req, res) => {
   const files = Array.isArray(req.files) ? req.files : [];
   const itemPhotos = {};
   for (const f of files) {
-    if (!f?.path) continue;
-    const norm = normalizedChecklistPhotoPath(f.path);
-    if (f.fieldname === 'photo') evidencePhoto = norm ?? f.path;
+    const stored = f.secure_url || f.path;
+    if (!stored) continue;
+    const norm = normalizedChecklistPhotoPath(stored);
+    if (f.fieldname === 'photo') evidencePhoto = norm ?? stored;
     else {
       const m = /^item_(\d+)$/.exec(String(f.fieldname || ''));
-      if (m) itemPhotos[Number(m[1])] = norm ?? f.path;
+      if (m) itemPhotos[Number(m[1])] = norm ?? stored;
     }
   }
   const merged = (details || []).map((row) => {

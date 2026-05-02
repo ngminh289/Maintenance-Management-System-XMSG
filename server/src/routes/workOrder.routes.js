@@ -17,6 +17,7 @@ import {
   workOrderPowerSchema,
 } from '../validators/workOrder.validator.js';
 import { uploadWoPhotos } from '../config/upload.js';
+import { cloudinaryAfterArray } from '../middleware/cloudinaryUpload.middleware.js';
 import * as ctrl from '../controllers/workOrder.controller.js';
 
 export const workOrderRouter = Router();
@@ -63,6 +64,7 @@ workOrderRouter.patch('/:id/power-state',
 workOrderRouter.post('/:id/photos',
   requirePermission('WORK_ORDER', 'UPDATE'),
   uploadWoPhotos.array('photos', 15),
+  cloudinaryAfterArray('warehouse/work-orders', 'image'),
   ctrl.addPhotos,
 );
 

@@ -6,24 +6,15 @@
  * Dùng trong: controllers/employee.controller.js.
  */
 import bcrypt from "bcrypt";
-import { unlink } from "fs/promises";
-import { join }   from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
 import { createError }                    from "../utils/createError.js";
 import { getPagination, paginatedResult } from "../utils/paginate.js";
 import * as model from "../models/employee.model.js";
 import { MIN_ADMIN_POSITION_LEVEL } from "../constants/positions.js";
 import { departmentIdForPosition }  from "../constants/orgUnits.js";
 import { normalizeLocalDateTimeForMysql } from "../utils/dateTimeMysql.js";
+import { deleteStoredFile } from "../utils/storageUrl.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const BCRYPT_ROUNDS = 12;
-
-const absEmpPhotoPath = (filePath) => {
-  const parts = String(filePath).split("/").filter(Boolean);
-  return join(__dirname, "..", "..", ...parts);
-};
 
 export async function getAll(query, { requesterLevel } = {}) {
   const { page, limit, offset } = getPagination(query);
@@ -108,12 +99,11 @@ export async function updatePhoto(id, file, { actorId, isAdmin } = {}) {
   }
   if (!file) throw createError("Chưa chọn file ảnh", 400);
 
-  // Xóa ảnh cũ nếu có
   if (emp.photoPath) {
-    await unlink(absEmpPhotoPath(emp.photoPath)).catch(() => {});
+    await deleteStoredFile(emp.photoPath);
   }
 
-  const rel = `uploads/employees/${file.filename}`;
+  const rel = file.secure_url || `uploads/employees/${file.filename}`;
   await model.updatePhoto(id, rel);
   return model.findById(id);
 }

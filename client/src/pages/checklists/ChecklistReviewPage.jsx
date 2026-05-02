@@ -32,17 +32,6 @@ const INPUT_TYPE_SHORT = {
   Selection: 'Chọn',
 };
 
-const API_ORIGIN = (import.meta.env.VITE_API_BASE || 'http://localhost:4000/api').replace(/\/?api\/?$/, '');
-
-function evidencePhotoUrl(stored) {
-  if (!stored) return null;
-  const s = String(stored).replace(/\\/g, '/');
-  const lower = s.toLowerCase();
-  const u = lower.indexOf('/uploads/');
-  const path = u >= 0 ? s.slice(u + 1) : (s.startsWith('uploads/') ? s : `uploads/photos/${s.split('/').pop()}`);
-  return `${API_ORIGIN.replace(/\/$/, '')}/${path}`;
-}
-
 function rowShellClass(tone) {
   if (tone === 'bad') return 'border-l-4 border-l-red-500 bg-red-50/40';
   if (tone === 'good') return 'border-l-4 border-l-emerald-500 bg-emerald-50/30';
@@ -129,7 +118,7 @@ export function ChecklistReviewPage() {
     }
   };
 
-  const photoHref = detail?.evidencePhoto ? evidencePhotoUrl(detail.evidencePhoto) : null;
+  const photoHref = detail?.evidencePhoto ? checklistStoredPhotoUrl(detail.evidencePhoto) : null;
 
   const detailRows = useMemo(() => {
     if (!detail?.details?.length) return [];

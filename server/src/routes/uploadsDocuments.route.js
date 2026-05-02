@@ -5,7 +5,7 @@
  */
 import { join, basename } from 'path';
 import { existsSync } from 'fs';
-import { UPLOAD_DIR } from '../config/upload.js';
+import { UPLOAD_DIR, resolveDocumentAbsolutePath } from '../config/upload.js';
 import { previewHeadersForPath } from '../config/uploadsStaticHeaders.js';
 import { optionalAuth } from '../middleware/auth.middleware.js';
 import * as digitalAssetModel from '../models/digitalAsset.model.js';
@@ -18,7 +18,25 @@ export function registerUploadsDocumentsGet(app) {
     if (!name || name !== raw) {
       return next();
     }
-    const abs = join(UPLOAD_DIR, name);
+
+    const storedPath = await digitalAssetModel.findDocumentPathByBasename(name);
+    if (storedPath && /^https?:\/\//i.test(String(storedPath))) {
+      const empId = req.user?.sub != null ? Number(req.user.sub) : null;
+      if (Number.isFinite(empId)) {
+        try {
+          const daId = await digitalAssetModel.findDigitalAssetIdByDocumentBasename(name);
+          if (daId != null) {
+            await viewLogModel.insert({ digitalAssetId: daId, employeeId: empId });
+          }
+        } catch {
+          /* không chặn redirect */
+        }
+      }
+      return res.redirect(302, storedPath);
+    }
+
+    const abs =
+      resolveDocumentAbsolutePath(storedPath || name) || join(UPLOAD_DIR, name);
     if (!existsSync(abs)) {
       return next();
     }

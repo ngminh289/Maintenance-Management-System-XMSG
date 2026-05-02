@@ -20,9 +20,12 @@ export const assetApi = {
   deletePhoto:  (id, photoId)  => api.delete(`/assets/${id}/photos/${photoId}`),
   /** filePath dạng "uploads/assets/abc.jpg" — trả về URL tuyệt đối */
   getPhotoUrl:  (filePath)     => {
+    if (!filePath) return null;
+    const p = String(filePath).trim();
+    if (/^https?:\/\//i.test(p)) return p;
     const origin = (import.meta.env.VITE_API_BASE || 'http://localhost:4000/api')
       .replace(/\/?api\/?$/, '');
-    return `${origin}/${String(filePath).replace(/^\/+/, '')}`;
+    return `${origin}/${p.replace(/^\/+/, '')}`;
   },
 
   // Bộ đếm giờ

@@ -11,6 +11,9 @@ export function documentUploadsBasename(filePath) {
 }
 
 export function documentFilePublicUrl(filePath, apiBase) {
+  if (filePath == null || filePath === '') return '';
+  const norm = String(filePath).replace(/\\/g, '/').trim();
+  if (/^https?:\/\//i.test(norm)) return norm;
   const base = (apiBase ?? '').replace(/\/api\/?$/, '') || 'http://localhost:4000';
   const name = documentUploadsBasename(filePath);
   if (!name) return '';

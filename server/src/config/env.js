@@ -66,6 +66,14 @@ export const env = {
     pass: process.env.SMTP_PASS || '',
   },
 
+  /** Cloudinary (tuỳ chọn): đủ 3 biến → upload memory + URL trong DB; thiếu → lưu đĩa uploads/ */
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    maxRawMb: Number(process.env.CLOUDINARY_MAX_RAW_MB) || null,
+  },
+
   appPublicUrl: process.env.APP_PUBLIC_URL || 'http://localhost:5173',
   cookie: {
     sameSite: resolveSameSite(process.env.NODE_ENV || 'development', process.env.COOKIE_SAME_SITE),

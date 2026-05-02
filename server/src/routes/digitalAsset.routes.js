@@ -10,10 +10,17 @@ import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { uploadDocument }    from '../config/upload.js';
+import { isCloudinaryEnabled } from '../config/cloudinary.js';
+import { cloudinaryAfterSingle } from '../middleware/cloudinaryUpload.middleware.js';
 import * as ctrl from '../controllers/digitalAsset.controller.js';
 import * as fbCtrl from '../controllers/documentFeedback.controller.js';
 
 export const digitalAssetRouter = Router();
+
+const damUpload =
+  isCloudinaryEnabled()
+    ? [uploadDocument.single('file'), cloudinaryAfterSingle('warehouse/documents', 'raw')]
+    : [uploadDocument.single('file')];
 
 digitalAssetRouter.use(requireAuth);
 
@@ -42,7 +49,7 @@ digitalAssetRouter.get('/:id', ctrl.getById);
 // Upload tài liệu mới — CV KTS + Trưởng/Phó PKT (CREATE)
 digitalAssetRouter.post('/',
   requirePermission('DIGITAL_ASSET', 'CREATE'),
-  uploadDocument.single('file'),
+  ...damUpload,
   ctrl.upload,
 );
 digitalAssetRouter.put('/:id',
@@ -56,7 +63,7 @@ digitalAssetRouter.get('/:id/versions', ctrl.getVersions);
 // Upload phiên bản mới — CV KTS + PKT (UPDATE + chủ sở hữu ở service)
 digitalAssetRouter.post('/:id/versions',
   requirePermission('DIGITAL_ASSET', 'UPDATE'),
-  uploadDocument.single('file'),
+  ...damUpload,
   ctrl.newVersion,
 );
 

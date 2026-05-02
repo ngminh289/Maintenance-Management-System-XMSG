@@ -13,6 +13,7 @@ import {
 } from '../validators/asset.validator.js';
 import { readingSchema } from '../validators/checklist.validator.js';
 import { uploadAssetPhotos } from '../config/upload.js';
+import { cloudinaryAfterArray } from '../middleware/cloudinaryUpload.middleware.js';
 import * as ctrl        from '../controllers/asset.controller.js';
 import * as counterCtrl from '../controllers/assetCounter.controller.js';
 
@@ -52,6 +53,7 @@ assetRouter.get('/:id/photos', ctrl.getPhotos);
 assetRouter.post('/:id/photos',
   requirePermission('ASSET', 'UPDATE'),
   uploadAssetPhotos.array('photos', 10),
+  cloudinaryAfterArray('warehouse/assets', 'image'),
   ctrl.addPhotos,
 );
 assetRouter.delete('/:id/photos/:photoId',

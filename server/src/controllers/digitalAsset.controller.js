@@ -44,8 +44,10 @@ export const upload = asyncHandler(async (req, res) => {
       : null,
     description,
     uploadedBy: req.user.sub,
-    filePath:   req.file.filename,
-    fileSizeKB: Math.ceil(req.file.size / 1024),
+    filePath:   req.file.secure_url || req.file.filename,
+    fileSizeKB: Math.ceil(
+      (req.file.size || req.file.buffer?.length || 0) / 1024,
+    ),
     tagIds:     parsedTagIds,
   }, req.user);
   await logAction({ employeeId: req.user.sub, action: 'INSERT', tableName: 'DigitalAssets', recordId: da.digitalAssetId, newValue: da });
@@ -78,8 +80,10 @@ export const getVersions = asyncHandler(async (req, res) => {
 export const newVersion = asyncHandler(async (req, res) => {
   if (!req.file) return fail(res, 'Chưa chọn file để upload', 400);
   const result = await service.addVersion(req.params.id, {
-    filePath:   req.file.filename,
-    fileSizeKB: Math.ceil(req.file.size / 1024),
+    filePath:   req.file.secure_url || req.file.filename,
+    fileSizeKB: Math.ceil(
+      (req.file.size || req.file.buffer?.length || 0) / 1024,
+    ),
     changedBy:  req.user.sub,
     changeNote: req.body.changeNote,
   }, damActor(req));

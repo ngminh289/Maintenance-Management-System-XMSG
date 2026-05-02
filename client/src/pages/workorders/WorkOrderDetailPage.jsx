@@ -62,8 +62,10 @@ const API_ORIGIN = (
 
 function woPhotoSrc(filePath) {
   if (!filePath) return "";
-  const p = String(filePath).replace(/^\/+/, "");
-  return `${API_ORIGIN.replace(/\/$/, "")}/${p}`;
+  const p = String(filePath).trim();
+  if (/^https?:\/\//i.test(p)) return p;
+  const rel = p.replace(/^\/+/, "");
+  return `${API_ORIGIN.replace(/\/$/, "")}/${rel}`;
 }
 
 export function WorkOrderDetailPage() {
