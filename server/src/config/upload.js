@@ -4,7 +4,9 @@
  *   - Ngược lại: disk như cũ (dev/local).
  * Thư mục disk: uploads/documents|photos|work-orders|assets|employees
  * Chuẩn DB: Cloudinary lưu secure_url; local lưu uploads/... hoặc basename (tài liệu).
+ * QUAN TRỌNG: dotenv phải chạy trước khi đọc isCloudinaryEnabled() (tránh load module sớm → mãi dùng disk).
  */
+import 'dotenv/config';
 import multer from 'multer';
 import { join, extname } from 'path';
 import { mkdirSync } from 'fs';

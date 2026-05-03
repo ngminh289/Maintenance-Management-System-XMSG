@@ -1,8 +1,25 @@
 /**
- * cloudinaryUpload.middleware.js — Sau multer (memory): đẩy buffer lên Cloudinary.
- * Liên quan: config/cloudinary.js, config/upload.js (multer memory).
+ * cloudinaryUpload.middleware.js — Sau multer (memory hoặc disk): đẩy lên Cloudinary.
+ * Disk + CLOUDINARY_*: đọc file từ path (multer disk không có buffer).
+ * Liên quan: config/cloudinary.js, config/upload.js.
  */
-import { uploadBufferToCloudinary } from '../config/cloudinary.js';
+import { readFile } from 'fs/promises';
+import {
+  isCloudinaryEnabled,
+  uploadBufferToCloudinary,
+} from '../config/cloudinary.js';
+
+async function bufferForUpload(file) {
+  if (file?.buffer?.length) return file.buffer;
+  if (file?.path) {
+    try {
+      return await readFile(file.path);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 function guessRawFilename(originalname) {
   if (!originalname) return 'file.bin';
@@ -14,20 +31,22 @@ function guessRawFilename(originalname) {
 export function cloudinaryAfterSingle(folder, resourceType = 'auto') {
   return async (req, res, next) => {
     try {
+      if (!isCloudinaryEnabled()) return next();
       const f = req.file;
-      if (!f?.buffer?.length) return next();
+      const buf = await bufferForUpload(f);
+      if (!buf?.length) return next();
       const orig =
         resourceType === 'raw'
           ? guessRawFilename(f.originalname)
           : undefined;
-      const result = await uploadBufferToCloudinary(f.buffer, {
+      const result = await uploadBufferToCloudinary(buf, {
         folder,
         resource_type: resourceType,
         originalFilename: orig,
       });
       f.secure_url = result.secure_url;
       f.public_id = result.public_id;
-      f.size = f.buffer.length;
+      f.size = buf.length;
       next();
     } catch (err) {
       next(err);
@@ -35,21 +54,23 @@ export function cloudinaryAfterSingle(folder, resourceType = 'auto') {
   };
 }
 
-/** multipart array (cùng folder/type) */
+/** multipart array (cùng folder/type); .any() cũng dùng req.files — mảng */
 export function cloudinaryAfterArray(folder, resourceType = 'image') {
   return async (req, res, next) => {
     try {
+      if (!isCloudinaryEnabled()) return next();
       const files = req.files;
       if (!Array.isArray(files) || !files.length) return next();
       for (const f of files) {
-        if (!f?.buffer?.length) continue;
-        const result = await uploadBufferToCloudinary(f.buffer, {
+        const buf = await bufferForUpload(f);
+        if (!buf?.length) continue;
+        const result = await uploadBufferToCloudinary(buf, {
           folder,
           resource_type: resourceType,
         });
         f.secure_url = result.secure_url;
         f.public_id = result.public_id;
-        f.size = f.buffer.length;
+        f.size = buf.length;
       }
       next();
     } catch (err) {
