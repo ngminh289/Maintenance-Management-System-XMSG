@@ -10,8 +10,8 @@
  *   5 — bGD          : Ban Giám đốc
  *
  * Liên quan: Sidebar.jsx, DashboardPage.jsx, App.jsx; migration 019 (tách TC / Trưởng phòng).
- * Báo cáo: ba tab con /reports/operations|resource-usage|performance — TP/Phó hai phòng + Admin + GĐ;
- * riêng CV KTS chỉ được xem /reports/performance.
+ * Báo cáo: operations + hiệu suất — TP/Phó hai phòng + Admin + GĐ (không CV KTS).
+ * CV KTS (L2): chỉ /reports/resource-usage (sử dụng tài nguyên).
  * ACTION_ACCESS DAM: DOCUMENT:SUBMIT — CV KTS + Trưởng/Phó PKT (057); Admin không SUBMIT (034).
  * Phản hồi: DOCUMENT_FEEDBACK:CREATE mọi vai trừ KTS & PKT; REVIEW — KTS & PKT (cùng rule 038).
  * 055: Trưởng/Phó bảo trì 6,8; Trưởng/Phó PKT 7,9; ma trận cột 6 = headPtkT (7/9).
@@ -86,6 +86,7 @@ const ROUTE_ACCESS = {
   checklists:             [true,  true,  true,  true, true,  true],
   "checklist-manage":     [true,  true,  true,  true,  true,  true],
   documents:              [true,  true,  true,  true, true,  true],
+  /** KTS + T/P PKT: menu dùng ma trận; nếu API trả permissions thì READ hoặc REVIEW đều mở (xử lý canAccess). */
   'document-feedback-inbox': [false, true, false, false, false, true],
   workflows:              [false, false, false, true,  false, false],
   'admin-settings':       [false, false, false, true,  false, false],
@@ -135,10 +136,6 @@ const ROUTE_PERMISSION_MAP = {
   checklists: { resourceType: "CHECKLIST_RESULT", permissionName: "READ" },
   "checklist-manage": { resourceType: "CHECKLIST_TEMPLATE", permissionName: "READ" },
   documents: { resourceType: "DIGITAL_ASSET", permissionName: "READ" },
-  "document-feedback-inbox": {
-    resourceType: "DOCUMENT_FEEDBACK",
-    permissionName: "REVIEW",
-  },
   employees: { resourceType: "EMPLOYEE", permissionName: "READ" },
 };
 
@@ -169,23 +166,24 @@ function canDoByDbPermission(user, action) {
 }
 
 /**
- * Báo cáo hiệu suất tài sản: CV KTS (L2), Trưởng/Phó bảo trì & PKT (L3), Quản trị (L4+), Ban GĐ.
+ * Báo cáo hiệu suất tài sản: Trưởng/Phó hai phòng (L3), Quản trị (L4+), Ban GĐ — không CV KTS.
  * Theo yêu cầu nghiệp vụ: ai xem được báo cáo này thì cũng được quyền xuất.
  */
 export function canAccessPerformanceReport(user) {
   if (!user) return false;
+  if (getRoleKey(user) === 'kyThuat') return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
-  if (lvl === 2) return true;
   if (lvl >= 4) return true;
   return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
 
-/** Báo cáo sử dụng tài nguyên: chỉ tuyến lãnh đạo hai phòng + Admin + GĐ. */
+/** Báo cáo sử dụng tài nguyên: CV KTS (L2) + tuyến lãnh đạo hai phòng (L3) + Admin + GĐ. */
 export function canAccessResourceUsageReport(user) {
   if (!user) return false;
   const lvl = user.positionLevel ?? 0;
   const pid = Number(user.positionId ?? 0);
+  if (getRoleKey(user) === 'kyThuat') return true;
   if (lvl >= 4) return true;
   return lvl === 3 && PIDS_TRUONG_PHO_HAI_PHONG.includes(pid);
 }
@@ -210,6 +208,12 @@ export function getFirstAllowedReportPath(user) {
 
 export function canAccess(user, routeKey) {
   const permissionSet = getPermissionSet(user);
+  /** Hàng đợi phản hồi: DB có thể chỉ gán READ cho KTS; REVIEW vẫn dùng khi xử lý API. */
+  if (routeKey === 'document-feedback-inbox' && permissionSet) {
+    const rev = hasPermissionBySet(permissionSet, 'DOCUMENT_FEEDBACK', 'REVIEW');
+    const read = hasPermissionBySet(permissionSet, 'DOCUMENT_FEEDBACK', 'READ');
+    if (rev === true || read === true) return true;
+  }
   if (routeKey === "checklist-review") {
     const byPosition = Number(user?.positionId ?? 0) === 3;
     const byDb = hasPermissionBySet(permissionSet, "CHECKLIST_RESULT", "UPDATE");
@@ -278,7 +282,9 @@ const ACTION_ACCESS = {
   "WORKFLOW:UPDATE":         [false, false, false, true,  false, false],
   "WORKFLOW:DELETE":         [false, false, false, true,  false, false],
   "DOCUMENT_FEEDBACK:CREATE": [true,  false, true,  true,  true,  false],
+  /** Inbox xử lý: khớp Roles_Permissions UPDATE (server không dùng tên REVIEW). */
   "DOCUMENT_FEEDBACK:REVIEW": [false, true,  false, false, false, true],
+  "DOCUMENT_FEEDBACK:UPDATE": [false, true,  false, false, false, true],
 };
 
 function canApproveByPid(pid, list) {

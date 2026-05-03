@@ -1,6 +1,6 @@
 /**
  * stats.api.js — Gọi /api/stats (dashboard, báo cáo checklist, phê duyệt, hiệu suất).
- * RBAC: /performance có kiểm tra riêng trên server; /resource-usage cần Trưởng phòng + Ban GĐ; còn lại theo requireAuth + quyền route app.
+ * RBAC: /performance và /resource-usage kiểm tra trên server (khớp rbac.js).
  */
 import { api } from './index.js';
 export const statsApi = {

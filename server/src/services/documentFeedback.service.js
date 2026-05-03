@@ -78,8 +78,11 @@ export async function listForAsset(digitalAssetId, { employeeId, positionId }) {
 }
 
 export async function listInbox({ positionId, status, page = 1, limit = 20 }) {
-  const can = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'UPDATE');
-  if (!can) throw createError('Chỉ Chuyên viên kỹ thuật số được xem hàng đợi phản hồi', 403);
+  const canRead = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'READ');
+  const canUpdate = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'UPDATE');
+  if (!canRead && !canUpdate) {
+    throw createError('Không có quyền xem hàng đợi phản hồi tài liệu', 403);
+  }
   if (status) assertStatus(status);
   const lim = Math.min(100, Math.max(1, Number(limit) || 20));
   const p = Math.max(1, Number(page) || 1);

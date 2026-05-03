@@ -5,6 +5,7 @@
  * Cách dùng:
  *   requirePermission('ASSET', 'CREATE')
  *   requirePermission('WORK_ORDER', 'APPROVE')
+ *   requirePermissionAny('DOCUMENT_FEEDBACK', ['READ', 'UPDATE'])
  *
  * ResourceType: ASSET | WORK_ORDER | DIGITAL_ASSET | MAINTENANCE_PLAN
  *               CHECKLIST_TEMPLATE | CHECKLIST_RESULT | RUNTIME_LOG
@@ -42,5 +43,23 @@ export function requirePermission(resource, action) {
       );
     }
     next();
+  });
+}
+
+/** Một trong các quyền (vd. READ hoặc UPDATE cho inbox phản hồi). */
+export function requirePermissionAny(resource, actions) {
+  const list = Array.isArray(actions) ? actions : [];
+  return asyncHandler(async (req, _res, next) => {
+    const positionId = req.user?.positionId;
+    if (!positionId) throw createError("Chưa xác thực", 401);
+    for (const action of list) {
+      if (await hasPermission(positionId, resource, action)) {
+        return next();
+      }
+    }
+    throw createError(
+      `Chức vụ của bạn không có quyền phù hợp trên [${resource}]`,
+      403,
+    );
   });
 }
