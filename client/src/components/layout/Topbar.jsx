@@ -5,7 +5,7 @@
  * Liên quan: api/notification.api.js, contexts/AuthContext.jsx.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Menu, Bell, LogOut, User, ExternalLink, Check, CheckCheck } from 'lucide-react';
+import { Menu, Bell, LogOut, User, ExternalLink, Check, CheckCheck, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { notificationApi } from '../../api/notification.api.js';
@@ -65,6 +65,23 @@ function NotificationDropdown({ onClose, onUnreadChange }) {
     onUnreadChange(0);
   };
 
+  const handleMarkAllUnread = async () => {
+    await notificationApi.markAllUnread().catch(() => {});
+    setItems(prev => prev.map(n => ({ ...n, isRead: false })));
+    await notificationApi.getUnread()
+      .then((r) => onUnreadChange(r.data.data?.count ?? 0))
+      .catch(() => {});
+  };
+
+  const handleMarkUnread = async (e, notiId) => {
+    e.stopPropagation();
+    await notificationApi.markUnread(notiId).catch(() => {});
+    setItems(prev => prev.map(n => (n.notiId === notiId ? { ...n, isRead: false } : n)));
+    await notificationApi.getUnread()
+      .then((r) => onUnreadChange(r.data.data?.count ?? 0))
+      .catch(() => {});
+  };
+
   const handleClick = async (n) => {
     const id = n.notiId;
     if (!n.isRead) {
@@ -100,6 +117,15 @@ function NotificationDropdown({ onClose, onUnreadChange }) {
           >
             <CheckCheck size={12} />
             Đọc tất cả
+          </button>
+        )}
+        {items.length > 0 && (
+          <button
+            onClick={handleMarkAllUnread}
+            className="flex items-center gap-1 text-xs text-gray-600 hover:underline font-medium"
+          >
+            <RotateCcw size={12} />
+            Chưa đọc tất cả
           </button>
         )}
       </div>
@@ -151,6 +177,15 @@ function NotificationDropdown({ onClose, onUnreadChange }) {
                   className="flex-shrink-0 mt-1 p-1 rounded-full hover:bg-blue-100 text-blue-500 transition-colors"
                 >
                   <Check size={13} />
+                </button>
+              )}
+              {n.isRead && (
+                <button
+                  onClick={(e) => handleMarkUnread(e, id)}
+                  title="Đánh dấu chưa đọc"
+                  className="flex-shrink-0 mt-1 p-1 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+                >
+                  <RotateCcw size={13} />
                 </button>
               )}
             </div>

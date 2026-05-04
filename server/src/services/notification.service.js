@@ -41,10 +41,11 @@ export async function notifyManagers(message, type = "SYSTEM_ALERT", minLevel = 
 export async function getMyNotifications(recipientId, query) {
   const { limit, offset } = getPagination(query);
   const onlyUnread = query.unread === "true";
+  const read = query.read === "true" ? true : (query.read === "false" ? false : null);
   const [items, unreadCount, total] = await Promise.all([
-    model.findByRecipient(recipientId, { onlyUnread, limit, offset }),
+    model.findByRecipient(recipientId, { onlyUnread, read, limit, offset }),
     model.countUnread(recipientId),
-    model.countByRecipient(recipientId, { onlyUnread }),
+    model.countByRecipient(recipientId, { onlyUnread, read }),
   ]);
   return { items, unreadCount, total };
 }
@@ -56,4 +57,13 @@ export async function markRead(notiId, recipientId) {
 
 export async function markAllRead(recipientId) {
   await model.markAllRead(recipientId);
+}
+
+export async function markUnread(notiId, recipientId) {
+  const affected = await model.markUnread(notiId, recipientId);
+  if (!affected) throw Object.assign(new Error("Không tìm thấy thông báo"), { status: 404 });
+}
+
+export async function markAllUnread(recipientId) {
+  await model.markAllUnread(recipientId);
 }

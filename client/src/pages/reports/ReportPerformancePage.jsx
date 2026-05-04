@@ -206,6 +206,7 @@ export function ReportPerformancePage() {
   const canExport = canAccessPerformanceReport(user);
   const [tab, setTab] = useState("mtbf");
   const [months, setMonths] = useState(12);
+  const [employeeFilter, setEmployeeFilter] = useState("all");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [logoDataUrl, setLogoDataUrl] = useState(null);
@@ -213,14 +214,18 @@ export function ReportPerformancePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await statsApi.performance(months);
+      const employeeIdForApi =
+        tab === "plan" && employeeFilter !== "all"
+          ? Number(employeeFilter)
+          : undefined;
+      const res = await statsApi.performance(months, employeeIdForApi);
       setData(res.data.data);
     } catch {
       toast.error("Không tải được dữ liệu báo cáo hiệu suất");
     } finally {
       setLoading(false);
     }
-  }, [months]);
+  }, [months, tab, employeeFilter]);
 
   useEffect(() => {
     load();
@@ -235,6 +240,12 @@ export function ReportPerformancePage() {
   if (loading) return <PageLoader />;
 
   const { mtbf, mttr, downtime, planVsActual, pareto } = data ?? {};
+  const selectedPlanEmployeeName =
+    employeeFilter === "all"
+      ? "Tất cả nhân sự"
+      : (planVsActual?.employeeOptions ?? []).find(
+          (e) => Number(e.employeeId) === Number(employeeFilter),
+        )?.fullName ?? "Nhân sự đã chọn";
 
   // ── Export helpers theo từng tab (không gộp) ───────────────────────────────
   const exportedBy =
@@ -294,6 +305,119 @@ export function ReportPerformancePage() {
       { text: title, style: "reportTitle", margin: [0, 10, 0, 4] },
       { text: `Bộ lọc: ${months} tháng`, alignment: "right", style: "meta" },
     ];
+  };
+
+  const exportPlanPdf = () => {
+    if (!guardExport()) return;
+    const s = planVsActual?.summary;
+    const byMonthRows = planVsActual?.byMonth ?? [];
+    const byEmployeeRows = planVsActual?.byEmployee ?? [];
+    if (!s || (!byMonthRows.length && !byEmployeeRows.length)) {
+      return toast.error("Không có dữ liệu để xuất");
+    }
+    try {
+      const content = buildPdfHeader("BÁO CÁO KẾ HOẠCH VS THỰC TẾ");
+      content.push({
+        text: `Bộ lọc nhân sự: ${selectedPlanEmployeeName}`,
+        alignment: "right",
+        style: "meta",
+        margin: [0, 2, 0, 0],
+      });
+      content.push({
+        columns: [
+          { text: `Tổng WO theo lịch: ${s.totalScheduled ?? 0}` },
+          { text: `Hoàn thành: ${s.completed ?? 0}` },
+          { text: `Đúng hạn: ${s.onTime ?? 0}` },
+          { text: `Trễ hạn: ${s.late ?? 0}` },
+        ],
+        margin: [0, 10, 0, 0],
+      });
+      content.push({
+        columns: [
+          { text: `Tỷ lệ hoàn thành: ${s.completionRate ?? 0}%` },
+          { text: `Tỷ lệ đúng hạn: ${s.onTimeRate ?? 0}%` },
+          { text: `Đã hủy: ${s.cancelled ?? 0}` },
+          { text: "" },
+        ],
+        margin: [0, 2, 0, 0],
+      });
+      if (byMonthRows.length) {
+        content.push({
+          text: "Tổng hợp theo tháng",
+          bold: true,
+          margin: [0, 12, 0, 6],
+        });
+        content.push({
+          table: {
+            headerRows: 1,
+            widths: [80, 80, 80, 80, 80],
+            body: [
+              ["Tháng", "Tổng KH", "Hoàn thành", "Đúng hạn", "Trễ hạn"],
+              ...byMonthRows.map((r) => [
+                String(r.month ?? "—"),
+                String(r.total ?? 0),
+                String(r.completed ?? 0),
+                String(r.onTime ?? 0),
+                String(r.late ?? 0),
+              ]),
+            ],
+          },
+          layout: "lightHorizontalLines",
+        });
+      }
+      if (byEmployeeRows.length) {
+        content.push({
+          text: "Danh sách nhân sự",
+          bold: true,
+          margin: [0, 12, 0, 6],
+        });
+        content.push({
+          table: {
+            headerRows: 1,
+            widths: ["*", 64, 64, 64, 70, 80],
+            body: [
+              [
+                "Nhân sự",
+                "Phiếu đảm nhận",
+                "Hoàn thành",
+                "Đúng hạn",
+                "Tỷ lệ đúng hạn",
+                "Tổng giờ thực tế",
+              ],
+              ...byEmployeeRows.map((r) => [
+                r.fullName ?? `NV #${r.employeeId}`,
+                String(r.assignedCount ?? 0),
+                String(r.completedCount ?? 0),
+                String(r.onTimeCount ?? 0),
+                `${Number(r.onTimeRate ?? 0).toFixed(1)}%`,
+                `${Number(r.totalActualHours ?? 0).toFixed(1)} h`,
+              ]),
+            ],
+          },
+          layout: "lightHorizontalLines",
+        });
+      }
+      content.push({
+        columns: [
+          { text: "Người lập báo cáo\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Quản lý hệ thống\n(Ký và ghi rõ họ tên)", style: "sign" },
+          { text: "Giám đốc\n(Ký và ghi rõ họ tên)", style: "sign" },
+        ],
+        columnGap: 12,
+        margin: [0, 34, 0, 0],
+      });
+      const docDef = buildPdfDocDef(content);
+      const employeePart =
+        employeeFilter === "all" ? "tat-ca-nhan-su" : `nv-${employeeFilter}`;
+      downloadPdf(
+        docDef,
+        `ke-hoach-vs-thuc-te-${months}thang-${employeePart}.pdf`,
+      );
+      toast.success("Đã xuất PDF Kế hoạch vs Thực tế");
+    } catch (err) {
+      console.error(err);
+      toast.error("Xuất PDF Kế hoạch vs Thực tế thất bại");
+    }
   };
 
   const exportHstsExcel = () => {
@@ -793,6 +917,23 @@ export function ReportPerformancePage() {
                 <Download size={14} /> Excel nhật ký dừng máy
               </button>
             </>
+          )}
+          {tab === "plan" && (
+            <button
+              onClick={exportPlanPdf}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                canExport
+                  ? "text-white bg-blue-600 hover:bg-blue-700"
+                  : "text-gray-400 bg-gray-200 cursor-not-allowed"
+              }`}
+              title={
+                canExport
+                  ? "Xuất PDF Kế hoạch vs Thực tế theo bộ lọc hiện tại"
+                  : "Thiếu quyền REPORT:EXPORT"
+              }
+            >
+              <Download size={14} /> PDF kế hoạch vs thực tế
+            </button>
           )}
         </div>
       </div>
@@ -1365,6 +1506,29 @@ export function ReportPerformancePage() {
       {/* ── Tab: Kế hoạch vs Thực tế ─────────────────────────────────────── */}
       {tab === "plan" && (
         <div className="space-y-5">
+          <Card title="Bộ lọc nhân sự">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-sm font-semibold text-gray-700">
+                Nhân sự
+              </label>
+              <select
+                value={employeeFilter}
+                onChange={(e) => setEmployeeFilter(e.target.value)}
+                className="min-w-[260px] text-sm text-gray-900 border border-gray-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                <option value="all">Tất cả nhân sự</option>
+                {(planVsActual?.employeeOptions ?? []).map((e) => (
+                  <option key={e.employeeId} value={String(e.employeeId)}>
+                    {e.fullName}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-gray-500">
+                Bộ lọc này chỉ áp dụng cho tab Kế hoạch vs Thực tế.
+              </span>
+            </div>
+          </Card>
+
           {planVsActual?.summary &&
             (() => {
               const s = planVsActual.summary;
@@ -1461,6 +1625,75 @@ export function ReportPerformancePage() {
                   />
                 </BarChart>
               </ResponsiveContainer>
+            )}
+          </Card>
+
+          <Card title="Danh sách nhân sự">
+            {(planVsActual?.byEmployee ?? []).length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">
+                Không có dữ liệu nhân sự theo bộ lọc hiện tại
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {[
+                        "Nhân sự",
+                        "Phiếu đảm nhận",
+                        "Hoàn thành",
+                        "Đúng hạn",
+                        "Tỷ lệ đúng hạn",
+                        "Tổng giờ thực tế",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="text-left text-xs font-bold text-gray-600 px-3 py-2"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(planVsActual?.byEmployee ?? []).map((r) => (
+                      <tr
+                        key={r.employeeId}
+                        className="hover:bg-blue-50/30"
+                      >
+                        <td className="px-3 py-2 font-semibold text-gray-900">
+                          {r.fullName ?? `NV #${r.employeeId}`}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {Number(r.assignedCount || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {Number(r.completedCount || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {Number(r.onTimeCount || 0)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge
+                            color={
+                              Number(r.onTimeRate || 0) >= 80
+                                ? "green"
+                                : Number(r.onTimeRate || 0) >= 60
+                                  ? "yellow"
+                                  : "red"
+                            }
+                          >
+                            {Number(r.onTimeRate || 0).toFixed(1)}%
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {Number(r.totalActualHours || 0).toFixed(1)} h
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
 

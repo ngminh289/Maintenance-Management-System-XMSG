@@ -17,8 +17,13 @@ export async function create({ recipientId, message, type = 'SYSTEM_ALERT', reso
   return result.insertId;
 }
 
-export async function findByRecipient(recipientId, { onlyUnread = false, limit = 50, offset = 0 } = {}) {
-  const where = onlyUnread ? 'AND IsRead = FALSE' : '';
+export async function findByRecipient(
+  recipientId,
+  { onlyUnread = false, read = null, limit = 50, offset = 0 } = {},
+) {
+  const where = read === true
+    ? "AND IsRead = TRUE"
+    : (onlyUnread || read === false ? "AND IsRead = FALSE" : "");
   const [rows] = await getPool().query(
     `SELECT ${COLS} FROM Notifications
      WHERE RecipientID = ? ${where}
@@ -36,8 +41,13 @@ export async function countUnread(recipientId) {
   return Number(rows[0].cnt);
 }
 
-export async function countByRecipient(recipientId, { onlyUnread = false } = {}) {
-  const where = onlyUnread ? "AND IsRead = FALSE" : "";
+export async function countByRecipient(
+  recipientId,
+  { onlyUnread = false, read = null } = {},
+) {
+  const where = read === true
+    ? "AND IsRead = TRUE"
+    : (onlyUnread || read === false ? "AND IsRead = FALSE" : "");
   const [rows] = await getPool().query(
     `SELECT COUNT(*) AS cnt FROM Notifications WHERE RecipientID = ? ${where}`,
     [recipientId],
@@ -56,6 +66,22 @@ export async function markRead(notiId, recipientId) {
 export async function markAllRead(recipientId) {
   const [result] = await getPool().query(
     'UPDATE Notifications SET IsRead = TRUE WHERE RecipientID = ? AND IsRead = FALSE',
+    [recipientId],
+  );
+  return result.affectedRows;
+}
+
+export async function markUnread(notiId, recipientId) {
+  const [result] = await getPool().query(
+    "UPDATE Notifications SET IsRead = FALSE WHERE NotiID = ? AND RecipientID = ?",
+    [notiId, recipientId],
+  );
+  return result.affectedRows;
+}
+
+export async function markAllUnread(recipientId) {
+  const [result] = await getPool().query(
+    "UPDATE Notifications SET IsRead = FALSE WHERE RecipientID = ? AND IsRead = TRUE",
     [recipientId],
   );
   return result.affectedRows;

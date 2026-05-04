@@ -23,3 +23,13 @@ export const markAllRead = asyncHandler(async (req, res) => {
   await service.markAllRead(req.user.sub);
   return ok(res, { message: 'Đã đánh dấu tất cả là đã đọc.' });
 });
+
+export const markUnread = asyncHandler(async (req, res) => {
+  await service.markUnread(Number(req.params.id), req.user.sub);
+  return ok(res, { message: 'Đã chuyển về chưa đọc.' });
+});
+
+export const markAllUnread = asyncHandler(async (req, res) => {
+  await service.markAllUnread(req.user.sub);
+  return ok(res, { message: 'Đã đánh dấu tất cả là chưa đọc.' });
+});

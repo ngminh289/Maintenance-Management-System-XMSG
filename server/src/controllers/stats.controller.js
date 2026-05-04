@@ -397,6 +397,11 @@ export const digitalAssetReport = asyncHandler(async (_req, res) => {
 export const performanceReport = asyncHandler(async (req, res) => {
   const pool = getPool();
   const months = Math.min(Math.max(parseInt(req.query.months || 12), 1), 36);
+  const parsedEmployeeId = Number(req.query.employeeId);
+  const employeeFilterId =
+    Number.isFinite(parsedEmployeeId) && parsedEmployeeId > 0
+      ? parsedEmployeeId
+      : null;
 
   // ── 1. MTBF — trung bình giờ chạy giữa 2 lần hỏng EMERGENCY ──────────────
   const [mtbfRows] = await pool.query(
@@ -618,6 +623,11 @@ export const performanceReport = asyncHandler(async (req, res) => {
   );
 
   // ── 4. Kế hoạch vs Thực tế ────────────────────────────────────────────────
+  const employeeFilterSql = employeeFilterId
+    ? "AND EXISTS (SELECT 1 FROM WO_Assignments wa WHERE wa.WO_ID = w.WO_ID AND wa.EmployeeID = ?)"
+    : "";
+  const employeeFilterParams = employeeFilterId ? [employeeFilterId] : [];
+
   const [[planSummary]] = await pool.query(
     `
     SELECT
@@ -633,11 +643,12 @@ export const performanceReport = asyncHandler(async (req, res) => {
           SUM(Status = 'COMPLETED') * 100, 1)
         ELSE 0
       END AS onTimeRate
-    FROM WorkOrders
-    WHERE WO_Source = 'SCHEDULE'
-      AND PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+    FROM WorkOrders w
+    WHERE w.WO_Source = 'SCHEDULE'
+      AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+      ${employeeFilterSql}
   `,
-    [months],
+    [months, ...employeeFilterParams],
   );
 
   const [planByMonth] = await pool.query(
@@ -648,13 +659,63 @@ export const performanceReport = asyncHandler(async (req, res) => {
       SUM(Status = 'COMPLETED')                                        AS completed,
       SUM(Status = 'COMPLETED' AND ActualDate <= PlannedDate)          AS onTime,
       SUM(Status = 'COMPLETED' AND ActualDate > PlannedDate)           AS late
-    FROM WorkOrders
-    WHERE WO_Source = 'SCHEDULE'
-      AND PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+    FROM WorkOrders w
+    WHERE w.WO_Source = 'SCHEDULE'
+      AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+      ${employeeFilterSql}
     GROUP BY DATE_FORMAT(PlannedDate, '%Y-%m')
     ORDER BY month ASC
   `,
+    [months, ...employeeFilterParams],
+  );
+
+  const [employeeOptionsRows] = await pool.query(
+    `
+    SELECT DISTINCT
+      e.EmployeeID AS employeeId,
+      e.FullName   AS fullName
+    FROM WorkOrders w
+    INNER JOIN WO_Assignments wa ON wa.WO_ID = w.WO_ID
+    INNER JOIN Employees e ON e.EmployeeID = wa.EmployeeID
+    WHERE w.WO_Source = 'SCHEDULE'
+      AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+      AND e.IsActive = TRUE
+    ORDER BY e.FullName ASC
+  `,
     [months],
+  );
+
+  const [planByEmployee] = await pool.query(
+    `
+    SELECT
+      wa.EmployeeID AS employeeId,
+      e.FullName AS fullName,
+      COUNT(DISTINCT w.WO_ID) AS assignedCount,
+      SUM(CASE WHEN w.Status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedCount,
+      SUM(CASE WHEN w.Status = 'COMPLETED' AND w.ActualDate <= w.PlannedDate THEN 1 ELSE 0 END) AS onTimeCount,
+      ROUND(
+        CASE
+          WHEN SUM(CASE WHEN w.Status = 'COMPLETED' THEN 1 ELSE 0 END) > 0 THEN
+            SUM(CASE WHEN w.Status = 'COMPLETED' AND w.ActualDate <= w.PlannedDate THEN 1 ELSE 0 END) * 100.0
+            / SUM(CASE WHEN w.Status = 'COMPLETED' THEN 1 ELSE 0 END)
+          ELSE 0
+        END,
+        1
+      ) AS onTimeRate,
+      ROUND(
+        SUM(CASE WHEN w.Status = 'COMPLETED' THEN COALESCE(w.ActualHours, 0) ELSE 0 END),
+        1
+      ) AS totalActualHours
+    FROM WorkOrders w
+    INNER JOIN WO_Assignments wa ON wa.WO_ID = w.WO_ID
+    INNER JOIN Employees e ON e.EmployeeID = wa.EmployeeID
+    WHERE w.WO_Source = 'SCHEDULE'
+      AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+      ${employeeFilterId ? "AND wa.EmployeeID = ?" : ""}
+    GROUP BY wa.EmployeeID, e.FullName
+    ORDER BY assignedCount DESC, e.FullName ASC
+  `,
+    [months, ...employeeFilterParams],
   );
 
   // ── 5. Pareto Downtime — top thiết bị gây ra dừng máy nhiều nhất ──────────
@@ -738,7 +799,13 @@ export const performanceReport = asyncHandler(async (req, res) => {
       byAsset: downtimeRows,
       logs: downtimeLogs,
     },
-    planVsActual: { summary: planSummary, byMonth: planByMonth },
+    planVsActual: {
+      summary: planSummary,
+      byMonth: planByMonth,
+      employeeOptions: employeeOptionsRows,
+      byEmployee: planByEmployee,
+      employeeFilterId,
+    },
     pareto: { total: paretoTotal, rows: paretoRows },
   });
 });

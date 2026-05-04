@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Check, CheckCheck, ExternalLink } from 'lucide-react';
+import { Bell, Check, CheckCheck, ExternalLink, RotateCcw } from 'lucide-react';
 import { notificationApi } from '../api/notification.api.js';
 import { fFromNow } from '../utils/format.js';
 import { buildNotificationResourceUrl } from '../utils/notificationLink.js';
@@ -27,7 +27,7 @@ export function NotificationsPage() {
   const [items, setItems]       = useState([]);
   const [unreadCount, setUnread] = useState(0);
   const [loading, setLoading]   = useState(false);
-  const [onlyUnread, setOnlyUnread] = useState(false);
+  const [readFilter, setReadFilter] = useState('all'); // all | unread | read
   const [page, setPage]         = useState(1);
   const [total, setTotal]       = useState(0);
   const LIMIT = 30;
@@ -38,7 +38,7 @@ export function NotificationsPage() {
       const res = await notificationApi.getAll({
         limit: LIMIT,
         offset: (page - 1) * LIMIT,
-        unread: onlyUnread ? 'true' : undefined,
+        read: readFilter === 'all' ? undefined : String(readFilter === 'read'),
       });
       const data = res.data.data;
       setItems(data?.items ?? []);
@@ -49,20 +49,28 @@ export function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, onlyUnread]);
+  }, [page, readFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleMarkOne = async (notiId) => {
     await notificationApi.markRead(notiId).catch(() => {});
-    setItems(prev => prev.map(n => (n.notiId === notiId ? { ...n, isRead: true } : n)));
-    setUnread(p => Math.max(0, p - 1));
+    await load();
+  };
+
+  const handleMarkUnreadOne = async (notiId) => {
+    await notificationApi.markUnread(notiId).catch(() => {});
+    await load();
   };
 
   const handleMarkAll = async () => {
     await notificationApi.markAllRead().catch(() => {});
-    setItems(prev => prev.map(n => ({ ...n, isRead: true })));
-    setUnread(0);
+    await load();
+  };
+
+  const handleMarkAllUnread = async () => {
+    await notificationApi.markAllUnread().catch(() => {});
+    await load();
   };
 
   const handleClick = async (n) => {
@@ -70,6 +78,8 @@ export function NotificationsPage() {
     const url = buildNotificationResourceUrl(n);
     if (url) navigate(url);
   };
+
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
@@ -83,6 +93,15 @@ export function NotificationsPage() {
           </span>
         )}
         <div className="flex-1" />
+        {items.length > 0 && (
+          <button
+            onClick={handleMarkAllUnread}
+            className="flex items-center gap-1.5 text-sm text-gray-600 hover:underline font-medium"
+          >
+            <RotateCcw size={15} />
+            Đánh dấu tất cả chưa đọc
+          </button>
+        )}
         {unreadCount > 0 && (
           <button
             onClick={handleMarkAll}
@@ -97,16 +116,22 @@ export function NotificationsPage() {
       {/* Filter */}
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => { setOnlyUnread(false); setPage(1); }}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${!onlyUnread ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          onClick={() => { setReadFilter('all'); setPage(1); }}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${readFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
         >
           Tất cả
         </button>
         <button
-          onClick={() => { setOnlyUnread(true); setPage(1); }}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${onlyUnread ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          onClick={() => { setReadFilter('unread'); setPage(1); }}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${readFilter === 'unread' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
         >
           Chưa đọc {unreadCount > 0 && `(${unreadCount})`}
+        </button>
+        <button
+          onClick={() => { setReadFilter('read'); setPage(1); }}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${readFilter === 'read' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+        >
+          Đã đọc
         </button>
       </div>
 
@@ -117,12 +142,12 @@ export function NotificationsPage() {
         )}
         {!loading && items.length === 0 && (
           <p className="text-sm text-gray-500 text-center py-12">
-            {onlyUnread ? 'Không có thông báo chưa đọc' : 'Không có thông báo nào'}
+            {readFilter === 'unread' ? 'Không có thông báo chưa đọc' : (readFilter === 'read' ? 'Không có thông báo đã đọc' : 'Không có thông báo nào')}
           </p>
         )}
         {!loading && items.map(n => {
           const meta = TYPE_META[n.type] ?? { label: n.type ?? 'Thông báo', color: 'text-gray-700 bg-gray-100 border-gray-200' };
-          const url = buildResourceUrl(n.resourceType, n.resourceId);
+          const url = buildNotificationResourceUrl(n);
           return (
             <div
               key={n.notiId}
@@ -156,10 +181,42 @@ export function NotificationsPage() {
                   <Check size={14} />
                 </button>
               )}
+              {n.isRead && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleMarkUnreadOne(n.notiId); }}
+                  title="Đánh dấu chưa đọc"
+                  className="flex-shrink-0 self-center p-1.5 rounded-full hover:bg-gray-200 text-gray-500 transition-colors"
+                >
+                  <RotateCcw size={14} />
+                </button>
+              )}
             </div>
           );
         })}
       </div>
+
+      {/* Pagination */}
+      {total > LIMIT && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
+          <span>Trang {page}/{totalPages}</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Trước
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

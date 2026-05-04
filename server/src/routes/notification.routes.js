@@ -15,4 +15,6 @@ notificationRouter.use(requireAuth);
 notificationRouter.get('/',               ctrl.getMyNotifications);
 notificationRouter.get('/unread-count',   ctrl.getUnreadCount);    // Phải trước /:id
 notificationRouter.patch('/read-all',     ctrl.markAllRead);        // Phải trước /:id/read
+notificationRouter.patch('/unread-all',   ctrl.markAllUnread);      // Phải trước /:id/unread
 notificationRouter.patch('/:id/read',     ctrl.markRead);
+notificationRouter.patch('/:id/unread',   ctrl.markUnread);
