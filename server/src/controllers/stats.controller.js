@@ -402,6 +402,12 @@ export const performanceReport = asyncHandler(async (req, res) => {
     Number.isFinite(parsedEmployeeId) && parsedEmployeeId > 0
       ? parsedEmployeeId
       : null;
+  const planTypeRaw = String(req.query.planType || "ALL").toUpperCase();
+  const planType = ["ALL", "PERIODIC", "PREDICTIVE", "EMERGENCY"].includes(
+    planTypeRaw,
+  )
+    ? planTypeRaw
+    : "ALL";
 
   // ── 1. MTBF — trung bình giờ chạy giữa 2 lần hỏng EMERGENCY ──────────────
   const [mtbfRows] = await pool.query(
@@ -623,6 +629,15 @@ export const performanceReport = asyncHandler(async (req, res) => {
   );
 
   // ── 4. Kế hoạch vs Thực tế ────────────────────────────────────────────────
+  const planTypeSqlMap = {
+    ALL: "1=1",
+    PERIODIC: "w.WO_Source IN ('SCHEDULE', 'PREDICTIVE_SCHEDULE')",
+    PREDICTIVE: "w.WO_Source = 'PREDICTIVE'",
+    EMERGENCY:
+      "(w.Priority = 'EMERGENCY' OR (w.WO_Source = 'CORRECTIVE' AND w.Priority = 'HIGH'))",
+  };
+  const planTypeSql = planTypeSqlMap[planType] ?? planTypeSqlMap.ALL;
+
   const employeeFilterSql = employeeFilterId
     ? "AND EXISTS (SELECT 1 FROM WO_Assignments wa WHERE wa.WO_ID = w.WO_ID AND wa.EmployeeID = ?)"
     : "";
@@ -644,7 +659,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
         ELSE 0
       END AS onTimeRate
     FROM WorkOrders w
-    WHERE w.WO_Source = 'SCHEDULE'
+    WHERE (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       ${employeeFilterSql}
   `,
@@ -660,7 +675,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
       SUM(Status = 'COMPLETED' AND ActualDate <= PlannedDate)          AS onTime,
       SUM(Status = 'COMPLETED' AND ActualDate > PlannedDate)           AS late
     FROM WorkOrders w
-    WHERE w.WO_Source = 'SCHEDULE'
+    WHERE (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       ${employeeFilterSql}
     GROUP BY DATE_FORMAT(PlannedDate, '%Y-%m')
@@ -677,7 +692,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
     FROM WorkOrders w
     INNER JOIN WO_Assignments wa ON wa.WO_ID = w.WO_ID
     INNER JOIN Employees e ON e.EmployeeID = wa.EmployeeID
-    WHERE w.WO_Source = 'SCHEDULE'
+    WHERE (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND e.IsActive = TRUE
     ORDER BY e.FullName ASC
@@ -693,6 +708,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
       COUNT(DISTINCT w.WO_ID) AS assignedCount,
       SUM(CASE WHEN w.Status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedCount,
       SUM(CASE WHEN w.Status = 'COMPLETED' AND w.ActualDate <= w.PlannedDate THEN 1 ELSE 0 END) AS onTimeCount,
+      SUM(CASE WHEN w.Priority = 'EMERGENCY' OR (w.WO_Source = 'CORRECTIVE' AND w.Priority = 'HIGH') THEN 1 ELSE 0 END) AS emergencyCount,
       ROUND(
         CASE
           WHEN SUM(CASE WHEN w.Status = 'COMPLETED' THEN 1 ELSE 0 END) > 0 THEN
@@ -709,7 +725,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
     FROM WorkOrders w
     INNER JOIN WO_Assignments wa ON wa.WO_ID = w.WO_ID
     INNER JOIN Employees e ON e.EmployeeID = wa.EmployeeID
-    WHERE w.WO_Source = 'SCHEDULE'
+    WHERE (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       ${employeeFilterId ? "AND wa.EmployeeID = ?" : ""}
     GROUP BY wa.EmployeeID, e.FullName
@@ -805,6 +821,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
       employeeOptions: employeeOptionsRows,
       byEmployee: planByEmployee,
       employeeFilterId,
+      planType,
     },
     pareto: { total: paretoTotal, rows: paretoRows },
   });

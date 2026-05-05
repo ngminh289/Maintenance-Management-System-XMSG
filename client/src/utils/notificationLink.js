@@ -9,6 +9,11 @@ export function buildNotificationResourceUrl(noti) {
 
   if (!resourceType || resourceId == null) return null;
 
+  // Thông báo thuộc luồng phê duyệt luôn mở đúng tab Phê duyệt.
+  if (type === "APPROVAL_REQUEST") {
+    return `/approvals?resourceType=${encodeURIComponent(resourceType)}&resourceId=${encodeURIComponent(resourceId)}`;
+  }
+
   switch (resourceType) {
     case "WORK_ORDER":
       return `/work-orders/${resourceId}`;

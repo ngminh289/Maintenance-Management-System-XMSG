@@ -19,8 +19,12 @@ export const statsApi = {
   woCompletion:      ()         => api.get('/stats/wo-completion'),
   digitalAssets:     ()         => api.get('/stats/digital-assets'),
   /** BFD 6.4 — Báo cáo hiệu suất: MTBF, MTTR, Downtime, Kế hoạch vs Thực tế, Pareto. */
-  performance:       (months, employeeId)   => api.get('/stats/performance', {
-    params: { months, employeeId: employeeId || undefined },
+  performance:       (months, employeeId, planType)   => api.get('/stats/performance', {
+    params: {
+      months,
+      employeeId: employeeId || undefined,
+      planType: planType || undefined,
+    },
   }),
   /** Báo cáo sử dụng tài nguyên (QR, mở tài liệu, góp ý…); RBAC: CV KTS + Trưởng phòng + Ban GĐ. */
   resourceUsage:     (months)   => api.get('/stats/resource-usage', { params: { months } }),

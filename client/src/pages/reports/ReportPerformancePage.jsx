@@ -207,6 +207,7 @@ export function ReportPerformancePage() {
   const [tab, setTab] = useState("mtbf");
   const [months, setMonths] = useState(12);
   const [employeeFilter, setEmployeeFilter] = useState("all");
+  const [planTypeFilter, setPlanTypeFilter] = useState("ALL");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [logoDataUrl, setLogoDataUrl] = useState(null);
@@ -218,14 +219,18 @@ export function ReportPerformancePage() {
         tab === "plan" && employeeFilter !== "all"
           ? Number(employeeFilter)
           : undefined;
-      const res = await statsApi.performance(months, employeeIdForApi);
+      const res = await statsApi.performance(
+        months,
+        employeeIdForApi,
+        tab === "plan" ? planTypeFilter : undefined,
+      );
       setData(res.data.data);
     } catch {
       toast.error("Không tải được dữ liệu báo cáo hiệu suất");
     } finally {
       setLoading(false);
     }
-  }, [months, tab, employeeFilter]);
+  }, [months, tab, employeeFilter, planTypeFilter]);
 
   useEffect(() => {
     load();
@@ -240,6 +245,14 @@ export function ReportPerformancePage() {
   if (loading) return <PageLoader />;
 
   const { mtbf, mttr, downtime, planVsActual, pareto } = data ?? {};
+  const selectedPlanTypeLabel =
+    planTypeFilter === "PERIODIC"
+      ? "Định kỳ"
+      : planTypeFilter === "PREDICTIVE"
+        ? "Dự báo"
+        : planTypeFilter === "EMERGENCY"
+          ? "Khẩn cấp"
+          : "Tất cả";
   const selectedPlanEmployeeName =
     employeeFilter === "all"
       ? "Tất cả nhân sự"
@@ -324,8 +337,14 @@ export function ReportPerformancePage() {
         margin: [0, 2, 0, 0],
       });
       content.push({
+        text: `Nhóm phiếu việc: ${selectedPlanTypeLabel}`,
+        alignment: "right",
+        style: "meta",
+        margin: [0, 2, 0, 0],
+      });
+      content.push({
         columns: [
-          { text: `Tổng WO theo lịch: ${s.totalScheduled ?? 0}` },
+          { text: `Tổng WO theo bộ lọc: ${s.totalScheduled ?? 0}` },
           { text: `Hoàn thành: ${s.completed ?? 0}` },
           { text: `Đúng hạn: ${s.onTime ?? 0}` },
           { text: `Trễ hạn: ${s.late ?? 0}` },
@@ -374,13 +393,14 @@ export function ReportPerformancePage() {
         content.push({
           table: {
             headerRows: 1,
-            widths: ["*", 64, 64, 64, 70, 80],
+            widths: ["*", 54, 54, 54, 66, 70, 74],
             body: [
               [
                 "Nhân sự",
                 "Phiếu đảm nhận",
                 "Hoàn thành",
                 "Đúng hạn",
+                "Nhóm phiếu việc",
                 "Tỷ lệ đúng hạn",
                 "Tổng giờ thực tế",
               ],
@@ -389,6 +409,7 @@ export function ReportPerformancePage() {
                 String(r.assignedCount ?? 0),
                 String(r.completedCount ?? 0),
                 String(r.onTimeCount ?? 0),
+                selectedPlanTypeLabel,
                 `${Number(r.onTimeRate ?? 0).toFixed(1)}%`,
                 `${Number(r.totalActualHours ?? 0).toFixed(1)} h`,
               ]),
@@ -1509,6 +1530,19 @@ export function ReportPerformancePage() {
           <Card title="Bộ lọc nhân sự">
             <div className="flex flex-wrap items-center gap-3">
               <label className="text-sm font-semibold text-gray-700">
+                Nhóm phiếu việc
+              </label>
+              <select
+                value={planTypeFilter}
+                onChange={(e) => setPlanTypeFilter(e.target.value)}
+                className="min-w-[220px] text-sm text-gray-900 border border-gray-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                <option value="ALL">Tất cả</option>
+                <option value="PERIODIC">Định kỳ</option>
+                <option value="PREDICTIVE">Dự báo</option>
+                <option value="EMERGENCY">Khẩn cấp</option>
+              </select>
+              <label className="text-sm font-semibold text-gray-700">
                 Nhân sự
               </label>
               <select
@@ -1535,7 +1569,7 @@ export function ReportPerformancePage() {
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <KpiCard
-                    label="Tổng WO theo lịch"
+                    label="Tổng WO theo bộ lọc"
                     value={s.totalScheduled}
                     unit="phiếu"
                     icon={CalendarCheck}
@@ -1586,7 +1620,7 @@ export function ReportPerformancePage() {
           <Card title={`Kế hoạch vs Thực tế theo tháng (${months} tháng)`}>
             {(planVsActual?.byMonth ?? []).length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-8">
-                Chưa có dữ liệu WO theo lịch trong kỳ
+                Chưa có dữ liệu WO theo bộ lọc trong kỳ
               </p>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -1643,6 +1677,7 @@ export function ReportPerformancePage() {
                         "Phiếu đảm nhận",
                         "Hoàn thành",
                         "Đúng hạn",
+                        "Nhóm phiếu việc",
                         "Tỷ lệ đúng hạn",
                         "Tổng giờ thực tế",
                       ].map((h) => (
@@ -1673,6 +1708,9 @@ export function ReportPerformancePage() {
                         <td className="px-3 py-2 text-gray-700">
                           {Number(r.onTimeCount || 0)}
                         </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {selectedPlanTypeLabel}
+                        </td>
                         <td className="px-3 py-2">
                           <Badge
                             color={
@@ -1699,8 +1737,8 @@ export function ReportPerformancePage() {
 
           <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-800">
             <strong>Công thức:</strong> Tỷ lệ hoàn thành = Phiếu việc hoàn thành
-            / Tổng phiếu việc từ lịch bảo trì. Đúng hạn = Ngày thực hiện ≤ Ngày
-            dự kiến. Chỉ tính WO có từ lịch bảo trì.
+            / Tổng phiếu việc theo bộ lọc. Đúng hạn = Ngày thực hiện ≤ Ngày dự
+            kiến.
           </div>
         </div>
       )}

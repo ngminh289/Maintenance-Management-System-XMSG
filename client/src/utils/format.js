@@ -17,7 +17,11 @@ function parseDateLike(value) {
       Number(dateOnly[3]),
     );
   }
-  return new Date(s.includes("T") ? s : s.replace(" ", "T"));
+  const normalized = s.includes("T") ? s : s.replace(" ", "T");
+  // Chuỗi datetime không có timezone từ backend được hiểu là UTC.
+  // Nếu parse local sẽ lệch ~7h với người dùng GMT+7.
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized);
+  return new Date(hasTimezone ? normalized : `${normalized}Z`);
 }
 
 /** Ngày thuần YYYY-MM-DD: parse theo lịch local — tránh lùi 1 ngày khi chuỗi ISO được hiểu là UTC nửa đêm. */
