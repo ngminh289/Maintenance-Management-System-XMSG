@@ -5,9 +5,10 @@
  * Trưởng ca / Trưởng phòng: phân công, nghiệm thu, đóng phiếu.
  * Link checklist: WO từ lịch (SCHEDULE) kèm woId; banner nhắc checklist hiển thị mọi trạng thái trừ hoàn thành/hủy.
  * woLinkedChecklist: bản checklist mới nhất gắn WO (mọi thành viên nhóm thấy khi đồng nghiệp đã nộp). Duyệt WO: nhập Giờ ước tính (POST approve).
+ * Soft-delete (mig 070): isDeleted=1 → hiển thị banner Đã lưu trữ, ẩn mọi action; chỉ Admin có nút Khôi phục.
  */
 import { useEffect, useState, useRef, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   UserPlus,
@@ -24,6 +25,8 @@ import {
   Send,
   Pencil,
   Star,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { EmployeeCard } from "../../components/ui/EmployeeCard.jsx";
 import { workOrderApi } from "../../api/workOrder.api.js";
@@ -50,8 +53,15 @@ import {
   CHECKLIST_STATUS_COLOR,
   APPROVAL_STATUS_COLOR,
 } from "../../utils/format.js";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
-import { canDo, LEVEL_TRUONG_CA } from "../../utils/rbac.js";
+import {
+  canDo,
+  LEVEL_TRUONG_CA,
+  canEditWorkOrderRow,
+  canDeleteWorkOrderRow,
+  canRestoreWorkOrder,
+} from "../../utils/rbac.js";
 import toast from "react-hot-toast";
 
 const ASSIGNEE_MAX_LEVEL = 2;
@@ -70,9 +80,13 @@ function woPhotoSrc(filePath) {
 
 export function WorkOrderDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const fileInputRef = useRef(null);
   const [wo, setWo] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const [approvals, setApprovals] = useState([]);
   const [approvalWorkflowSteps, setApprovalWorkflowSteps] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -164,8 +178,11 @@ export function WorkOrderDetailPage() {
   }, [wo?.woId, wo?.closureFieldNotes, wo?.closurePartsNotes]);
 
   const pendingApprovalLog = approvals.find((a) => a.status === "PENDING");
+  const woArchivedFlag = Number(wo?.isDeleted) === 1;
   const needsResubmitApproval =
-    wo?.status === "PENDING_APPROVAL" && !pendingApprovalLog;
+    !woArchivedFlag &&
+    wo?.status === "PENDING_APPROVAL" &&
+    !pendingApprovalLog;
   const canResubmitApproval =
     needsResubmitApproval && canDo(user, "WORK_ORDER:CREATE");
   const canEditPendingResubmit =
@@ -407,6 +424,34 @@ export function WorkOrderDetailPage() {
     }
   };
 
+  const handleSoftDelete = async () => {
+    setArchiveBusy(true);
+    try {
+      await workOrderApi.remove(id);
+      toast.success(`Đã chuyển phiếu WO-${String(wo?.woId ?? id).padStart(4, "0")} vào lưu trữ`);
+      setDeleteOpen(false);
+      navigate("/work-orders");
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không thể xoá phiếu việc");
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    setArchiveBusy(true);
+    try {
+      await workOrderApi.restore(id);
+      toast.success(`Đã khôi phục phiếu WO-${String(wo?.woId ?? id).padStart(4, "0")}`);
+      setRestoreOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không thể khôi phục phiếu");
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
   const handleAssign = async () => {
     if (assignMode === "group") {
       if (!selectedGroup) {
@@ -532,6 +577,12 @@ export function WorkOrderDetailPage() {
       </div>
     );
 
+  /** Soft-delete: phiếu đã lưu trữ — chỉ Admin xem chi tiết, mọi action ẩn trừ Khôi phục. */
+  const isArchived = Number(wo.isDeleted) === 1;
+  const canEditWo = !isArchived && canEditWorkOrderRow(user, wo);
+  const canSoftDeleteWo = !isArchived && canDeleteWorkOrderRow(user, wo);
+  const canRestoreWo = isArchived && canRestoreWorkOrder(user);
+
   const isAssigned = wo.assignments?.some(
     (a) => Number(a.employeeId) === Number(user?.employeeId),
   );
@@ -542,7 +593,7 @@ export function WorkOrderDetailPage() {
       Number(a.isGroupLeader) === 1,
   );
   const isTcPlus = (user?.positionLevel ?? 0) >= LEVEL_TRUONG_CA;
-  const canUpdate = canDo(user, "WORK_ORDER:UPDATE");
+  const canUpdate = !isArchived && canDo(user, "WORK_ORDER:UPDATE");
   /** Bắt đầu / tạm dừng / tiếp tục: chỉ trưởng nhóm hoặc TC+ */
   const canAcceptWork = canUpdate && (amGroupLeader || isTcPlus);
   const canSuperviseFlow = canUpdate && (isAssigned || isTcPlus);
@@ -556,8 +607,10 @@ export function WorkOrderDetailPage() {
   const canReopenFromAwaiting =
     canUpdate && isTcPlus && wo.status === "AWAITING_CLOSURE";
   const canApprove =
-    wo.status === "PENDING_APPROVAL" && canDo(user, "WORK_ORDER:APPROVE");
-  const canAssign = canDo(user, "WORK_ORDER:ASSIGN");
+    !isArchived &&
+    wo.status === "PENDING_APPROVAL" &&
+    canDo(user, "WORK_ORDER:APPROVE");
+  const canAssign = !isArchived && canDo(user, "WORK_ORDER:ASSIGN");
   /** Ghi chú vật tư: chỉ trưởng nhóm hoặc TC+ */
   const canEditClosureDraft =
     canUpdate &&
@@ -758,8 +811,59 @@ export function WorkOrderDetailPage() {
               <TimerReset size={13} /> Reset mốc giờ chạy (PM)
             </Button>
           )}
+          {canEditWo && !canEditPendingResubmit && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setEditWoOpen(true)}
+            >
+              <Pencil size={13} /> Sửa phiếu
+            </Button>
+          )}
+          {canSoftDeleteWo && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 size={13} /> Xoá phiếu
+            </Button>
+          )}
+          {canRestoreWo && (
+            <Button
+              size="sm"
+              variant="success"
+              onClick={() => setRestoreOpen(true)}
+            >
+              <ArchiveRestore size={13} /> Khôi phục
+            </Button>
+          )}
         </div>
       </div>
+
+      {isArchived && (
+        <div className="flex gap-3 rounded-xl border border-amber-300 bg-amber-50/95 px-4 py-3 text-sm text-amber-950">
+          <Archive size={20} className="shrink-0 text-amber-700 mt-0.5" aria-hidden />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-amber-900">Phiếu việc đã được lưu trữ</p>
+            <p className="mt-1 leading-relaxed">
+              Phiếu này đã chuyển vào kho lưu trữ — chỉ Quản trị viên mới xem được. Mọi
+              thao tác (sửa, phân công, chuyển trạng thái, phê duyệt) đã bị khoá để bảo
+              toàn lịch sử dữ liệu.
+              {wo.deletedAt && (
+                <>
+                  {" "}
+                  Lưu trữ lúc <strong>{fDateTime(wo.deletedAt)}</strong>
+                  {wo.deletedByName ? (
+                    <> bởi <strong>{wo.deletedByName}</strong></>
+                  ) : null}
+                  .
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
 
       {hasChecklistRequirement && (
         <div className="flex gap-3 rounded-xl border border-teal-200 bg-teal-50/90 px-4 py-3 text-sm text-teal-950">
@@ -2061,7 +2165,11 @@ export function WorkOrderDetailPage() {
       <Modal
         open={editWoOpen}
         onClose={() => setEditWoOpen(false)}
-        title="Chỉnh sửa phiếu (trước khi gửi lại phê duyệt)"
+        title={
+          canEditPendingResubmit
+            ? "Chỉnh sửa phiếu (trước khi gửi lại phê duyệt)"
+            : "Chỉnh sửa phiếu việc"
+        }
         size="lg"
       >
         {wo && (
@@ -2069,15 +2177,42 @@ export function WorkOrderDetailPage() {
             wo={wo}
             onSuccess={() => {
               setEditWoOpen(false);
-              toast.success(
-                "Đã cập nhật phiếu — bấm «Gửi lại phê duyệt» khi sẵn sàng.",
-              );
+              if (canEditPendingResubmit) {
+                toast.success(
+                  "Đã cập nhật phiếu — bấm «Gửi lại phê duyệt» khi sẵn sàng.",
+                );
+              } else {
+                toast.success("Đã cập nhật phiếu việc");
+              }
               load();
             }}
             onCancel={() => setEditWoOpen(false)}
           />
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Xác nhận xoá phiếu việc"
+        message={`Bạn có muốn xoá phiếu WO-${String(wo.woId).padStart(4, "0")} (${wo.assetName ?? "—"}) không? Phiếu sẽ chuyển vào kho lưu trữ — chỉ Quản trị viên mới truy cập và khôi phục được.`}
+        confirmLabel="Xoá phiếu"
+        cancelLabel="Không"
+        variant="danger"
+        loading={archiveBusy}
+        onConfirm={handleSoftDelete}
+        onCancel={() => setDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={restoreOpen}
+        title="Khôi phục phiếu việc"
+        message={`Khôi phục phiếu WO-${String(wo.woId).padStart(4, "0")} (${wo.assetName ?? "—"}) về danh sách hoạt động? Phiếu sẽ giữ nguyên trạng thái trước khi lưu trữ.`}
+        confirmLabel="Khôi phục"
+        cancelLabel="Huỷ"
+        loading={archiveBusy}
+        onConfirm={handleRestore}
+        onCancel={() => setRestoreOpen(false)}
+      />
     </div>
   );
 }

@@ -151,7 +151,7 @@ export async function submit({
     wf = rows[0];
   } else if (resourceType === "WORK_ORDER") {
     const [woRows] = await getPool().query(
-      "SELECT WO_Source AS woSource, Priority AS priority FROM WorkOrders WHERE WO_ID = ?",
+      "SELECT WO_Source AS woSource, Priority AS priority FROM WorkOrders WHERE WO_ID = ? AND IsDeleted = 0",
       [resourceId],
     );
     if (!woRows[0]) throw createError("Không tìm thấy Work Order", 404);
@@ -358,7 +358,7 @@ export async function approve({
         `SELECT DISTINCT wa.EmployeeID AS employeeId
          FROM WO_Assignments wa
          INNER JOIN WorkOrders w ON w.WO_ID = wa.WO_ID
-         WHERE w.AssetID = ?`,
+         WHERE w.AssetID = ? AND w.IsDeleted = 0`,
         [d.assetId],
       );
       const assetLabel = d.assetName || `ID ${d.assetId}`;

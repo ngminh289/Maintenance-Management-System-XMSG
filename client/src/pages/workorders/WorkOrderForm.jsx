@@ -1,11 +1,13 @@
 /**
  * WorkOrderForm.jsx — Form tạo / chỉnh sửa phiếu việc.
+ * Edit: nhấn "Lưu" hiện ConfirmDialog xác nhận trước khi gọi API (đồng bộ AssetForm).
  */
 import { useState } from "react";
 import { workOrderApi } from "../../api/workOrder.api.js";
 import { AssetIdSearchPicker } from "../../components/AssetIdSearchPicker.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Input, Select, Textarea } from "../../components/ui/Input.jsx";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
 import { toDateInputValue } from "../../utils/format.js";
 
 export function WorkOrderForm({ wo, onSuccess, onCancel }) {
@@ -21,26 +23,38 @@ export function WorkOrderForm({ wo, onSuccess, onCancel }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const handleSubmit = async (e) => {
+  const performSave = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      if (isEdit) await workOrderApi.update(wo.woId, form);
+      else await workOrderApi.create(form);
+      setConfirmSaveOpen(false);
+      onSuccess?.();
+    } catch (err) {
+      setConfirmSaveOpen(false);
+      setError(err.response?.data?.message ?? "Lỗi lưu dữ liệu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
     if (!form.assetId || !form.plannedDate) {
       setError("Tài sản và ngày dự kiến là bắt buộc");
       return;
     }
-    setLoading(true);
-    try {
-      if (isEdit) await workOrderApi.update(wo.woId, form);
-      else await workOrderApi.create(form);
-      onSuccess?.();
-    } catch (err) {
-      setError(err.response?.data?.message ?? "Lỗi lưu dữ liệu");
-    } finally {
-      setLoading(false);
+    if (isEdit) {
+      setConfirmSaveOpen(true);
+      return;
     }
+    void performSave();
   };
 
   return (
@@ -110,10 +124,23 @@ export function WorkOrderForm({ wo, onSuccess, onCancel }) {
         <Button type="button" variant="secondary" onClick={onCancel}>
           Hủy
         </Button>
-        <Button type="submit" loading={loading}>
-          {isEdit ? "Cập nhật" : "Tạo phiếu"}
+        <Button type="submit" loading={loading && !confirmSaveOpen}>
+          {isEdit ? "Lưu" : "Tạo phiếu"}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmSaveOpen}
+        title="Xác nhận lưu chỉnh sửa"
+        message="Bạn có muốn lưu chi tiết chỉnh sửa không?"
+        confirmLabel="Lưu"
+        cancelLabel="Không"
+        loading={loading}
+        onConfirm={() => {
+          void performSave();
+        }}
+        onCancel={() => setConfirmSaveOpen(false)}
+      />
     </form>
   );
 }

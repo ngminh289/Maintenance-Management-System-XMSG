@@ -2,6 +2,7 @@
  * workOrder.model.js — SQL thuần cho bảng WorkOrders + WO_Assignments.
  * Đo thời gian làm: WorkStartedAt + PausedAccumulatedSec + PauseStartedAt → tính ActualHours khi COMPLETED (migration 021).
  * CounterBaselineResetAt/By: reset mốc giờ PM từ phiếu CORRECTIVE (migration 032).
+ * Soft-delete (mig 070): IsDeleted=0 mặc định ẩn ở mọi query; archived=true để liệt kê tab "Đã lưu trữ".
  * Dùng trong: services/workOrder.service.js, checklist.service.js.
  * findAll: thêm approvalHasPending, needsApprovalResubmit (JOIN logic ApprovalLogs).
  * countAssetMaintenanceHoldOrders: IN_PROGRESS hoặc AWAITING khẩn (EMERGENCY hoặc CORRECTIVE+HIGH) — giữ MAINTENANCE.
@@ -37,6 +38,10 @@ const COLS = `
   wo.Priority       AS priority,
   wo.CreatedBy      AS createdBy,
   wo.CreatedAt      AS createdAt,
+  wo.IsDeleted      AS isDeleted,
+  wo.DeletedAt      AS deletedAt,
+  wo.DeletedBy      AS deletedBy,
+  eDel.FullName     AS deletedByName,
   (SELECT COUNT(*) FROM WO_Assignments wa_cnt WHERE wa_cnt.WO_ID = wo.WO_ID) AS assignmentCount`;
 
 const BASE_JOIN = `
@@ -44,7 +49,17 @@ const BASE_JOIN = `
   JOIN Assets a      ON a.AssetID       = wo.AssetID
   JOIN AssetTypes at ON at.AssetTypeID  = a.AssetTypeID
   JOIN Locations l   ON l.LocationID    = a.LocationID
-  LEFT JOIN Employees eReset ON eReset.EmployeeID = wo.CounterBaselineResetBy`;
+  LEFT JOIN Employees eReset ON eReset.EmployeeID = wo.CounterBaselineResetBy
+  LEFT JOIN Employees eDel   ON eDel.EmployeeID   = wo.DeletedBy`;
+
+/**
+ * Soft-delete clause: thêm vào WHERE để lọc phiếu hiện hữu / đã lưu trữ.
+ *   archived === true   → chỉ phiếu đã lưu trữ (tab Admin).
+ *   archived === false / undefined → loại bỏ phiếu đã xoá (mặc định ở mọi nơi).
+ */
+function softDeleteClause(archived) {
+  return archived === true ? "wo.IsDeleted = 1" : "wo.IsDeleted = 0";
+}
 
 /** Cờ phê duyệt cho danh sách WO (UI): PENDING vs chờ gửi lại sau REQUEST_CHANGES. */
 const APPROVAL_LIST_FLAGS = `
@@ -76,10 +91,11 @@ export async function findAll({
   q,
   limit,
   offset,
+  archived = false,
 } = {}) {
   const params = [];
   let join = BASE_JOIN;
-  let where = "WHERE 1=1";
+  let where = `WHERE ${softDeleteClause(archived)}`;
   if (status) {
     where += " AND wo.Status = ?";
     params.push(status);
@@ -148,10 +164,11 @@ export async function count({
   plannedFrom,
   plannedTo,
   q,
+  archived = false,
 } = {}) {
   const params = [];
   let join = "FROM WorkOrders wo JOIN Assets a ON a.AssetID = wo.AssetID JOIN Locations l ON l.LocationID = a.LocationID";
-  let where = "WHERE 1=1";
+  let where = `WHERE ${softDeleteClause(archived)}`;
   if (status) {
     where += " AND wo.Status = ?";
     params.push(status);
@@ -207,9 +224,10 @@ export async function count({
   return Number(rows[0].cnt);
 }
 
-export async function findById(id) {
+export async function findById(id, { includeArchived = false } = {}) {
+  const where = includeArchived ? "" : ` AND wo.IsDeleted = 0`;
   const [rows] = await getPool().query(
-    `SELECT ${COLS} ${BASE_JOIN} WHERE wo.WO_ID = ?`,
+    `SELECT ${COLS} ${BASE_JOIN} WHERE wo.WO_ID = ?${where}`,
     [id],
   );
   return rows[0] || null;
@@ -221,6 +239,7 @@ export async function findOpenPredictiveIdByAsset(assetId) {
     `SELECT WO_ID AS woId FROM WorkOrders
      WHERE AssetID = ? AND WO_Source IN ('PREDICTIVE','PREDICTIVE_SCHEDULE')
        AND Status NOT IN ('COMPLETED','CANCELLED')
+       AND IsDeleted = 0
      ORDER BY WO_ID DESC LIMIT 1`,
     [assetId],
   );
@@ -238,6 +257,7 @@ export async function countAssetMaintenanceHoldOrders(assetId) {
   const [rows] = await getPool().query(
     `SELECT COUNT(*) AS cnt FROM WorkOrders w
      WHERE w.AssetID = ?
+       AND w.IsDeleted = 0
        AND (w.Status = 'IN_PROGRESS' OR ${SQL_W_AWAITING_URGENT})`,
     [assetId],
   );
@@ -255,6 +275,7 @@ export async function countEmployeeBlockingWorkOrders(employeeId, excludeWoId) {
      INNER JOIN WorkOrders w ON w.WO_ID = wa.WO_ID
      WHERE wa.EmployeeID = ?
        AND w.WO_ID <> ?
+       AND w.IsDeleted = 0
        AND (
          w.Status IN ('IN_PROGRESS','PAUSED')
          OR ${SQL_W_AWAITING_URGENT}
@@ -274,6 +295,7 @@ export async function findOpenAssignmentsForEmployee(employeeId) {
      INNER JOIN Assets a ON a.AssetID = w.AssetID
      INNER JOIN Locations l ON l.LocationID = a.LocationID
      WHERE wa.EmployeeID = ?
+       AND w.IsDeleted = 0
        AND w.Status NOT IN ('COMPLETED','CANCELLED')
      ORDER BY
        CASE w.Status
@@ -412,7 +434,7 @@ export async function findByScheduleAndStatuses(scheduleId, statuses) {
     `SELECT WO_ID AS woId, Status AS status, PlannedDate AS plannedDate,
             Priority AS priority, WO_Source AS woSource
        FROM WorkOrders
-      WHERE ScheduleID = ? AND Status IN (${placeholders})
+      WHERE ScheduleID = ? AND IsDeleted = 0 AND Status IN (${placeholders})
       ORDER BY WO_ID DESC`,
     [scheduleId, ...statuses],
   );
@@ -540,9 +562,38 @@ export async function unassign(woId, employeeId) {
   );
 }
 
+/**
+ * Hard delete — chỉ dùng cho cleanup nội bộ / admin tools (không gọi từ HTTP layer).
+ * Tất cả flow xoá phiếu của user đều đi qua softRemove() để giữ archive.
+ */
 export async function remove(id) {
   const [result] = await getPool().query(
     "DELETE FROM WorkOrders WHERE WO_ID = ?",
+    [id],
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Xoá mềm (đánh dấu IsDeleted=1) — phiếu vẫn nằm trong DB, vẫn giữ checklist /
+ * ảnh đóng phiếu / phân công / log phê duyệt để truy xuất ở tab "Đã lưu trữ".
+ */
+export async function softRemove(id, deletedBy) {
+  const [result] = await getPool().query(
+    `UPDATE WorkOrders
+       SET IsDeleted = 1, DeletedAt = ?, DeletedBy = ?
+     WHERE WO_ID = ? AND IsDeleted = 0`,
+    [new Date(), deletedBy || null, id],
+  );
+  return result.affectedRows;
+}
+
+/** Khôi phục phiếu đã lưu trữ — chỉ Admin được phép (service tự kiểm tra). */
+export async function restore(id) {
+  const [result] = await getPool().query(
+    `UPDATE WorkOrders
+       SET IsDeleted = 0, DeletedAt = NULL, DeletedBy = NULL
+     WHERE WO_ID = ? AND IsDeleted = 1`,
     [id],
   );
   return result.affectedRows;

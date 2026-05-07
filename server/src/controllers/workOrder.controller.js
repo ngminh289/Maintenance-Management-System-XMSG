@@ -18,12 +18,18 @@ export const getAll = asyncHandler(async (req, res) => {
   return ok(res, await service.getAll(query));
 });
 
+/** GET /work-orders/archived — chỉ Admin (route đã chặn). */
+export const getArchived = asyncHandler(async (req, res) =>
+  ok(res, await service.getArchived(req.query)),
+);
+
 export const getById = asyncHandler(async (req, res) =>
   ok(
     res,
     await service.getById(req.params.id, {
       employeeId: req.user.sub,
       positionLevel: req.user.positionLevel,
+      positionId: req.user.positionId,
     }),
   ),
 );
@@ -33,7 +39,13 @@ export const create = asyncHandler(async (req, res) =>
 );
 
 export const update = asyncHandler(async (req, res) =>
-  ok(res, await service.update(req.params.id, req.body)),
+  ok(
+    res,
+    await service.update(req.params.id, req.body, {
+      actorLevel: req.user.positionLevel,
+      actorPositionId: req.user.positionId,
+    }),
+  ),
 );
 
 export const changeStatus = asyncHandler(async (req, res) => {
@@ -132,6 +144,20 @@ export const unassign = asyncHandler(async (req, res) =>
 );
 
 export const remove = asyncHandler(async (req, res) => {
-  await service.remove(req.params.id);
-  return ok(res, { message: "Đã xóa phiếu công việc." });
+  const result = await service.remove(req.params.id, {
+    actorPositionId: req.user.positionId,
+    actorEmployeeId: req.user.sub,
+  });
+  return ok(res, {
+    ...result,
+    message: "Đã chuyển phiếu vào lưu trữ.",
+  });
+});
+
+/** POST /work-orders/:id/restore — chỉ Admin (positionId = 4). */
+export const restore = asyncHandler(async (req, res) => {
+  const wo = await service.restore(req.params.id, {
+    actorPositionId: req.user.positionId,
+  });
+  return ok(res, { ...wo, message: "Đã khôi phục phiếu việc." });
 });

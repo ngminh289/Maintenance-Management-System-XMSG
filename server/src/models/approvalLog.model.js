@@ -151,6 +151,7 @@ export async function findPendingForPosition(positionId) {
      LEFT JOIN Assets               msa ON msa.AssetID    = ms.AssetID
      LEFT JOIN Locations    lms ON lms.LocationID   = msa.LocationID
      WHERE al.Status = 'PENDING' AND ws.PositionID = ?
+       AND (al.ResourceType <> 'WORK_ORDER' OR wo.IsDeleted = 0)
      ORDER BY al.ActionDate`,
     [positionId],
   );
@@ -222,6 +223,7 @@ export async function findPendingForAnyPosition(positionIds) {
      LEFT JOIN Assets               msa ON msa.AssetID    = ms.AssetID
      LEFT JOIN Locations    lms ON lms.LocationID   = msa.LocationID
      WHERE al.Status = 'PENDING' AND ws.PositionID IN (${ph})
+       AND (al.ResourceType <> 'WORK_ORDER' OR wo.IsDeleted = 0)
      ORDER BY al.ActionDate`,
     pids,
   );

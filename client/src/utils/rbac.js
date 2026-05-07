@@ -16,6 +16,7 @@
  * Phản hồi: DOCUMENT_FEEDBACK:CREATE mọi vai trừ KTS & PKT; REVIEW — KTS & PKT (cùng rule 038).
  * 055: Trưởng/Phó bảo trì 6,8; Trưởng/Phó PKT 7,9; ma trận cột 6 = headPtkT (7/9).
  * 056–057: Bảo trì chỉ đọc tài sản/mẫu/lịch (tạo lịch: 2,7,9). PKT = quyền KTS + duyệt DAM; 058: PKT chỉ READ WORK_ORDER.
+ * WORK_ORDER:VIEW_ARCHIVED / RESTORE: xử lý trước canDoByDbPermission — không có trong DB nên tránh false sớm (Admin mất tab Lưu trữ).
  */
 
 import {
@@ -253,10 +254,13 @@ const ACTION_ACCESS = {
   "SCHEDULE:APPROVE":        [false, false, true,  false, false, false],
   "SCHEDULE:DELETE":         [false, true,  false, false, false, true],
   "WORK_ORDER:CREATE":       [false, true,  true,  true,  false, false],
-  "WORK_ORDER:UPDATE":       [true,  true,  true,  false, false, false],
+  "WORK_ORDER:UPDATE":       [true,  true,  true,  true,  false, true],
   "WORK_ORDER:ASSIGN":       [false, false, true,  false, false, false],
   "WORK_ORDER:APPROVE":      [false, false, true,  false, false, false],
-  "WORK_ORDER:DELETE":       [false, false, false, false, false, false],
+  "WORK_ORDER:DELETE":       [false, false, false, true,  false, true],
+  /** Tab "Đã lưu trữ" + nút khôi phục: chỉ Quản trị viên (positionId = 4). */
+  "WORK_ORDER:RESTORE":      [false, false, false, true,  false, false],
+  "WORK_ORDER:VIEW_ARCHIVED":[false, false, false, true,  false, false],
   "DOCUMENT:CREATE":         [false, true,  false, false, false, true],
   "DOCUMENT:SUBMIT":         [false, true,  false, false, false, true],
   "DOCUMENT:UPDATE":         [false, true,  false, false, false, true],
@@ -295,6 +299,12 @@ function canApproveByPid(pid, list) {
 }
 
 export function canDo(user, action) {
+  // Tab "Đã lưu trữ" / Khôi phục: không có trong bảng Roles_Permissions — nếu để
+  // canDoByDbPermission chạy trước thì Set.has → false và thoát sớm, Admin cũng không thấy tab.
+  if (action === "WORK_ORDER:RESTORE" || action === "WORK_ORDER:VIEW_ARCHIVED") {
+    return getRoleKey(user) === "admin" || Number(user?.positionId) === 4;
+  }
+
   const canByDb = canDoByDbPermission(user, action);
   if (canByDb !== null) {
     return canByDb;
@@ -328,6 +338,19 @@ export function canDo(user, action) {
     if (role === "truongCa") return action === "SCHEDULE:UPDATE";
     return false;
   }
+  // WORK_ORDER:UPDATE — KTV HT cần UPDATE để chuyển trạng thái nhận việc/hoàn thành;
+  // CV KTS được sửa pre-approval, Trưởng ca được sửa post-approval (BE xác thực status).
+  if (action === "WORK_ORDER:UPDATE") {
+    const role = getRoleKey(user);
+    if (role === "admin" || role === "truongPhong" || role === "headPtkT") return true;
+    if (role === "kyThuat" || role === "truongCa" || role === "congNhan") return true;
+    return false;
+  }
+  // WORK_ORDER:DELETE — TC + KTS không có quyền (theo xác nhận user). Chỉ Admin / TP.
+  if (action === "WORK_ORDER:DELETE") {
+    const role = getRoleKey(user);
+    return role === "admin" || role === "truongPhong" || role === "headPtkT";
+  }
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);
     return k === "congNhan" || k === "truongCa" || k === "truongPhong";
@@ -349,6 +372,45 @@ export function canDo(user, action) {
   const r = getRoleKey(user);
   const idx = ROLE_IDX[r];
   return idx !== undefined && matrix[idx] === true;
+}
+
+// ── WO row helpers ───────────────────────────────────────────────────────────
+// Tách logic "có cho hiện nút Sửa/Xoá ở List/Detail không?" để FE không gọi API
+// bị 403 — backend vẫn là nguồn xác thực cuối cùng (workOrder.service.js).
+const WO_EDITABLE_STATUSES = new Set(["PENDING_APPROVAL", "WAITING"]);
+const WO_DELETABLE_STATUSES = new Set([
+  "PENDING_APPROVAL",
+  "WAITING",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
+/** Có hiển thị icon Sửa cho phiếu này không (dựa trên role + status hiện tại). */
+export function canEditWorkOrderRow(user, wo) {
+  if (!user || !wo) return false;
+  if (Number(wo.isDeleted) === 1) return false;
+  if (!WO_EDITABLE_STATUSES.has(wo.status)) return false;
+  const role = getRoleKey(user);
+  if (role === "admin" || role === "truongPhong" || role === "headPtkT") return true;
+  if (role === "kyThuat") return wo.status === "PENDING_APPROVAL";
+  if (role === "truongCa") return wo.status === "WAITING";
+  return false;
+}
+
+/** Có hiển thị icon Xoá cho phiếu này không (TC + KTS đã loại theo yêu cầu user). */
+export function canDeleteWorkOrderRow(user, wo) {
+  if (!user || !wo) return false;
+  if (Number(wo.isDeleted) === 1) return false;
+  if (!WO_DELETABLE_STATUSES.has(wo.status)) return false;
+  return canDo(user, "WORK_ORDER:DELETE");
+}
+
+/** Có quyền truy cập tab "Đã lưu trữ" + khôi phục (chỉ Admin). */
+export function canViewArchivedWorkOrders(user) {
+  return canDo(user, "WORK_ORDER:VIEW_ARCHIVED");
+}
+export function canRestoreWorkOrder(user) {
+  return canDo(user, "WORK_ORDER:RESTORE");
 }
 
 // ── 4. Dashboard type cho mỗi role ────────────────────────────────────────────

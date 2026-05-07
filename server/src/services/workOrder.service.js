@@ -32,6 +32,63 @@ import * as downtimeEventModel from "../models/assetDowntimeEvent.model.js";
 const SUPERVISOR_MIN_LEVEL = 3;
 
 /**
+ * Định nghĩa lane theo PositionID:
+ *   1 = KTV HT, 2 = CV KTS, 3 = Trưởng ca, 4 = Admin (QTV),
+ *   5 = BGĐ, 6/8 = Trưởng/Phó BT, 7/9 = Trưởng/Phó PKT.
+ * Trưởng ca cùng level=3 với Trưởng phòng nên phải phân biệt qua positionId.
+ */
+const POSITION = {
+  KTV_HT: 1,
+  KTS:    2,
+  TRUONG_CA: 3,
+  ADMIN:  4,
+  BGD:    5,
+  HEAD_BT: 6, DEP_BT: 8,
+  HEAD_PKT: 7, DEP_PKT: 9,
+};
+
+const ADMIN_OR_TP = new Set([POSITION.ADMIN, POSITION.HEAD_BT, POSITION.DEP_BT, POSITION.HEAD_PKT, POSITION.DEP_PKT]);
+
+/** Phiếu chỉ được sửa khi đang ở trạng thái "tiền nghiệm thu" (theo yêu cầu user). */
+const EDITABLE_STATUSES = new Set(["PENDING_APPROVAL", "WAITING"]);
+/** Phiếu được phép xoá (chuyển sang lưu trữ) — không xoá khi đang chạy / chờ nghiệm thu. */
+const DELETABLE_STATUSES = new Set(["PENDING_APPROVAL", "WAITING", "COMPLETED", "CANCELLED"]);
+
+/**
+ * Quyền sửa phiếu theo role + trạng thái:
+ *   - Admin / Trưởng phòng (BT,PKT): luôn sửa được khi status ∈ EDITABLE.
+ *   - CV KTS: chỉ sửa khi PENDING_APPROVAL (trước phê duyệt).
+ *   - Trưởng ca: chỉ sửa khi WAITING (sau phê duyệt, chưa khởi động).
+ *   - KTV HT / BGĐ: chỉ xem.
+ */
+function canEditWoByRole({ status, actorLevel, actorPositionId }) {
+  if (!EDITABLE_STATUSES.has(status)) return false;
+  const pid = Number(actorPositionId) || 0;
+  if (ADMIN_OR_TP.has(pid)) return true;
+  if (pid === POSITION.KTS) return status === "PENDING_APPROVAL";
+  if (pid === POSITION.TRUONG_CA) return status === "WAITING";
+  // Fallback theo level (cho trường hợp positionId không khớp lane mới)
+  const lvl = Number(actorLevel) || 0;
+  if (lvl >= 3) return true;
+  return false;
+}
+
+/**
+ * Quyền xoá phiếu (soft delete) — TC + KTS không có quyền xoá phiếu việc.
+ * Chỉ Admin / Trưởng phòng được phép, và status phải nằm trong DELETABLE.
+ */
+function canDeleteWoByRole({ status, actorPositionId }) {
+  if (!DELETABLE_STATUSES.has(status)) return false;
+  const pid = Number(actorPositionId) || 0;
+  return ADMIN_OR_TP.has(pid);
+}
+
+/** Khôi phục phiếu lưu trữ — chỉ Admin theo yêu cầu user. */
+function canRestoreByRole({ actorPositionId }) {
+  return Number(actorPositionId) === POSITION.ADMIN;
+}
+
+/**
  * MAINTENANCE nếu còn phiếu IN_PROGRESS hoặc AWAITING_CLOSURE khẩn (EMERGENCY) trên tài sản; ngược lại AVAILABLE.
  * Không ghi đè DECOMMISSIONED.
  */
@@ -84,8 +141,32 @@ export async function getAll(query) {
   return paginatedResult(items, total, page, limit);
 }
 
+/**
+ * Tab "Đã lưu trữ" — chỉ Admin truy cập (route đã chặn). Service trả phiếu IsDeleted=1.
+ */
+export async function getArchived(query) {
+  const { page, limit, offset } = getPagination(query);
+  const filters = {
+    status: query.status || undefined,
+    assetId: query.assetId ? Number(query.assetId) : undefined,
+    locationId: query.locationId ? Number(query.locationId) : undefined,
+    priority: query.priority || undefined,
+    woSource: query.woSource || undefined,
+    plannedFrom: query.plannedFrom || undefined,
+    plannedTo: query.plannedTo || undefined,
+    q: query.q || undefined,
+    archived: true,
+  };
+  const [items, total] = await Promise.all([
+    model.findAll({ ...filters, limit, offset }),
+    model.count(filters),
+  ]);
+  return paginatedResult(items, total, page, limit);
+}
+
 export async function getById(id, viewer = null) {
-  const wo = await model.findById(id);
+  const isAdmin = Number(viewer?.positionId) === POSITION.ADMIN;
+  const wo = await model.findById(id, { includeArchived: isAdmin });
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
   const [assignments, photos, openPlannedDowntime] = await Promise.all([
     model.getAssignments(id),
@@ -243,10 +324,31 @@ export async function createFromApprovedSchedule({
   return woId;
 }
 
-export async function update(id, data) {
-  const wo = await getById(id);
-  if (["COMPLETED", "CANCELLED"].includes(wo.status))
-    throw createError("Không thể sửa phiếu đã kết thúc", 400);
+/**
+ * Sửa phiếu — kiểm tra role + status:
+ *  - Phiếu lưu trữ: chặn tuyệt đối (chỉ tab Admin xem read-only).
+ *  - PENDING_APPROVAL / WAITING: cho phép theo role (canEditWoByRole).
+ *  - IN_PROGRESS, PAUSED, AWAITING_CLOSURE, COMPLETED, CANCELLED: không sửa.
+ */
+export async function update(id, data, opts = {}) {
+  const { actorLevel, actorPositionId } = opts;
+  const wo = await model.findById(id, { includeArchived: true });
+  if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
+  if (Number(wo.isDeleted) === 1) {
+    throw createError("Phiếu đã được lưu trữ — không thể chỉnh sửa.", 400);
+  }
+  if (!EDITABLE_STATUSES.has(wo.status)) {
+    throw createError(
+      "Phiếu đang/đã kết thúc nên không được chỉnh sửa. Chỉ sửa khi đang chờ duyệt hoặc chờ thực hiện.",
+      400,
+    );
+  }
+  if (!canEditWoByRole({ status: wo.status, actorLevel, actorPositionId })) {
+    throw createError(
+      "Bạn không có quyền sửa phiếu này ở trạng thái hiện tại.",
+      403,
+    );
+  }
   await model.update(id, data);
   return getById(id);
 }
@@ -703,14 +805,46 @@ export async function unassign(woId, employeeId, { actorLevel } = {}) {
   return model.getAssignments(woId);
 }
 
-export async function remove(id) {
-  const wo = await model.findById(id);
+/**
+ * Xoá phiếu = soft delete (đánh dấu IsDeleted=1) — phiếu vẫn lưu DB để truy xuất ở
+ * tab "Đã lưu trữ" (chỉ Admin). Giữ checklist / ảnh / phân công / log để bảo toàn lịch sử.
+ *  - Chỉ Admin / Trưởng phòng (BT,PKT) được xoá (TC + KTS không có quyền).
+ *  - Cho phép xoá khi status ∈ DELETABLE_STATUSES.
+ */
+export async function remove(id, opts = {}) {
+  const { actorPositionId, actorEmployeeId } = opts;
+  const wo = await model.findById(id, { includeArchived: true });
   if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
-  if (!["CANCELLED", "PENDING_APPROVAL"].includes(wo.status)) {
-    throw createError(
-      "Chỉ được xóa phiếu ở trạng thái CANCELLED hoặc PENDING_APPROVAL",
-      400,
-    );
+  if (Number(wo.isDeleted) === 1) {
+    throw createError("Phiếu đã được lưu trữ trước đó.", 400);
   }
-  await model.remove(id);
+  if (!canDeleteWoByRole({ status: wo.status, actorPositionId })) {
+    if (!DELETABLE_STATUSES.has(wo.status)) {
+      throw createError(
+        "Phiếu đang thực hiện hoặc chờ nghiệm thu — không được xoá.",
+        400,
+      );
+    }
+    throw createError("Bạn không có quyền xoá phiếu việc này.", 403);
+  }
+  await model.softRemove(id, actorEmployeeId || null);
+  return { workOrderId: Number(id), archived: true };
+}
+
+/**
+ * Khôi phục phiếu đã lưu trữ (chỉ Admin) — bỏ cờ IsDeleted để phiếu trở lại danh sách thường.
+ * Không "rebuild" trạng thái phụ thuộc (asset MAINTENANCE/AVAILABLE) vì status WO không đổi.
+ */
+export async function restore(id, opts = {}) {
+  const { actorPositionId } = opts;
+  if (!canRestoreByRole({ actorPositionId })) {
+    throw createError("Chỉ Quản trị viên mới khôi phục phiếu đã lưu trữ.", 403);
+  }
+  const wo = await model.findById(id, { includeArchived: true });
+  if (!wo) throw createError("Không tìm thấy phiếu công việc", 404);
+  if (Number(wo.isDeleted) !== 1) {
+    throw createError("Phiếu này không nằm trong lưu trữ.", 400);
+  }
+  await model.restore(id);
+  return getById(id);
 }

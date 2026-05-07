@@ -24,6 +24,19 @@ export const workOrderRouter = Router();
 
 workOrderRouter.use(requireAuth);
 
+/**
+ * Tab "Đã lưu trữ" — chỉ Admin (positionId = 4).
+ * Đặt trước /:id để Express không nhầm "archived" thành id.
+ */
+function requireAdmin(req, res, next) {
+  if (Number(req.user?.positionId) !== 4) {
+    return res.status(403).json({ message: 'Chỉ Quản trị viên được truy cập kho lưu trữ phiếu việc.' });
+  }
+  return next();
+}
+
+workOrderRouter.get('/archived', requireAdmin, ctrl.getArchived);
+
 workOrderRouter.get('/',    ctrl.getAll);
 
 workOrderRouter.patch('/:id/closure-notes',
@@ -93,3 +106,5 @@ workOrderRouter.delete('/:id',
   requirePermission('WORK_ORDER', 'DELETE'),
   ctrl.remove,
 );
+
+workOrderRouter.post('/:id/restore', requireAdmin, ctrl.restore);

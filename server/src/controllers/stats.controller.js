@@ -48,7 +48,8 @@ export const summary = asyncHandler(async (_req, res) => {
     SUM(Status = 'AWAITING_CLOSURE') AS awaitingClosure,
     SUM(Status = 'COMPLETED')        AS completed,
     SUM(Status = 'CANCELLED')        AS cancelled
-  FROM WorkOrders`);
+  FROM WorkOrders
+  WHERE IsDeleted = 0`);
 
   const [[checklists]] = await pool.query(`SELECT
     COUNT(*) AS total,
@@ -434,7 +435,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
     LEFT JOIN (
       SELECT AssetID, COUNT(*) AS failureCount
       FROM WorkOrders
-      WHERE Priority = 'EMERGENCY' AND Status = 'COMPLETED'
+      WHERE Priority = 'EMERGENCY' AND Status = 'COMPLETED' AND IsDeleted = 0
         AND ActualDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       GROUP BY AssetID
     ) f ON f.AssetID = a.AssetID
@@ -477,7 +478,7 @@ export const performanceReport = asyncHandler(async (req, res) => {
              COUNT(*)          AS repairCount,
              SUM(ActualHours)  AS totalRepairHours
       FROM WorkOrders
-      WHERE WO_Source = 'CORRECTIVE' AND Status = 'COMPLETED'
+      WHERE WO_Source = 'CORRECTIVE' AND Status = 'COMPLETED' AND IsDeleted = 0
         AND ActualHours IS NOT NULL
         AND ActualDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       GROUP BY AssetID
@@ -659,7 +660,8 @@ export const performanceReport = asyncHandler(async (req, res) => {
         ELSE 0
       END AS onTimeRate
     FROM WorkOrders w
-    WHERE (${planTypeSql})
+    WHERE w.IsDeleted = 0
+      AND (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       ${employeeFilterSql}
   `,
@@ -675,7 +677,8 @@ export const performanceReport = asyncHandler(async (req, res) => {
       SUM(Status = 'COMPLETED' AND ActualDate <= PlannedDate)          AS onTime,
       SUM(Status = 'COMPLETED' AND ActualDate > PlannedDate)           AS late
     FROM WorkOrders w
-    WHERE (${planTypeSql})
+    WHERE w.IsDeleted = 0
+      AND (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       ${employeeFilterSql}
     GROUP BY DATE_FORMAT(PlannedDate, '%Y-%m')
@@ -692,7 +695,8 @@ export const performanceReport = asyncHandler(async (req, res) => {
     FROM WorkOrders w
     INNER JOIN WO_Assignments wa ON wa.WO_ID = w.WO_ID
     INNER JOIN Employees e ON e.EmployeeID = wa.EmployeeID
-    WHERE (${planTypeSql})
+    WHERE w.IsDeleted = 0
+      AND (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND e.IsActive = TRUE
     ORDER BY e.FullName ASC
@@ -725,7 +729,8 @@ export const performanceReport = asyncHandler(async (req, res) => {
     FROM WorkOrders w
     INNER JOIN WO_Assignments wa ON wa.WO_ID = w.WO_ID
     INNER JOIN Employees e ON e.EmployeeID = wa.EmployeeID
-    WHERE (${planTypeSql})
+    WHERE w.IsDeleted = 0
+      AND (${planTypeSql})
       AND w.PlannedDate >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       ${employeeFilterId ? "AND wa.EmployeeID = ?" : ""}
     GROUP BY wa.EmployeeID, e.FullName
@@ -1017,7 +1022,7 @@ export const workOrderCompletion = asyncHandler(async (_req, res) => {
       MIN(ActualDate)         AS weekStart,
       COUNT(*)                AS completed
     FROM WorkOrders
-    WHERE Status = 'COMPLETED'
+    WHERE Status = 'COMPLETED' AND IsDeleted = 0
       AND ActualDate >= DATE_SUB(NOW(), INTERVAL 12 WEEK)
     GROUP BY YEARWEEK(ActualDate, 1)
     ORDER BY yearWeek ASC

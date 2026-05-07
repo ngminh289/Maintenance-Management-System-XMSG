@@ -2,9 +2,11 @@
  * WorkOrderListPage.jsx — Danh sách phiếu việc (card, cờ phê duyệt).
  * RBAC: nút tạo khi canDo(WORK_ORDER:CREATE).
  * Cờ từ API: needsApprovalResubmit (sau YC chỉnh sửa), approvalHasPending (đang có bước PENDING).
+ * Tab "Đã lưu trữ" (chỉ Admin) — phiếu IsDeleted=1: chỉ xem, có thể khôi phục.
+ * Action 3 icon (Eye/Pencil/Trash2): hiển thị theo canEditWorkOrderRow / canDeleteWorkOrderRow.
  */
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Plus,
   ChevronRight,
@@ -14,6 +16,11 @@ import {
   AlertCircle,
   RotateCcw,
   FileSpreadsheet,
+  Eye,
+  Pencil,
+  Trash2,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { workOrderApi } from "../../api/workOrder.api.js";
 import { assetApi } from "../../api/asset.api.js";
@@ -24,6 +31,7 @@ import { Pagination } from "../../components/ui/Pagination.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
 import {
   WO_STATUS_LABEL,
   WO_STATUS_COLOR,
@@ -35,7 +43,13 @@ import {
 } from "../../utils/format.js";
 import { WorkOrderForm } from "./WorkOrderForm.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
-import { canDo } from "../../utils/rbac.js";
+import {
+  canDo,
+  canEditWorkOrderRow,
+  canDeleteWorkOrderRow,
+  canViewArchivedWorkOrders,
+  canRestoreWorkOrder,
+} from "../../utils/rbac.js";
 import { exportRowsToExcel } from "../../utils/excelExport.js";
 import toast from "react-hot-toast";
 
@@ -84,6 +98,7 @@ function isTruthyDbFlag(v) {
 
 export function WorkOrderListPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -99,12 +114,20 @@ export function WorkOrderListPage() {
   const [assets, setAssets] = useState([]);
   const [locations, setLocations] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [restoreItem, setRestoreItem] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  /** archivedMode: tab "Đã lưu trữ" — chỉ Admin (canViewArchivedWorkOrders). */
+  const [archivedMode, setArchivedMode] = useState(false);
+  const canSeeArchived = canViewArchivedWorkOrders(user);
+  const canRestore = canRestoreWorkOrder(user);
   const LIMIT = 15;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await workOrderApi.getAll({
+      const queryParams = {
         page,
         limit: LIMIT,
         ...(status && { status }),
@@ -112,7 +135,7 @@ export function WorkOrderListPage() {
         ...(woSource && { woSource }),
         ...(assetId && { assetId }),
         ...(locationId && { locationId }),
-        ...(resourceType && { resourceType }),
+        ...(resourceType && !archivedMode && { resourceType }),
         ...(q.trim() && { q: q.trim() }),
         ...(period && {
           plannedFrom:
@@ -125,7 +148,10 @@ export function WorkOrderListPage() {
                   : undefined,
           plannedTo: todayDateInput(),
         }),
-      });
+      };
+      const res = archivedMode
+        ? await workOrderApi.getArchived(queryParams)
+        : await workOrderApi.getAll(queryParams);
       setOrders(res.data.data?.items ?? []);
       setTotal(res.data.data?.total ?? 0);
     } finally {
@@ -141,6 +167,7 @@ export function WorkOrderListPage() {
     resourceType,
     period,
     q,
+    archivedMode,
   ]);
 
   useEffect(() => {
@@ -156,6 +183,61 @@ export function WorkOrderListPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const stop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const openView = (wo, e) => {
+    if (e) stop(e);
+    navigate(`/work-orders/${wo.woId}`);
+  };
+
+  const openEdit = (wo, e) => {
+    if (e) stop(e);
+    setEditItem(wo);
+  };
+
+  const openDelete = (wo, e) => {
+    if (e) stop(e);
+    setDeleteItem(wo);
+  };
+
+  const openRestore = (wo, e) => {
+    if (e) stop(e);
+    setRestoreItem(wo);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteItem) return;
+    setActionLoading(true);
+    try {
+      await workOrderApi.remove(deleteItem.woId);
+      toast.success(`Đã chuyển phiếu WO-${String(deleteItem.woId).padStart(4, "0")} vào lưu trữ`);
+      setDeleteItem(null);
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không thể xoá phiếu việc");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmRestore = async () => {
+    if (!restoreItem) return;
+    setActionLoading(true);
+    try {
+      await workOrderApi.restore(restoreItem.woId);
+      toast.success(`Đã khôi phục phiếu WO-${String(restoreItem.woId).padStart(4, "0")}`);
+      setRestoreItem(null);
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không thể khôi phục phiếu");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleExportExcel = () => {
     const ok = exportRowsToExcel({
@@ -232,6 +314,39 @@ export function WorkOrderListPage() {
           </Button>
         )}
       </div>
+
+      {canSeeArchived && (
+        <div className="flex gap-1.5 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => {
+              setArchivedMode(false);
+              setStatus("");
+              setPage(1);
+            }}
+            className={`px-3.5 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors
+              ${!archivedMode ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Wrench size={13} /> Đang hoạt động
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setArchivedMode(true);
+              setStatus("");
+              setPage(1);
+            }}
+            className={`px-3.5 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors
+              ${archivedMode ? "border-amber-700 text-amber-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Archive size={13} /> Đã lưu trữ
+            </span>
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
         <div className="flex gap-1 overflow-x-auto pb-1 -mx-1 px-1">
@@ -384,108 +499,152 @@ export function WorkOrderListPage() {
               const resubmit = isTruthyDbFlag(wo.needsApprovalResubmit);
               const stLabel = WO_STATUS_LABEL[wo.status] ?? wo.status;
               const prLabel = WO_PRIORITY_LABEL[wo.priority] ?? wo.priority;
+              const showEdit = !archivedMode && canEditWorkOrderRow(user, wo);
+              const showDelete = !archivedMode && canDeleteWorkOrderRow(user, wo);
+              const showRestore = archivedMode && canRestore;
               return (
-                <li key={wo.woId}>
-                  <Link
-                    to={`/work-orders/${wo.woId}`}
-                    className={`flex flex-col sm:flex-row sm:items-stretch gap-3 sm:gap-4 p-4 sm:px-5 sm:py-4
-                      hover:bg-slate-50/90 transition-colors group
+                <li
+                  key={wo.woId}
+                  onClick={() => navigate(`/work-orders/${wo.woId}`)}
+                  className={`flex flex-col sm:flex-row sm:items-stretch gap-3 sm:gap-4 p-4 sm:px-5 sm:py-4
+                      hover:bg-slate-50/90 transition-colors group cursor-pointer
+                      ${archivedMode ? "bg-amber-50/40" : ""}
                       ${resubmit ? "border-l-4 border-l-amber-400 pl-3 sm:pl-4" : "border-l-4 border-l-transparent"}`}
-                  >
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-bold text-slate-900 tabular-nums">
-                          WO-{String(wo.woId).padStart(4, "0")}
-                        </span>
-                        {resubmit && (
-                          <Badge color="orange" className="gap-1">
-                            <RotateCcw size={11} aria-hidden />
-                            YC sửa
-                          </Badge>
-                        )}
-                        {wo.status === "PENDING_APPROVAL" &&
-                          pending &&
-                          !resubmit && <Badge color="yellow">Chờ duyệt</Badge>}
-                        <Badge color={WO_STATUS_COLOR[wo.status] ?? "gray"}>
-                          {stLabel}
+                >
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-bold text-slate-900 tabular-nums">
+                        WO-{String(wo.woId).padStart(4, "0")}
+                      </span>
+                      {archivedMode && (
+                        <Badge color="amber" className="gap-1">
+                          <Archive size={11} aria-hidden />
+                          Đã lưu trữ
                         </Badge>
-                        <Badge color={WO_PRIORITY_COLOR[wo.priority] ?? "gray"}>
-                          {prLabel}
-                        </Badge>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 py-0.5 rounded bg-slate-100">
-                          {wo.woSource}
-                        </span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-1.5 py-0.5 rounded bg-slate-100">
-                          {Number(wo.assignmentCount ?? 0) === 0
-                            ? "Chưa phân công"
-                            : Number(wo.assignmentCount ?? 0) === 1
-                              ? "Nhân viên"
-                              : "Nhóm"}
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-700 leading-snug line-clamp-2">
-                        {wo.description?.trim() || (
-                          <span className="text-slate-400 italic">
-                            Không có mô tả
-                          </span>
-                        )}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                        <span className="inline-flex items-center gap-1 font-medium text-slate-600">
-                          <Wrench
-                            size={12}
-                            className="text-slate-400 shrink-0"
-                          />
-                          {wo.assetName}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin
-                            size={12}
-                            className="text-slate-400 shrink-0"
-                          />
-                          {wo.locationName ?? "—"}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Calendar
-                            size={12}
-                            className="text-slate-400 shrink-0"
-                          />
-                          {fDate(wo.plannedDate)}
-                        </span>
-                        {wo.actualDate && (
-                          <span>Hoàn tất: {fDate(wo.actualDate)}</span>
-                        )}
-                        {wo.estimatedHours != null &&
-                          Number(wo.estimatedHours) > 0 && (
-                            <span>Ước tính ~{wo.estimatedHours}h</span>
-                          )}
-                        {wo.actualHours != null &&
-                          Number(wo.actualHours) > 0 && (
-                            <span>Thực tế {wo.actualHours}h</span>
-                          )}
-                      </div>
+                      )}
                       {resubmit && (
-                        <p className="text-xs text-amber-800/90 flex items-center gap-1.5">
-                          <AlertCircle
-                            size={14}
-                            className="shrink-0"
-                            aria-hidden
-                          />
-                          <span>Chi tiết → sửa (nếu cần) → gửi lại duyệt.</span>
-                        </p>
+                        <Badge color="orange" className="gap-1">
+                          <RotateCcw size={11} aria-hidden />
+                          YC sửa
+                        </Badge>
+                      )}
+                      {wo.status === "PENDING_APPROVAL" &&
+                        pending &&
+                        !resubmit && <Badge color="yellow">Chờ duyệt</Badge>}
+                      <Badge color={WO_STATUS_COLOR[wo.status] ?? "gray"}>
+                        {stLabel}
+                      </Badge>
+                      <Badge color={WO_PRIORITY_COLOR[wo.priority] ?? "gray"}>
+                        {prLabel}
+                      </Badge>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 py-0.5 rounded bg-slate-100">
+                        {wo.woSource}
+                      </span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-1.5 py-0.5 rounded bg-slate-100">
+                        {Number(wo.assignmentCount ?? 0) === 0
+                          ? "Chưa phân công"
+                          : Number(wo.assignmentCount ?? 0) === 1
+                            ? "Nhân viên"
+                            : "Nhóm"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700 leading-snug line-clamp-2">
+                      {wo.description?.trim() || (
+                        <span className="text-slate-400 italic">
+                          Không có mô tả
+                        </span>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                      <span className="inline-flex items-center gap-1 font-medium text-slate-600">
+                        <Wrench size={12} className="text-slate-400 shrink-0" />
+                        {wo.assetName}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin size={12} className="text-slate-400 shrink-0" />
+                        {wo.locationName ?? "—"}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar
+                          size={12}
+                          className="text-slate-400 shrink-0"
+                        />
+                        {fDate(wo.plannedDate)}
+                      </span>
+                      {wo.actualDate && (
+                        <span>Hoàn tất: {fDate(wo.actualDate)}</span>
+                      )}
+                      {wo.estimatedHours != null &&
+                        Number(wo.estimatedHours) > 0 && (
+                          <span>Ước tính ~{wo.estimatedHours}h</span>
+                        )}
+                      {wo.actualHours != null &&
+                        Number(wo.actualHours) > 0 && (
+                          <span>Thực tế {wo.actualHours}h</span>
+                        )}
+                      {archivedMode && wo.deletedAt && (
+                        <span className="text-amber-700">
+                          Lưu trữ: {fDate(wo.deletedAt)}
+                          {wo.deletedByName ? ` • ${wo.deletedByName}` : ""}
+                        </span>
                       )}
                     </div>
-                    <div className="flex sm:flex-col items-center justify-between sm:justify-center gap-2 shrink-0 sm:border-l sm:border-slate-100 sm:pl-4">
-                      <span className="text-xs font-semibold text-blue-600 group-hover:text-blue-700 sm:hidden">
-                        Chi tiết
-                      </span>
-                      <ChevronRight
-                        size={20}
-                        className="text-slate-300 group-hover:text-blue-500 transition-colors"
-                        aria-hidden
-                      />
-                    </div>
-                  </Link>
+                    {resubmit && !archivedMode && (
+                      <p className="text-xs text-amber-800/90 flex items-center gap-1.5">
+                        <AlertCircle
+                          size={14}
+                          className="shrink-0"
+                          aria-hidden
+                        />
+                        <span>Chi tiết → sửa (nếu cần) → gửi lại duyệt.</span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex sm:flex-col items-center justify-end gap-1 shrink-0 sm:border-l sm:border-slate-100 sm:pl-3">
+                    <button
+                      type="button"
+                      title="Xem chi tiết"
+                      onClick={(e) => openView(wo, e)}
+                      className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    >
+                      <Eye size={16} />
+                    </button>
+                    {showEdit && (
+                      <button
+                        type="button"
+                        title="Chỉnh sửa"
+                        onClick={(e) => openEdit(wo, e)}
+                        className="p-2 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                    {showDelete && (
+                      <button
+                        type="button"
+                        title="Xoá (chuyển vào lưu trữ)"
+                        onClick={(e) => openDelete(wo, e)}
+                        className="p-2 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                    {showRestore && (
+                      <button
+                        type="button"
+                        title="Khôi phục phiếu"
+                        onClick={(e) => openRestore(wo, e)}
+                        className="p-2 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                      >
+                        <ArchiveRestore size={16} />
+                      </button>
+                    )}
+                    <ChevronRight
+                      size={18}
+                      className="hidden sm:block text-slate-300 group-hover:text-blue-500 transition-colors"
+                      aria-hidden
+                    />
+                  </div>
                 </li>
               );
             })}
@@ -514,6 +673,60 @@ export function WorkOrderListPage() {
           onCancel={() => setCreateOpen(false)}
         />
       </Modal>
+
+      <Modal
+        open={!!editItem}
+        onClose={() => setEditItem(null)}
+        title={
+          editItem
+            ? `Chỉnh sửa WO-${String(editItem.woId).padStart(4, "0")}`
+            : "Chỉnh sửa phiếu việc"
+        }
+        size="lg"
+      >
+        {editItem && (
+          <WorkOrderForm
+            wo={editItem}
+            onSuccess={() => {
+              setEditItem(null);
+              load();
+              toast.success("Đã cập nhật phiếu việc");
+            }}
+            onCancel={() => setEditItem(null)}
+          />
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteItem}
+        title="Xác nhận xoá phiếu việc"
+        message={
+          deleteItem
+            ? `Bạn có muốn xoá phiếu WO-${String(deleteItem.woId).padStart(4, "0")} (${deleteItem.assetName ?? "—"}) không? Phiếu sẽ được chuyển vào kho lưu trữ — chỉ Quản trị viên mới truy cập và khôi phục được.`
+            : ""
+        }
+        confirmLabel="Xoá phiếu"
+        cancelLabel="Không"
+        variant="danger"
+        loading={actionLoading}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteItem(null)}
+      />
+
+      <ConfirmDialog
+        open={!!restoreItem}
+        title="Khôi phục phiếu việc"
+        message={
+          restoreItem
+            ? `Khôi phục phiếu WO-${String(restoreItem.woId).padStart(4, "0")} (${restoreItem.assetName ?? "—"}) về danh sách hoạt động? Phiếu sẽ giữ nguyên trạng thái trước khi lưu trữ.`
+            : ""
+        }
+        confirmLabel="Khôi phục"
+        cancelLabel="Huỷ"
+        loading={actionLoading}
+        onConfirm={handleConfirmRestore}
+        onCancel={() => setRestoreItem(null)}
+      />
     </div>
   );
 }

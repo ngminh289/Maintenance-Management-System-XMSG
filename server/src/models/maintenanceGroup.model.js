@@ -73,7 +73,8 @@ export async function hasActiveWorkOrders(groupId) {
      FROM WO_Assignments wa
      JOIN WorkOrders w ON w.WO_ID = wa.WO_ID
      JOIN GroupMembers gm ON gm.EmployeeID = wa.EmployeeID AND gm.GroupID = ?
-     WHERE w.Status NOT IN ('COMPLETED','CANCELLED')`,
+     WHERE w.IsDeleted = 0
+       AND w.Status NOT IN ('COMPLETED','CANCELLED')`,
     [groupId],
   );
   return Number(rows[0]?.cnt ?? 0) > 0;
