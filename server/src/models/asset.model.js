@@ -36,11 +36,26 @@ const BASE_JOIN = `
   JOIN Locations  l  ON l.LocationID   = a.LocationID
   LEFT JOIN ProductionLines pl ON pl.LineID = a.ProductionLine`;
 
+/**
+ * Soft-delete: tài sản DECOMMISSIONED bị ẩn ở danh sách mặc định để hành vi
+ * "Xoá" (chuyển trạng thái) trông giống xoá thật. Người dùng vẫn có thể chọn
+ * filter Status = DECOMMISSIONED để xem lại lịch sử.
+ */
+function appendStatusFilter(where, params, status) {
+  if (status) {
+    where += ' AND a.Status = ?';
+    params.push(status);
+  } else {
+    where += " AND a.Status <> 'DECOMMISSIONED'";
+  }
+  return where;
+}
+
 export async function findAll({ limit, offset, status, assetTypeId, locationId, search, productionLine } = {}) {
   const params = [];
   let where = 'WHERE 1=1';
 
-  if (status)         { where += ' AND a.Status = ?';         params.push(status); }
+  where = appendStatusFilter(where, params, status);
   if (assetTypeId)    { where += ' AND a.AssetTypeID = ?';    params.push(assetTypeId); }
   if (locationId)     { where += ' AND a.LocationID = ?';     params.push(locationId); }
   if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(Number(productionLine)); }
@@ -64,7 +79,7 @@ export async function count({ status, assetTypeId, locationId, search, productio
   const params = [];
   const join  = 'FROM Assets a';
   let where = 'WHERE 1=1';
-  if (status)         { where += ' AND a.Status = ?';         params.push(status); }
+  where = appendStatusFilter(where, params, status);
   if (assetTypeId)    { where += ' AND a.AssetTypeID = ?';    params.push(assetTypeId); }
   if (locationId)     { where += ' AND a.LocationID = ?';     params.push(locationId); }
   if (productionLine) { where += ' AND a.ProductionLine = ?'; params.push(Number(productionLine)); }

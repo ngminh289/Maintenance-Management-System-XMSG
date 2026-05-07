@@ -1,7 +1,9 @@
 /**
  * database.js — Pool MySQL (mysql2/promise); dùng chung cho services/models.
  * QUAN TRỌNG: ép cột DATE trả về chuỗi YYYY-MM-DD để tránh lệch ngày do UTC khi JSON serialize.
+ * TLS: TiDB Cloud Serverless yêu cầu DB_SSL=true (scripts/setup-db.js dùng cùng biến).
  */
+import { existsSync, readFileSync } from 'fs';
 import mysql from 'mysql2/promise';
 import { env } from './env.js';
 
@@ -15,7 +17,15 @@ function resolveSslConfig() {
     rejectUnauthorized: env.db.sslRejectUnauthorized,
   };
 
-  if (env.db.sslCa) ssl.ca = env.db.sslCa;
+  const caRaw = env.db.sslCa;
+  if (caRaw && String(caRaw).trim()) {
+    const s = String(caRaw).trim();
+    if (s.includes('BEGIN CERTIFICATE')) {
+      ssl.ca = s;
+    } else if (existsSync(s)) {
+      ssl.ca = readFileSync(s, 'utf8');
+    }
+  }
   return ssl;
 }
 

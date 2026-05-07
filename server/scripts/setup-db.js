@@ -2,6 +2,7 @@
  * setup-db.js — Script tự động tạo DB, schema, seed, và tài khoản admin.
  * Chạy: npm run db:setup (từ thư mục server/)
  * Yêu cầu: file .env đã cấu hình DB_* và ADMIN_PASSWORD (tuỳ chọn).
+ * TiDB Cloud Serverless: bắt buộc TLS — đặt DB_SSL=true (và tuỳ chọn DB_SSL_CA, giống src/config/database.js).
  *
  * Thứ tự thực hiện:
  *   1. Kết nối MySQL (không cần DB trước)
@@ -11,7 +12,7 @@
  *   5. In tóm tắt
  */
 import 'dotenv/config';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join }  from 'path';
 import mysql  from 'mysql2/promise';
@@ -31,6 +32,38 @@ function log(msg)  { console.log(`  ✓ ${msg}`); }
 function warn(msg) { console.warn(`  ⚠ ${msg}`); }
 function err(msg)  { console.error(`  ✗ ${msg}`); }
 
+function toBool(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+/** Giống server/src/config/database.js — mysql2 cần ssl khi DB yêu cầu (vd. TiDB Cloud Serverless). */
+function resolveMysqlSsl() {
+  if (!toBool(process.env.DB_SSL, false)) return undefined;
+
+  const ssl = {
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: toBool(process.env.DB_SSL_REJECT_UNAUTHORIZED, true),
+  };
+
+  const caRaw = process.env.DB_SSL_CA;
+  if (caRaw && String(caRaw).trim()) {
+    const s = String(caRaw).trim();
+    if (s.includes('BEGIN CERTIFICATE')) {
+      ssl.ca = s;
+    } else if (existsSync(s)) {
+      ssl.ca = readFileSync(s, 'utf8');
+    } else {
+      warn(`DB_SSL_CA không phải đường dẫn hợp lệ hoặc PEM — bỏ qua CA (có thể lỗi verify chứng chỉ).`);
+    }
+  }
+
+  return ssl;
+}
+
 async function execFile(conn, filename) {
   const sql = readFileSync(join(sqlDir, filename), 'utf8');
   await conn.query(sql);
@@ -42,6 +75,7 @@ async function run() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   // 1. Kết nối MySQL (không chỉ định database)
+  const ssl = resolveMysqlSsl();
   const conn = await mysql.createConnection({
     host:               process.env.DB_HOST     || '127.0.0.1',
     port:               Number(process.env.DB_PORT) || 3306,
@@ -49,8 +83,9 @@ async function run() {
     password:           process.env.DB_PASSWORD || '',
     multipleStatements: true,
     charset:            'utf8mb4',
+    ...(ssl ? { ssl } : {}),
   });
-  log(`Kết nối MySQL: ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}`);
+  log(`Kết nối MySQL: ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}${ssl ? ' (TLS)' : ''}`);
 
   try {
     // 2. Schema (tạo DB + bảng IF NOT EXISTS)

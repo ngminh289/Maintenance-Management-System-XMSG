@@ -239,10 +239,13 @@ export function canAccess(user, routeKey) {
 }
 
 // ── 3. Quyền hành động (UI) — 6 cột, cột 5 = headPtkT (7/9). APPROVE tuyến tách ở canDo theo positionId.
+// ASSET:* — phân biệt rõ TC (chỉ xem) vs TP (đủ quyền) qua xử lý đặc biệt trong canDo (matrix
+// dùng chung index 2 cho truongCa/truongPhong). Yêu cầu nghiệp vụ:
+//   QTV/Trưởng phòng: đủ quyền | CV KTS: xem + sửa | TC, KTV HT, BGD: chỉ xem.
 const ACTION_ACCESS = {
-  "ASSET:CREATE":            [false, true,  false, false, false, true],
-  "ASSET:UPDATE":            [false, true,  false, false, false, true],
-  "ASSET:DELETE":            [false, false, false, false, false, false],
+  "ASSET:CREATE":            [false, false, false, true,  false, true],
+  "ASSET:UPDATE":            [false, true,  false, true,  false, true],
+  "ASSET:DELETE":            [false, false, false, true,  false, true],
   "RUNTIME_LOG:CREATE":      [true,  false, false, false, false, false],
   "SCHEDULE:CREATE":         [false, true,  false, false, false, true],
   "SCHEDULE:UPDATE":         [false, true,  false, false, false, true],
@@ -297,6 +300,17 @@ export function canDo(user, action) {
     return canByDb;
   }
   const pid = Number(user?.positionId ?? 0);
+  // ASSET:* — phân biệt Trưởng phòng (đủ quyền) với Trưởng ca (chỉ xem) khi DB
+  // không trả permissions. Áp đúng bảng nghiệp vụ:
+  //   admin, truongPhong, headPtkT: đủ quyền (CREATE + UPDATE + DELETE).
+  //   kyThuat: xem + sửa (chỉ UPDATE).
+  //   truongCa, congNhan, bGD: chỉ xem.
+  if (action === "ASSET:CREATE" || action === "ASSET:UPDATE" || action === "ASSET:DELETE") {
+    const role = getRoleKey(user);
+    if (role === "admin" || role === "truongPhong" || role === "headPtkT") return true;
+    if (role === "kyThuat") return action === "ASSET:UPDATE";
+    return false;
+  }
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);
     return k === "congNhan" || k === "truongCa" || k === "truongPhong";

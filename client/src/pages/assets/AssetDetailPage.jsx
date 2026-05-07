@@ -9,7 +9,7 @@
  * Nút upload: /documents?upload=1&assetId=… (kho mở modal với tài sản gắn sẵn).
  */
 import { useEffect, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   Pencil, QrCode, ArrowLeft, Gauge, Bell, Wrench,
   Info, Settings, Clock, Images, Trash2, ImagePlus, X,
@@ -21,6 +21,7 @@ import { Badge }      from '../../components/ui/Badge.jsx';
 import { Card }       from '../../components/ui/Card.jsx';
 import { Button }     from '../../components/ui/Button.jsx';
 import { Modal }      from '../../components/ui/Modal.jsx';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { Input }      from '../../components/ui/Input.jsx';
 import { PageLoader } from '../../components/ui/Spinner.jsx';
 import { AssetForm }  from './AssetForm.jsx';
@@ -66,6 +67,7 @@ function GroupTitle({ icon: Icon, children }) {
 export function AssetDetailPage() {
   const { user } = useAuth();
   const { id }   = useParams();
+  const navigate = useNavigate();
 
   const [asset,           setAsset]           = useState(null);
   const [counter,         setCounter]         = useState(null);
@@ -82,6 +84,8 @@ export function AssetDetailPage() {
   const [qrOpen,      setQrOpen]      = useState(false);
   const [readingOpen, setReadingOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [deleteOpen,  setDeleteOpen]  = useState(false);
+  const [deleting,    setDeleting]    = useState(false);
 
   const [reading,     setReading]     = useState('');
   const [readLoading, setReadLoading] = useState(false);
@@ -90,9 +94,10 @@ export function AssetDetailPage() {
   const [deletingPhotoId, setDeletingPhotoId] = useState(null);
   const photoInputRef = useRef(null);
 
-  const canEditAsset  = canDo(user, 'ASSET:UPDATE');
-  const canLogHours   = canDo(user, 'RUNTIME_LOG:CREATE');
-  const canUploadDoc  = canDo(user, 'DOCUMENT:CREATE');
+  const canEditAsset   = canDo(user, 'ASSET:UPDATE');
+  const canDeleteAsset = canDo(user, 'ASSET:DELETE');
+  const canLogHours    = canDo(user, 'RUNTIME_LOG:CREATE');
+  const canUploadDoc   = canDo(user, 'DOCUMENT:CREATE');
 
   const load = async () => {
     try {
@@ -171,6 +176,20 @@ export function AssetDetailPage() {
     } finally { setPhotoUploading(false); }
   };
 
+  const handleDeleteAsset = async () => {
+    setDeleting(true);
+    try {
+      await assetApi.remove(id);
+      toast.success(`Đã xoá tài sản "${asset?.assetName ?? ''}"`);
+      setDeleteOpen(false);
+      navigate('/assets');
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? 'Lỗi xoá tài sản');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleDeletePhoto = async (photoId) => {
     setDeletingPhotoId(photoId);
     try {
@@ -219,7 +238,12 @@ export function AssetDetailPage() {
           </Button>
           {canEditAsset && (
             <Button size="sm" onClick={() => setEditOpen(true)}>
-              <Pencil size={14} /> Chỉnh sửa
+              <Pencil size={14} /> Sửa
+            </Button>
+          )}
+          {canDeleteAsset && asset.status !== 'DECOMMISSIONED' && (
+            <Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}>
+              <Trash2 size={14} /> Xoá
             </Button>
           )}
         </div>
@@ -637,6 +661,18 @@ export function AssetDetailPage() {
           onCancel={() => setEditOpen(false)}
         />
       </Modal>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Xác nhận xoá tài sản"
+        message={`Bạn có muốn xoá tài sản "${asset.assetName}" này không?`}
+        confirmLabel="Có"
+        cancelLabel="Không"
+        variant="danger"
+        loading={deleting}
+        onConfirm={handleDeleteAsset}
+        onCancel={() => (deleting ? null : setDeleteOpen(false))}
+      />
 
       {/* Modal QR */}
       <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="QR Code" size="sm">

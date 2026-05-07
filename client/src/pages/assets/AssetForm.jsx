@@ -13,6 +13,7 @@ import { assetTypeApi }      from '../../api/assetType.api.js';
 import { productionLineApi } from '../../api/productionLine.api.js';
 import { Button }   from '../../components/ui/Button.jsx';
 import { Input, Select, Textarea } from '../../components/ui/Input.jsx';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { toDateInputValue } from '../../utils/format.js';
 
 const STATUS_OPTIONS = [
@@ -72,6 +73,7 @@ export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuc
   const [previews,       setPreviews]       = useState([]); // { url, name }[]
   const [loading, setLoading] = useState(false);
   const [errors,  setErrors]  = useState({});
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
 
   const set = (key, val) => setForm(p => ({ ...p, [key]: val }));
 
@@ -126,9 +128,7 @@ export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuc
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validate()) return;
+  const performSave = async () => {
     setLoading(true);
     try {
       const payload = Object.fromEntries(
@@ -144,19 +144,30 @@ export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuc
         savedId = res.data.data.assetId;
       }
 
-      // Upload ảnh nếu có (chỉ khi đã có assetId)
       if (selectedPhotos.length > 0 && savedId) {
         const fd = new FormData();
         selectedPhotos.forEach(f => fd.append('photos', f));
         await assetApi.uploadPhotos(savedId, fd);
       }
 
+      setConfirmSaveOpen(false);
       onSuccess?.();
     } catch (err) {
+      setConfirmSaveOpen(false);
       setErrors({ _: err.response?.data?.message ?? 'Lỗi lưu dữ liệu' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+    if (isEdit) {
+      setConfirmSaveOpen(true);
+      return;
+    }
+    void performSave();
   };
 
   return (
@@ -358,12 +369,23 @@ export function AssetForm({ asset, locations = [], canUploadPhoto = false, onSuc
 
       <div className="flex justify-end gap-3 pt-1">
         <Button type="button" variant="secondary" onClick={onCancel}>Hủy</Button>
-        <Button type="submit" loading={loading}>
-          {loading
+        <Button type="submit" loading={loading && !confirmSaveOpen}>
+          {loading && !confirmSaveOpen
             ? (selectedPhotos.length > 0 ? <><Upload size={14} /> Đang lưu...</> : 'Đang lưu...')
-            : (isEdit ? 'Cập nhật' : 'Thêm tài sản')}
+            : (isEdit ? 'Lưu' : 'Thêm tài sản')}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmSaveOpen}
+        title="Xác nhận lưu chỉnh sửa"
+        message="Bạn có muốn lưu chi tiết chỉnh sửa không?"
+        confirmLabel="Lưu"
+        cancelLabel="Không"
+        loading={loading}
+        onConfirm={() => { void performSave(); }}
+        onCancel={() => setConfirmSaveOpen(false)}
+      />
     </form>
   );
 }

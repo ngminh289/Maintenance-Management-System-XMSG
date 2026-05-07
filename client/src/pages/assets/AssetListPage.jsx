@@ -1,15 +1,19 @@
 /**
  * AssetListPage.jsx — Danh sách tài sản với filter, tạo mới, xem QR.
  * Loại tài sản: dropdown chỉ loại con (leaf). Dây chuyền: load từ API.
- * RBAC: ASSET:CREATE (thêm), ASSET:DELETE (loại biên).
+ * RBAC: ASSET:CREATE (thêm), ASSET:UPDATE (sửa), ASSET:DELETE (xoá/loại biên).
+ * Chuẩn UX: Xem (Eye) → giao diện chỉ đọc · Sửa (Pencil) → mở modal sửa, popup
+ * xác nhận lưu · Xoá (Trash2) → popup "Bạn có muốn xoá tài sản này không?".
  */
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Plus,
   Search,
   QrCode,
-  AlertTriangle,
+  Eye,
+  Pencil,
+  Trash2,
   Filter,
   Calendar,
   FileSpreadsheet,
@@ -25,6 +29,7 @@ import { Pagination } from "../../components/ui/Pagination.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
 import {
   ScheduleFormFields,
   buildScheduleFormForAsset,
@@ -44,6 +49,7 @@ import toast from "react-hot-toast";
 
 export function AssetListPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [assets, setAssets] = useState([]);
   const [types, setTypes] = useState([]);
   const [locs, setLocs] = useState([]);
@@ -58,6 +64,9 @@ export function AssetListPage() {
     productionLine: "",
   });
   const [createOpen, setCreateOpen] = useState(false);
+  const [editAsset, setEditAsset] = useState(null);
+  const [deleteAsset, setDeleteAsset] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [quickScheduleOpen, setQuickScheduleOpen] = useState(false);
   const [quickScheduleAsset, setQuickScheduleAsset] = useState(null);
   const [quickScheduleSaving, setQuickScheduleSaving] = useState(false);
@@ -66,6 +75,8 @@ export function AssetListPage() {
   );
   const [qrAsset, setQrAsset] = useState(null);
   const LIMIT = 15;
+  const canUpdateAsset = canDo(user, "ASSET:UPDATE");
+  const canDeleteAsset = canDo(user, "ASSET:DELETE");
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -109,14 +120,18 @@ export function AssetListPage() {
     setPage(1);
   };
 
-  const handleDecommission = async (id, name) => {
-    if (!confirm(`Loại biên tài sản "${name}"?`)) return;
+  const handleDeleteAsset = async () => {
+    if (!deleteAsset) return;
+    setDeleting(true);
     try {
-      await assetApi.remove(id);
-      toast.success("Đã loại biên tài sản");
+      await assetApi.remove(deleteAsset.assetId);
+      toast.success(`Đã xoá tài sản "${deleteAsset.assetName}"`);
+      setDeleteAsset(null);
       load();
-    } catch {
-      toast.error("Lỗi loại biên");
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Lỗi xoá tài sản");
+    } finally {
+      setDeleting(false);
     }
   };
   const canCreateSchedule =
@@ -319,25 +334,30 @@ export function AssetListPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
+                          onClick={() => navigate(`/assets/${a.assetId}`)}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                          title="Xem chi tiết"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        {canUpdateAsset && (
+                          <button
+                            type="button"
+                            onClick={() => setEditAsset(a)}
+                            className="p-1.5 rounded-lg hover:bg-amber-100 text-amber-600 transition-colors"
+                            title="Sửa tài sản"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
                           onClick={() => setQrAsset(a)}
                           className="p-1.5 rounded-lg hover:bg-blue-100 text-blue-600 transition-colors"
                           title="Xem QR"
                         >
                           <QrCode size={16} />
                         </button>
-                        {canDo(user, "ASSET:DELETE") &&
-                          a.status !== "DECOMMISSIONED" && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleDecommission(a.assetId, a.assetName)
-                              }
-                              className="p-1.5 rounded-lg hover:bg-red-100 text-red-500 transition-colors"
-                              title="Loại biên"
-                            >
-                              <AlertTriangle size={16} />
-                            </button>
-                          )}
                         {canCreateSchedule && (
                           <button
                             type="button"
@@ -346,6 +366,16 @@ export function AssetListPage() {
                             title="Tạo lịch bảo trì cho tài sản này"
                           >
                             <Calendar size={16} />
+                          </button>
+                        )}
+                        {canDeleteAsset && a.status !== "DECOMMISSIONED" && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteAsset(a)}
+                            className="p-1.5 rounded-lg hover:bg-red-100 text-red-500 transition-colors"
+                            title="Xoá tài sản"
+                          >
+                            <Trash2 size={16} />
                           </button>
                         )}
                       </div>
@@ -372,7 +402,7 @@ export function AssetListPage() {
       >
         <AssetForm
           locations={locs}
-          canUploadPhoto={canDo(user, "ASSET:UPDATE")}
+          canUploadPhoto={canUpdateAsset}
           onSuccess={() => {
             setCreateOpen(false);
             load();
@@ -381,6 +411,39 @@ export function AssetListPage() {
           onCancel={() => setCreateOpen(false)}
         />
       </Modal>
+
+      <Modal
+        open={!!editAsset}
+        onClose={() => setEditAsset(null)}
+        title={`Chỉnh sửa tài sản — ${editAsset?.assetName ?? ""}`}
+        size="lg"
+      >
+        {editAsset && (
+          <AssetForm
+            asset={editAsset}
+            locations={locs}
+            canUploadPhoto={canUpdateAsset}
+            onSuccess={() => {
+              setEditAsset(null);
+              load();
+              toast.success("Đã cập nhật tài sản");
+            }}
+            onCancel={() => setEditAsset(null)}
+          />
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteAsset}
+        title="Xác nhận xoá tài sản"
+        message={`Bạn có muốn xoá tài sản "${deleteAsset?.assetName ?? ""}" này không?`}
+        confirmLabel="Có"
+        cancelLabel="Không"
+        variant="danger"
+        loading={deleting}
+        onConfirm={handleDeleteAsset}
+        onCancel={() => (deleting ? null : setDeleteAsset(null))}
+      />
 
       <Modal
         open={quickScheduleOpen}
