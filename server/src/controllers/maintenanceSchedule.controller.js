@@ -23,13 +23,24 @@ export const update = asyncHandler(async (req, res) =>
     res,
     await service.update(req.params.id, req.body, {
       actorLevel: req.user.positionLevel,
+      actorPositionId: req.user.positionId,
     }),
   ),
 );
 
+export const getDeletePreview = asyncHandler(async (req, res) =>
+  ok(res, await service.getDeletePreview(req.params.id)),
+);
+
 export const remove = asyncHandler(async (req, res) => {
-  await service.remove(req.params.id, { actorLevel: req.user.positionLevel });
-  return ok(res, { message: "Đã xóa lịch bảo trì." });
+  const result = await service.remove(req.params.id, {
+    actorLevel: req.user.positionLevel,
+    actorPositionId: req.user.positionId,
+  });
+  return ok(res, {
+    message: "Đã xóa lịch bảo trì.",
+    ...result,
+  });
 });
 
 export const updateStatus = asyncHandler(async (req, res) =>

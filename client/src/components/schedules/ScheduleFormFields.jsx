@@ -109,8 +109,10 @@ export function ScheduleFormFields({
   assets = [],
   checklistTemplates = [],
   fixedAsset = null,
+  readOnly = false,
 }) {
   const isPredictive = form.scheduleKind === 'predictive';
+  const ro = Boolean(readOnly);
   const [selectedAssetMeta, setSelectedAssetMeta] = useState(fixedAsset ?? null);
 
   const visibleAssets = useMemo(() => {
@@ -195,18 +197,20 @@ export function ScheduleFormFields({
           value={form.scheduleName ?? ''}
           onChange={(e) => setF('scheduleName', e.target.value)}
           placeholder="VD: PM máy lọc bụi tháng 1"
+          disabled={ro}
         />
         <AssetIdSearchPicker
           id="schedule-asset-picker"
           label="Tài sản *"
           value={form.assetId ?? ''}
           onChange={handleAssetChange}
-          disabled={Boolean(fixedAsset)}
+          disabled={ro || Boolean(fixedAsset)}
         />
 
         <Select
           label="Kiểu lịch *"
           value={form.scheduleKind ?? 'periodic'}
+          disabled={ro}
           onChange={(e) => {
             const kind = e.target.value;
             if (kind === 'predictive') {
@@ -248,6 +252,7 @@ export function ScheduleFormFields({
             min={1}
             value={form.frequencyValue ?? 720}
             onChange={(e) => setF('frequencyValue', e.target.value)}
+            disabled={ro}
           />
         ) : (
           <div className="flex items-end gap-2">
@@ -258,6 +263,7 @@ export function ScheduleFormFields({
                 min={1}
                 value={form.frequencyValue ?? 30}
                 onChange={(e) => setF('frequencyValue', e.target.value)}
+                disabled={ro}
               />
             </div>
             <div className="flex-1">
@@ -265,6 +271,7 @@ export function ScheduleFormFields({
                 label="Đơn vị *"
                 value={form.frequencyUnit ?? 'DAYS'}
                 onChange={(e) => setF('frequencyUnit', e.target.value)}
+                disabled={ro}
               >
                 <option value="DAYS">Ngày</option>
                 <option value="WEEKS">Tuần</option>
@@ -280,18 +287,21 @@ export function ScheduleFormFields({
           type="date"
           value={form.startDate ?? ''}
           onChange={(e) => setF('startDate', e.target.value)}
+          disabled={ro}
         />
         <Input
           label="Ngày kết thúc"
           type="date"
           value={form.endDate ?? ''}
           onChange={(e) => setF('endDate', e.target.value)}
+          disabled={ro}
         />
 
         <Select
           label="Mức ưu tiên"
           value={form.priority ?? 'MEDIUM'}
           onChange={(e) => setF('priority', e.target.value)}
+          disabled={ro}
         >
           <option value="LOW">Thấp</option>
           <option value="MEDIUM">Trung bình</option>
@@ -302,7 +312,7 @@ export function ScheduleFormFields({
           label="Checklist template (tuỳ chọn)"
           value={form.checklistTemplateId ?? ''}
           onChange={(e) => setF('checklistTemplateId', e.target.value)}
-          disabled={!selectedAssetTypeId}
+          disabled={ro || !selectedAssetTypeId}
         >
           <option value="">-- Không gắn template cố định --</option>
           {templateOptions.map((tpl) => (
@@ -318,6 +328,7 @@ export function ScheduleFormFields({
         value={form.description ?? ''}
         onChange={(e) => setF('description', e.target.value)}
         placeholder="Mô tả nội dung bảo trì cần thực hiện..."
+        disabled={ro}
       />
 
       {!isPredictive && form.startDate && (

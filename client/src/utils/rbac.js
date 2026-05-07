@@ -311,6 +311,23 @@ export function canDo(user, action) {
     if (role === "kyThuat") return action === "ASSET:UPDATE";
     return false;
   }
+  // SCHEDULE:* — bảng nghiệp vụ Lịch bảo trì (Xem/Sửa/Xoá):
+  //   admin, truongPhong (BT), headPtkT (PKT): đủ CRUD + SUBMIT + DELETE.
+  //   kyThuat: CRUD + SUBMIT (BE chặn theo status DRAFT/REJECTED).
+  //   truongCa: chỉ UPDATE — UI sẽ ẩn nút Sửa nếu lịch chưa qua phê duyệt.
+  //   congNhan, bGD: chỉ xem.
+  if (
+    action === "SCHEDULE:CREATE" ||
+    action === "SCHEDULE:UPDATE" ||
+    action === "SCHEDULE:SUBMIT" ||
+    action === "SCHEDULE:DELETE"
+  ) {
+    const role = getRoleKey(user);
+    if (role === "admin" || role === "truongPhong" || role === "headPtkT") return true;
+    if (role === "kyThuat") return true;
+    if (role === "truongCa") return action === "SCHEDULE:UPDATE";
+    return false;
+  }
   if (action === "CHECKLIST_RESULT:CREATE") {
     const k = getRoleKey(user);
     return k === "congNhan" || k === "truongCa" || k === "truongPhong";

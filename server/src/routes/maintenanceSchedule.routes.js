@@ -20,6 +20,13 @@ maintenanceScheduleRouter.use(requireAuth);
 maintenanceScheduleRouter.get("/", ctrl.getAll);
 maintenanceScheduleRouter.get("/:id", ctrl.getById);
 
+// Preview xoá: phân nhóm WO liên quan để UI quyết định popup hiển thị (1 hay 2 nhánh).
+maintenanceScheduleRouter.get(
+  "/:id/delete-preview",
+  requirePermission("MAINTENANCE_PLAN", "DELETE"),
+  ctrl.getDeletePreview,
+);
+
 maintenanceScheduleRouter.post(
   "/",
   requirePermission("MAINTENANCE_PLAN", "CREATE"),

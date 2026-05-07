@@ -401,6 +401,39 @@ export async function getAssignments(woId) {
   return rows;
 }
 
+/**
+ * Liệt kê WO của một lịch theo nhóm trạng thái — dùng cho preview xoá lịch bảo trì.
+ * Trả về mảng { woId, status, plannedDate, priority } gọn nhẹ phục vụ UI hiển thị.
+ */
+export async function findByScheduleAndStatuses(scheduleId, statuses) {
+  if (!Array.isArray(statuses) || statuses.length === 0) return [];
+  const placeholders = statuses.map(() => "?").join(",");
+  const [rows] = await getPool().query(
+    `SELECT WO_ID AS woId, Status AS status, PlannedDate AS plannedDate,
+            Priority AS priority, WO_Source AS woSource
+       FROM WorkOrders
+      WHERE ScheduleID = ? AND Status IN (${placeholders})
+      ORDER BY WO_ID DESC`,
+    [scheduleId, ...statuses],
+  );
+  return rows;
+}
+
+/**
+ * Cancel hàng loạt WO theo danh sách ID — dùng khi xoá lịch:
+ * WO ở PENDING_APPROVAL/WAITING (chưa khởi động thực tế) chuyển sang CANCELLED
+ * thay vì xoá thật để giữ audit trail (FK SET NULL khi lịch xoá xong).
+ */
+export async function cancelByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const [result] = await getPool().query(
+    `UPDATE WorkOrders SET Status = 'CANCELLED' WHERE WO_ID IN (${placeholders})`,
+    ids,
+  );
+  return result.affectedRows;
+}
+
 export async function create({
   scheduleId,
   assetId,

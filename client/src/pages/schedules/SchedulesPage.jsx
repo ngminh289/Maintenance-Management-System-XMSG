@@ -1,7 +1,12 @@
 /**
  * SchedulesPage.jsx — Lịch bảo trì: DRAFT/REJECTED → Gửi → PENDING_APPROVAL → (Phê duyệt) → PENDING.
  * Hai kiểu: Định kỳ (ngày/tuần/tháng/năm) — có nút WO + scheduler; Dự báo (giờ) — WO tự sinh khi vượt ngưỡng, không tạo từ lịch.
- * Sửa/xóa: nháp & từ chối; Admin (level≥4) được vượt quy tắc.
+ * UX Xem/Sửa/Xoá:
+ *   - Xem (Eye): mở modal read-only.
+ *   - Sửa (Pencil): KTS sửa khi DRAFT/REJECTED; TC/TP sửa khi PENDING/IN_PROGRESS/OVERDUE; Admin/TP đủ quyền.
+ *   - Xoá (Trash2): popup 1 hoặc 2 nhánh tuỳ WO liên quan (BE trả về deletePreview).
+ *     + Pre-approval / WO chưa khởi động: xoá luôn, kèm cancel WO PENDING_APPROVAL/WAITING.
+ *     + Có WO IN_PROGRESS/PAUSED/AWAITING_CLOSURE/COMPLETED/CANCELLED: cảnh báo giữ WO.
  */
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -11,6 +16,7 @@ import {
   Clock,
   AlertTriangle,
   CheckCircle,
+  Eye,
   Pencil,
   Trash2,
   Send,
@@ -22,6 +28,7 @@ import { checklistApi } from "../../api/checklist.api.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
 import { Select } from "../../components/ui/Input.jsx";
 import { Pagination } from "../../components/ui/Pagination.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
@@ -172,8 +179,12 @@ export function SchedulesPage() {
     period: "",
   });
   const [createOpen, setCreateOpen] = useState(false);
-  const [editItem, setEditItem] = useState(null); // lịch đang sửa
-  const [deleteItem, setDeleteItem] = useState(null); // lịch đang xóa
+  const [viewItem, setViewItem] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [confirmEditOpen, setConfirmEditOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_SCHEDULE_FORM);
   const [saving, setSaving] = useState(false);
   const LIMIT = 15;
@@ -267,18 +278,29 @@ export function SchedulesPage() {
     }
   };
 
+  const openView = (s) => {
+    setForm(mapScheduleToForm(s));
+    setViewItem(s);
+  };
+
   const openEdit = (s) => {
     setForm(mapScheduleToForm(s));
     setEditItem(s);
   };
 
-  const handleEdit = async (e) => {
+  const handleEdit = (e) => {
     e.preventDefault();
     if (!validateSharedScheduleForm(form, toast.error)) return;
+    setConfirmEditOpen(true);
+  };
+
+  const performEdit = async () => {
+    if (!editItem) return;
     setSaving(true);
     try {
       await scheduleApi.update(editItem.scheduleId, buildSchedulePayload(form));
-      toast.success("Đã cập nhật lịch bảo trì");
+      toast.success("Đã lưu chi tiết chỉnh sửa lịch bảo trì");
+      setConfirmEditOpen(false);
       setEditItem(null);
       load();
     } catch (err) {
@@ -288,16 +310,37 @@ export function SchedulesPage() {
     }
   };
 
+  const openDelete = async (s) => {
+    setDeleteItem(s);
+    setDeletePreview(null);
+    setPreviewLoading(true);
+    try {
+      const res = await scheduleApi.deletePreview(s.scheduleId);
+      setDeletePreview(res.data.data);
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không tải được preview xoá");
+      setDeleteItem(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteItem) return;
     setSaving(true);
     try {
-      await scheduleApi.remove(deleteItem.scheduleId);
-      toast.success("Đã xóa lịch bảo trì");
+      const res = await scheduleApi.remove(deleteItem.scheduleId);
+      const cancelled = res.data?.data?.cancelledWorkOrderIds ?? [];
+      toast.success(
+        cancelled.length > 0
+          ? `Đã xoá lịch bảo trì và huỷ ${cancelled.length} phiếu việc chưa khởi động`
+          : "Đã xoá lịch bảo trì",
+      );
       setDeleteItem(null);
+      setDeletePreview(null);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message ?? "Lỗi xóa");
+      toast.error(err.response?.data?.message ?? "Lỗi xoá");
     } finally {
       setSaving(false);
     }
@@ -308,14 +351,31 @@ export function SchedulesPage() {
   const canSubmitSch = canDo(user, "SCHEDULE:SUBMIT");
   const canCreateWo = canDo(user, "WORK_ORDER:CREATE");
   const canDeleteSch = canDo(user, "SCHEDULE:DELETE");
-  const adminBypass = (user?.positionLevel ?? 0) >= 4;
+  const actorLevel = Number(user?.positionLevel) || 0;
+  const actorPid = Number(user?.positionId) || 0;
+  const isAdmin = actorLevel >= 4;
+  const isTruongCa = actorPid === 3;
+  const isTruongPhongLane =
+    actorLevel >= 3 && !isTruongCa; // Trưởng/Phó BT (6/8) hoặc PKT (7/9)
+  const isKyThuat = actorLevel === 2;
+  const isBgd = actorLevel >= 5 && !isAdmin;
 
   const isOperational = (s) =>
     ["PENDING", "IN_PROGRESS", "OVERDUE"].includes(s.status);
-  const canEditRow = (s) =>
-    adminBypass || ["DRAFT", "REJECTED"].includes(s.status);
-  const canDeleteRow = (s) =>
-    adminBypass || ["DRAFT", "REJECTED"].includes(s.status);
+  /** Match logic ở service (canEditScheduleByRole). */
+  const canEditRow = (s) => {
+    if (isBgd) return false;
+    if (isAdmin || isTruongPhongLane) return true;
+    if (["DRAFT", "REJECTED"].includes(s.status)) {
+      return isKyThuat;
+    }
+    if (["PENDING", "IN_PROGRESS", "OVERDUE"].includes(s.status)) {
+      return isTruongCa;
+    }
+    return false;
+  };
+  /** Xoá: chỉ Admin và tuyến Trưởng/Phó. */
+  const canDeleteRow = (_s) => isAdmin || isTruongPhongLane;
 
   const overdueCount = schedules.filter(
     (s) =>
@@ -638,12 +698,20 @@ export function SchedulesPage() {
                                 <Play size={11} /> WO
                               </Button>
                             )}
+                          <button
+                            type="button"
+                            onClick={() => openView(s)}
+                            title="Xem chi tiết"
+                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
+                          >
+                            <Eye size={13} />
+                          </button>
                           {canUpdateSch && canEditRow(s) && (
                             <button
                               type="button"
                               onClick={() => openEdit(s)}
                               title="Sửa lịch"
-                              className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors"
+                              className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors"
                             >
                               <Pencil size={13} />
                             </button>
@@ -651,8 +719,8 @@ export function SchedulesPage() {
                           {canDeleteSch && canDeleteRow(s) && (
                             <button
                               type="button"
-                              onClick={() => setDeleteItem(s)}
-                              title="Xóa lịch"
+                              onClick={() => openDelete(s)}
+                              title="Xoá lịch"
                               className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
                             >
                               <Trash2 size={13} />
@@ -704,6 +772,61 @@ export function SchedulesPage() {
         </form>
       </Modal>
 
+      {/* Modal Xem chi tiết — read-only */}
+      <Modal
+        open={!!viewItem}
+        onClose={() => setViewItem(null)}
+        title={`Chi tiết lịch — ${viewItem?.scheduleName ?? ""}`}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge color={STATUS_COLOR[viewItem?.status] ?? "gray"}>
+              {STATUS_LABEL[viewItem?.status] ?? viewItem?.status}
+            </Badge>
+            {viewItem?.frequencyUnit === "HOURS" ? (
+              <Badge color="yellow">Dự báo (giờ)</Badge>
+            ) : (
+              <Badge color="blue">Định kỳ</Badge>
+            )}
+            {viewItem?.lastExecutedDate && (
+              <span className="text-gray-500">
+                TH cuối: {fDate(viewItem.lastExecutedDate)}
+              </span>
+            )}
+          </div>
+          <SharedScheduleFormFields
+            form={form}
+            setF={() => {}}
+            patchForm={() => {}}
+            assets={assets}
+            checklistTemplates={checklistTemplates}
+            readOnly
+          />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setViewItem(null)}
+            >
+              Đóng
+            </Button>
+            {canUpdateSch && viewItem && canEditRow(viewItem) && (
+              <Button
+                type="button"
+                onClick={() => {
+                  const target = viewItem;
+                  setViewItem(null);
+                  openEdit(target);
+                }}
+              >
+                <Pencil size={14} /> Sửa
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
+
       {/* Modal Sửa */}
       <Modal
         open={!!editItem}
@@ -727,41 +850,74 @@ export function SchedulesPage() {
             >
               Hủy
             </Button>
-            <Button type="submit" loading={saving}>
-              Lưu thay đổi
+            <Button type="submit" loading={saving && confirmEditOpen}>
+              Lưu
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Modal xác nhận Xóa */}
-      <Modal
+      <ConfirmDialog
+        open={confirmEditOpen}
+        title="Xác nhận lưu chỉnh sửa"
+        message="Bạn có muốn lưu chi tiết chỉnh sửa không?"
+        confirmLabel="Lưu"
+        cancelLabel="Không"
+        loading={saving}
+        onConfirm={performEdit}
+        onCancel={() => (saving ? null : setConfirmEditOpen(false))}
+      />
+
+      {/* Popup xoá — 2 nhánh (preview do BE phân loại WO liên quan) */}
+      <ConfirmDialog
         open={!!deleteItem}
-        onClose={() => setDeleteItem(null)}
-        title="Xác nhận xóa"
-        size="sm"
-      >
-        {deleteItem && (
-          <div className="space-y-4">
-            <p className="text-sm text-gray-700">
-              Bạn có chắc muốn xóa lịch bảo trì{" "}
-              <strong>"{deleteItem.scheduleName}"</strong> của tài sản{" "}
-              <strong>{deleteItem.assetName}</strong>?
-            </p>
-            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
-              Hành động này không thể hoàn tác.
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setDeleteItem(null)}>
-                Hủy
-              </Button>
-              <Button variant="danger" onClick={handleDelete} loading={saving}>
-                <Trash2 size={14} /> Xóa lịch
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
+        title={
+          deletePreview?.woGroups?.willKeep?.length > 0
+            ? "Lịch đã phát sinh phiếu việc"
+            : "Xác nhận xoá lịch bảo trì"
+        }
+        message={
+          previewLoading || !deletePreview ? (
+            "Đang tải thông tin lịch..."
+          ) : deletePreview.woGroups.willKeep.length > 0 ? (
+            <>
+              Lịch <strong>"{deleteItem?.scheduleName}"</strong> đã phát sinh{" "}
+              <strong>{deletePreview.woGroups.willKeep.length}</strong> Phiếu
+              việc đang thực hiện hoặc đã đóng. Hệ thống sẽ <strong>huỷ Lịch</strong>{" "}
+              nhưng <strong>giữ lại Phiếu việc</strong> để bảo toàn dữ liệu lịch
+              sử
+              {deletePreview.woGroups.willCancel.length > 0 ? (
+                <>
+                  {" "}và <strong>huỷ {deletePreview.woGroups.willCancel.length}</strong>{" "}
+                  phiếu chưa khởi động
+                </>
+              ) : null}
+              . Bạn có đồng ý không?
+            </>
+          ) : (
+            <>
+              Bạn có muốn xoá lịch bảo trì{" "}
+              <strong>"{deleteItem?.scheduleName}"</strong> này không?
+              {deletePreview.woGroups.willCancel.length > 0 && (
+                <span className="block text-xs text-amber-700 mt-2">
+                  Lưu ý: {deletePreview.woGroups.willCancel.length} phiếu việc
+                  liên quan (chưa khởi động) cũng sẽ được huỷ.
+                </span>
+              )}
+            </>
+          )
+        }
+        confirmLabel="Có"
+        cancelLabel="Không"
+        variant="danger"
+        loading={saving}
+        onConfirm={handleDelete}
+        onCancel={() => {
+          if (saving) return;
+          setDeleteItem(null);
+          setDeletePreview(null);
+        }}
+      />
     </div>
   );
 }

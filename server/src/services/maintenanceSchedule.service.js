@@ -12,6 +12,7 @@ import { createError } from "../utils/createError.js";
 import { getPagination, paginatedResult } from "../utils/paginate.js";
 import * as model from "../models/maintenanceSchedule.model.js";
 import * as assetModel from "../models/asset.model.js";
+import * as workOrderModel from "../models/workOrder.model.js";
 import * as workOrderSvc from "./workOrder.service.js";
 import * as notifService from "./notification.service.js";
 import * as approvalSvc from "./approval.service.js";
@@ -147,8 +148,40 @@ export async function create(data, createdBy) {
   return model.findById(id);
 }
 
-const EDITABLE_STATUSES = ["DRAFT", "REJECTED"];
-const DELETABLE_STATUSES = ["DRAFT", "REJECTED"];
+const EDITABLE_STATUSES_PRE_APPROVAL = ["DRAFT", "REJECTED"];
+const EDITABLE_STATUSES_POST_APPROVAL = ["PENDING", "IN_PROGRESS", "OVERDUE"];
+
+/** WO sẽ huỷ kèm khi xoá lịch (chưa khởi động → an toàn). */
+const WO_CANCELLABLE_ON_SCHEDULE_DELETE = ["PENDING_APPROVAL", "WAITING"];
+/** WO buộc giữ lại để bảo toàn lịch sử (đã thực hiện hoặc đã đóng). */
+const WO_KEEP_ON_SCHEDULE_DELETE = [
+  "IN_PROGRESS",
+  "PAUSED",
+  "AWAITING_CLOSURE",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+const TRUONG_CA_POSITION_ID = 3;
+
+/**
+ * Quyền sửa lịch theo role + status.
+ * Pre-approval (DRAFT/REJECTED): KTS, Admin/TP → OK; TC không sửa được.
+ * Post-approval (PENDING/IN_PROGRESS/OVERDUE): Admin/TP/TC → OK; KTS không sửa được.
+ */
+function canEditScheduleByRole({ status, actorLevel = 0, actorPositionId = 0 }) {
+  if (actorLevel >= 4) return true;
+  const isTruongCa = Number(actorPositionId) === TRUONG_CA_POSITION_ID;
+  const isTruongPhongOrPKT = actorLevel >= 3 && !isTruongCa;
+  if (EDITABLE_STATUSES_PRE_APPROVAL.includes(status)) {
+    if (isTruongCa) return false;
+    return actorLevel >= 2;
+  }
+  if (EDITABLE_STATUSES_POST_APPROVAL.includes(status)) {
+    return isTruongPhongOrPKT || isTruongCa;
+  }
+  return false;
+}
 
 /**
  * Gửi lịch vào luồng phê duyệt: trạng thái lịch → PENDING_APPROVAL (chờ Trưởng ca).
@@ -180,11 +213,15 @@ export async function submitForApproval(scheduleId, submitterId) {
 
 export async function update(id, data, opts = {}) {
   const schedule = await getById(id);
-  const bypass = (opts.actorLevel ?? 0) >= 4;
-  if (!bypass && !EDITABLE_STATUSES.includes(schedule.status)) {
+  const allowed = canEditScheduleByRole({
+    status: schedule.status,
+    actorLevel: opts.actorLevel,
+    actorPositionId: opts.actorPositionId,
+  });
+  if (!allowed) {
     throw createError(
-      "Chỉ sửa được lịch ở trạng thái Bản nháp hoặc Từ chối",
-      400,
+      "Bạn không có quyền sửa lịch ở trạng thái hiện tại",
+      403,
     );
   }
   const payload = { ...data };
@@ -221,13 +258,65 @@ export async function update(id, data, opts = {}) {
   return model.findById(id);
 }
 
+/**
+ * Preview xoá lịch — phân loại WO liên quan để UI hỏi xác nhận đúng tình huống.
+ *   - willCancel: WO ở PENDING_APPROVAL/WAITING (chưa khởi động) — sẽ chuyển CANCELLED.
+ *   - willKeep:   WO IN_PROGRESS/PAUSED/AWAITING_CLOSURE/COMPLETED/CANCELLED — giữ nguyên,
+ *                 FK ScheduleID sẽ tự về NULL khi xoá lịch (schema 020).
+ */
+export async function getDeletePreview(id) {
+  const schedule = await getById(id);
+  const [willCancel, willKeep] = await Promise.all([
+    workOrderModel.findByScheduleAndStatuses(
+      id,
+      WO_CANCELLABLE_ON_SCHEDULE_DELETE,
+    ),
+    workOrderModel.findByScheduleAndStatuses(id, WO_KEEP_ON_SCHEDULE_DELETE),
+  ]);
+  return {
+    schedule: {
+      scheduleId: schedule.scheduleId,
+      scheduleName: schedule.scheduleName,
+      status: schedule.status,
+      assetName: schedule.assetName,
+      preApproval: ["DRAFT", "PENDING_APPROVAL", "REJECTED"].includes(
+        schedule.status,
+      ),
+    },
+    woGroups: {
+      willCancel,
+      willKeep,
+    },
+  };
+}
+
+/**
+ * Xoá lịch bảo trì — hỗ trợ cả pre-approval và post-approval.
+ * Tự động huỷ các WO chưa khởi động (PENDING_APPROVAL/WAITING) để tránh phiếu mồ côi.
+ * Các WO đã/đang thực hiện được giữ lại; FK ScheduleID tự SET NULL theo schema.
+ */
 export async function remove(id, opts = {}) {
   const schedule = await getById(id);
-  const bypass = (opts.actorLevel ?? 0) >= 4;
-  if (!bypass && !DELETABLE_STATUSES.includes(schedule.status)) {
-    throw createError("Chỉ xóa được lịch Bản nháp hoặc Từ chối", 400);
+  const actorLevel = Number(opts.actorLevel) || 0;
+  const actorPositionId = Number(opts.actorPositionId) || 0;
+  const isAdminOrTP =
+    actorLevel >= 4 ||
+    (actorLevel >= 3 && actorPositionId !== TRUONG_CA_POSITION_ID);
+  if (!isAdminOrTP) {
+    throw createError("Bạn không có quyền xoá lịch bảo trì", 403);
+  }
+  const cancellable = await workOrderModel.findByScheduleAndStatuses(
+    id,
+    WO_CANCELLABLE_ON_SCHEDULE_DELETE,
+  );
+  if (cancellable.length > 0) {
+    await workOrderModel.cancelByIds(cancellable.map((w) => w.woId));
   }
   await model.remove(id);
+  return {
+    deletedScheduleId: Number(id),
+    cancelledWorkOrderIds: cancellable.map((w) => w.woId),
+  };
 }
 
 export async function updateStatus(id, status, opts = {}) {
