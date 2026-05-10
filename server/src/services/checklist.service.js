@@ -19,6 +19,9 @@
  *
  * Xem kết quả (positionLevel ≤ 1 = công nhân): chỉ phiếu APPROVED (mọi người) + mọi phiếu do mình nộp (mọi trạng thái).
  * NVKT+ xem toàn bộ; GET /results không cho CN lọc theo checkerId người khác.
+ *
+ * getResults() hỗ trợ filter mở rộng cho UI: reviewStatus, overallStatus, assetId,
+ *   checkerId, mine=1, checkFrom/checkTo (CheckTime range), q (tìm tên TS / Notes / ID).
  */
 import { createError } from "../utils/createError.js";
 import * as templateModel from "../models/checklistTemplate.model.js";
@@ -724,6 +727,17 @@ export async function getResultById(id, viewer = {}) {
   };
 }
 
+/**
+ * Liệt kê kết quả checklist với bộ lọc tổng hợp.
+ * Hỗ trợ:
+ *   - reviewStatus  (PENDING / APPROVED / REJECTED) — trạng thái duyệt.
+ *   - overallStatus (OK / WARNING / NG)             — kết quả kiểm tra hiện trường.
+ *   - assetId, checkerId                            — lọc theo tài sản / người nộp.
+ *   - mine=1                                        — chỉ phiếu do chính viewer nộp.
+ *   - checkFrom / checkTo (YYYY-MM-DD)              — khoảng CheckTime.
+ *   - q                                             — search Notes / AssetName / ChecklistID.
+ * KTV hiện trường (level ≤ 1): luôn bị giới hạn — chỉ phiếu APPROVED + phiếu của mình.
+ */
 export async function getResults(
   {
     page = 1,
@@ -731,6 +745,11 @@ export async function getResults(
     checkerId,
     assetId,
     reviewStatus,
+    overallStatus,
+    mine,
+    checkFrom,
+    checkTo,
+    q,
   } = {},
   viewer = {},
 ) {
@@ -752,6 +771,35 @@ export async function getResults(
     conditions.push("cr.ReviewStatus = ?");
     params.push(reviewStatus);
   }
+  if (overallStatus) {
+    conditions.push("cr.OverallStatus = ?");
+    params.push(overallStatus);
+  }
+  // mine=1: viewer (level ≥ 2) muốn lọc nhanh phiếu của mình. Worker tự bị restrict bên dưới.
+  if (
+    !restrict &&
+    (mine === true || mine === 1 || mine === "1" || mine === "true") &&
+    viewer.employeeId != null
+  ) {
+    conditions.push("cr.CheckerID = ?");
+    params.push(Number(viewer.employeeId));
+  }
+  if (checkFrom) {
+    conditions.push("cr.CheckTime >= ?");
+    params.push(`${checkFrom} 00:00:00`);
+  }
+  if (checkTo) {
+    conditions.push("cr.CheckTime <= ?");
+    params.push(`${checkTo} 23:59:59`);
+  }
+  const qTrim = q != null ? String(q).trim() : "";
+  if (qTrim) {
+    const like = `%${qTrim}%`;
+    conditions.push(
+      "(a.AssetName LIKE ? OR IFNULL(cr.Notes,'') LIKE ? OR CAST(cr.ChecklistID AS CHAR) LIKE ?)",
+    );
+    params.push(like, like, like);
+  }
   if (restrict && viewer.employeeId != null) {
     conditions.push("(cr.ReviewStatus = 'APPROVED' OR cr.CheckerID = ?)");
     params.push(Number(viewer.employeeId));
@@ -760,7 +808,10 @@ export async function getResults(
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const [[{ total }]] = await getPool().query(
-    `SELECT COUNT(*) AS total FROM ChecklistResults cr ${where}`,
+    `SELECT COUNT(*) AS total
+     FROM ChecklistResults cr
+     LEFT JOIN Assets a ON a.AssetID = cr.AssetID
+     ${where}`,
     params,
   );
   const [rows] = await getPool().query(

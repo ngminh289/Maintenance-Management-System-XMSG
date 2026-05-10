@@ -413,6 +413,58 @@ export function canRestoreWorkOrder(user) {
   return canDo(user, "WORK_ORDER:RESTORE");
 }
 
+// ── Digital Asset (Tài liệu số) row helpers ─────────────────────────────────
+// Lưu trữ (072): chỉ khi đã APPROVED — Admin/PKT.
+// Xoá vĩnh viễn DB: chỉ bản nháp DRAFT — chủ CV KTS (trước duyệt) hoặc Admin/PKT.
+const DA_EDITABLE_STATUSES = new Set(["DRAFT", "REJECTED", "APPROVED"]);
+
+function isDaFullAccess(role) {
+  return role === "admin" || role === "headPtkT";
+}
+
+/** Có hiển thị nút Sửa cho tài liệu này không (role + status). */
+export function canEditDigitalAssetRow(user, doc) {
+  if (!user || !doc) return false;
+  const status = String(doc.status || "").toUpperCase();
+  if (!DA_EDITABLE_STATUSES.has(status)) return false;
+  const role = getRoleKey(user);
+  if (isDaFullAccess(role)) return true;
+  if (role === "kyThuat") {
+    return status === "DRAFT" || status === "REJECTED";
+  }
+  return false;
+}
+
+/** Có hiển thị nút "Lưu trữ" — chỉ tài liệu đã duyệt; chỉ Admin/PKT. */
+export function canArchiveDigitalAssetRow(user, doc) {
+  if (!user || !doc) return false;
+  const status = String(doc.status || "").toUpperCase();
+  if (status !== "APPROVED") return false;
+  const role = getRoleKey(user);
+  return isDaFullAccess(role);
+}
+
+/** Xoá vĩnh viễn khỏi DB — chỉ DRAFT; chủ KTS hoặc Admin/PKT (BE kiểm chủ). */
+export function canHardDeleteDraftDigitalAssetRow(user, doc) {
+  if (!user || !doc) return false;
+  if (String(doc.status || "").toUpperCase() !== "DRAFT") return false;
+  const role = getRoleKey(user);
+  if (isDaFullAccess(role)) return true;
+  return role === "kyThuat";
+}
+
+/** Tab "Đã lưu trữ" của Tài liệu số: Admin + Trưởng/Phó PKT. */
+export function canViewArchivedDocuments(user) {
+  if (!user) return false;
+  const role = getRoleKey(user);
+  return role === "admin" || role === "headPtkT";
+}
+
+/** Khôi phục tài liệu / phiên bản đã lưu trữ. */
+export function canRestoreDocument(user) {
+  return canViewArchivedDocuments(user);
+}
+
 // ── 4. Dashboard type cho mỗi role ────────────────────────────────────────────
 export function getDashboardType(user) {
   const role = getRoleKey(user);

@@ -15,6 +15,14 @@
   th { @apply text-gray-700; }
   p  { @apply text-gray-900; }
 
+  /* Ép light color-scheme cho form controls để Windows dark mode không
+     render <option> trắng-trên-trắng (bug Chromium gặp ở Windows 11). */
+  select, option, input, textarea {
+    color-scheme: light;
+  }
+  select { @apply text-gray-900; }
+  option { @apply text-gray-900 bg-white; }
+
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }
   ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }

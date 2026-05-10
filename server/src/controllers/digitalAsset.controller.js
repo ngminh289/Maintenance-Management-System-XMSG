@@ -3,6 +3,8 @@
  * Upload dùng multer (multipart/form-data). FilePath trong DB = chỉ tên file (không lưu path tuyệt đối Windows).
  * logDocumentView: POST /:id/view-log — ghi DigitalAssetViewLogs (mở file từ checklist / kho tài liệu).
  * damActor: truyền vào service để ràng chủ sở hữu bản nháp (056).
+ *
+ * Xoá vĩnh viễn: DELETE /:id — chỉ DRAFT (`remove`).
  * Liên quan: services/digitalAsset.service.js, routes/digitalAsset.routes.js.
  */
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -57,6 +59,7 @@ export const upload = asyncHandler(async (req, res) => {
 const damActor = (req) => ({
   actorId: req.user.sub,
   positionLevel: req.user.positionLevel ?? 0,
+  positionId: req.user.positionId ?? 0,
 });
 
 export const update = asyncHandler(async (req, res) =>
@@ -68,6 +71,7 @@ export const submitForApproval = asyncHandler(async (req, res) =>
     req.user.sub,
     req.body.workflowId,
     req.user.positionLevel ?? 0,
+    req.user.positionId ?? 0,
   )));
 
 /** GET /api/digital-assets/:id/versions */
@@ -99,15 +103,81 @@ export const addTag = asyncHandler(async (req, res) =>
 export const removeTag = asyncHandler(async (req, res) =>
   ok(res, await service.removeTag(req.params.id, req.params.tagId, damActor(req))));
 
-export const remove = asyncHandler(async (req, res) => {
-  await service.remove(req.params.id, damActor(req));
-  await logAction({ employeeId: req.user.sub, action: 'DELETE', tableName: 'DigitalAssets', recordId: Number(req.params.id) });
-  return ok(res, { message: 'Đã xóa tài liệu.' });
+// ── Lưu trữ (archive) — thay cho xoá cứng ──────────────────────────────────
+
+/** POST /api/digital-assets/:id/archive-document — lưu trữ cả tài liệu. */
+export const archiveDocument = asyncHandler(async (req, res) => {
+  const result = await service.archiveDocument(req.params.id, damActor(req));
+  await logAction({
+    employeeId: req.user.sub,
+    action: 'UPDATE',
+    tableName: 'DigitalAssets',
+    recordId: Number(req.params.id),
+    newValue: { archived: true, scope: 'DOCUMENT' },
+  });
+  return ok(res, { ...result, message: 'Đã lưu trữ cả tài liệu.' });
 });
 
-/** DELETE /api/digital-assets/:id/force — Trưởng/Phó PKT hoặc Admin (DIGITAL_ASSET:DELETE) */
-export const forceRemove = asyncHandler(async (req, res) => {
-  await service.forceRemove(req.params.id);
-  await logAction({ employeeId: req.user.sub, action: 'DELETE', tableName: 'DigitalAssets', recordId: Number(req.params.id), newValue: { force: true } });
-  return ok(res, { message: 'Đã xóa vĩnh viễn tài liệu.' });
+/** POST /api/digital-assets/:id/versions/:versionId/archive — lưu trữ 1 phiên bản. */
+export const archiveVersion = asyncHandler(async (req, res) => {
+  const result = await service.archiveVersion(
+    req.params.id,
+    req.params.versionId,
+    damActor(req),
+  );
+  await logAction({
+    employeeId: req.user.sub,
+    action: 'UPDATE',
+    tableName: 'AssetVersions',
+    recordId: Number(req.params.versionId),
+    newValue: { archived: true, ...result },
+  });
+  return ok(res, {
+    ...result,
+    message: result.archivedDocument
+      ? 'Đã lưu trữ phiên bản — không còn phiên bản active, tài liệu cũng đã chuyển vào kho lưu trữ.'
+      : 'Đã lưu trữ phiên bản. Phiên bản hiện tại đã được cập nhật.',
+  });
+});
+
+/** POST /api/digital-assets/:id/restore — khôi phục tài liệu (Admin/PKT). */
+export const restoreDocument = asyncHandler(async (req, res) => {
+  const result = await service.restoreDocument(req.params.id, damActor(req));
+  await logAction({
+    employeeId: req.user.sub,
+    action: 'UPDATE',
+    tableName: 'DigitalAssets',
+    recordId: Number(req.params.id),
+    newValue: { restored: true, scope: 'DOCUMENT' },
+  });
+  return ok(res, { ...result, message: 'Đã khôi phục tài liệu (chuyển về DRAFT).' });
+});
+
+/** POST /api/digital-assets/:id/versions/:versionId/restore — khôi phục 1 phiên bản (Admin/PKT). */
+export const restoreVersion = asyncHandler(async (req, res) => {
+  const result = await service.restoreVersion(req.params.versionId, damActor(req));
+  await logAction({
+    employeeId: req.user.sub,
+    action: 'UPDATE',
+    tableName: 'AssetVersions',
+    recordId: Number(req.params.versionId),
+    newValue: { restored: true, ...result },
+  });
+  return ok(res, { ...result, message: 'Đã khôi phục phiên bản.' });
+});
+
+/** GET /api/digital-assets/archived-versions — list global cho tab Lưu trữ. */
+export const listArchivedVersions = asyncHandler(async (req, res) =>
+  ok(res, await service.listArchivedVersions(req.query, damActor(req))));
+
+/** DELETE /api/digital-assets/:id — xoá vĩnh viễn; chỉ bản nháp (DRAFT). */
+export const remove = asyncHandler(async (req, res) => {
+  await service.remove(req.params.id, damActor(req));
+  await logAction({
+    employeeId: req.user.sub,
+    action: 'DELETE',
+    tableName: 'DigitalAssets',
+    recordId: Number(req.params.id),
+  });
+  return ok(res, { message: 'Đã xoá vĩnh viễn tài liệu (bản nháp).' });
 });

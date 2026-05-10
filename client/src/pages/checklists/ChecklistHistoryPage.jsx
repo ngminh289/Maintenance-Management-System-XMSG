@@ -2,6 +2,14 @@
  * ChecklistHistoryPage.jsx — Danh sách kết quả checklist (mọi role đăng nhập có menu Checklist).
  * KTV hiện trường: chỉ thấy phiếu APPROVED (mọi người) + toàn bộ phiếu do mình nộp (mọi trạng thái) — khớp backend.
  * NVKT+: xem toàn bộ. Xem chi tiết trong modal (đọc, không duyệt). Câu Photo: ảnh từ AnswerValue.
+ *
+ * Bộ lọc (gọi GET /checklists/results):
+ *   - q             — tìm theo tên TS / ghi chú / mã phiếu.
+ *   - reviewStatus  — Chờ duyệt / Đã duyệt / Từ chối.
+ *   - overallStatus — OK / WARNING / NG.
+ *   - assetId       — chọn nhanh bằng AssetIdSearchPicker.
+ *   - checkFrom/To  — khoảng ngày kiểm tra.
+ *   - mine=1        — chỉ phiếu do tôi nộp (NVKT+; KTV bị BE restrict sẵn).
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -18,6 +26,9 @@ import {
   ImageIcon,
   ExternalLink,
   FileSpreadsheet,
+  Filter,
+  X,
+  Search,
 } from "lucide-react";
 import { checklistApi } from "../../api/checklist.api.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
@@ -26,6 +37,7 @@ import { Card } from "../../components/ui/Card.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Modal } from "../../components/ui/Modal.jsx";
+import { AssetIdSearchPicker } from "../../components/AssetIdSearchPicker.jsx";
 import {
   CHECKLIST_STATUS_COLOR,
   APPROVAL_STATUS_COLOR,
@@ -61,10 +73,24 @@ function rowShellClass(tone) {
 
 const PAGE_SIZE = 12;
 
+const REVIEW_STATUS_OPTIONS = [
+  { value: "", label: "Tất cả trạng thái duyệt" },
+  { value: "PENDING", label: "Chờ duyệt" },
+  { value: "APPROVED", label: "Đã duyệt" },
+  { value: "REJECTED", label: "Bị từ chối" },
+];
+
+const OVERALL_STATUS_OPTIONS = [
+  { value: "", label: "Tất cả kết quả" },
+  { value: "OK", label: "OK" },
+  { value: "WARNING", label: "WARNING (cảnh báo)" },
+  { value: "NG", label: "NG (sự cố)" },
+];
+
 export function ChecklistHistoryPage() {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
-  const filterAssetId = searchParams.get("assetId")?.trim() || undefined;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryAssetId = searchParams.get("assetId")?.trim() || "";
   const focusChecklistId =
     searchParams.get("checklistId")?.trim() ||
     searchParams.get("focus")?.trim() ||
@@ -80,14 +106,76 @@ export function ChecklistHistoryPage() {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // Bộ lọc — khởi tạo từ query string (assetId) để giữ tương thích link cũ.
+  const [filters, setFilters] = useState({
+    q: "",
+    reviewStatus: "",
+    overallStatus: "",
+    assetId: queryAssetId,
+    checkFrom: "",
+    checkTo: "",
+    mine: false,
+  });
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Đồng bộ ngược assetId vào URL (giữ behavior cũ: ?assetId=… vẫn hoạt động).
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (filters.assetId) next.set("assetId", String(filters.assetId));
+    else next.delete("assetId");
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.assetId]);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (filters.q.trim()) n += 1;
+    if (filters.reviewStatus) n += 1;
+    if (filters.overallStatus) n += 1;
+    if (filters.assetId) n += 1;
+    if (filters.checkFrom) n += 1;
+    if (filters.checkTo) n += 1;
+    if (filters.mine) n += 1;
+    return n;
+  }, [filters]);
+
+  const updateFilter = useCallback((patch) => {
+    setFilters((prev) => ({ ...prev, ...patch }));
+    setPage(1);
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setFilters({
+      q: "",
+      reviewStatus: "",
+      overallStatus: "",
+      assetId: "",
+      checkFrom: "",
+      checkTo: "",
+      mine: false,
+    });
+    setPage(1);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await checklistApi.getResults({
+      const params = {
         page,
         limit: PAGE_SIZE,
-        ...(filterAssetId && { assetId: filterAssetId }),
-      });
+      };
+      const qTrim = filters.q.trim();
+      if (qTrim) params.q = qTrim;
+      if (filters.reviewStatus) params.reviewStatus = filters.reviewStatus;
+      if (filters.overallStatus) params.overallStatus = filters.overallStatus;
+      if (filters.assetId) params.assetId = filters.assetId;
+      if (filters.checkFrom) params.checkFrom = filters.checkFrom;
+      if (filters.checkTo) params.checkTo = filters.checkTo;
+      if (filters.mine && !isWorker) params.mine = 1;
+
+      const res = await checklistApi.getResults(params);
       const d = res.data.data;
       setPayload({
         items: d?.items ?? [],
@@ -99,11 +187,7 @@ export function ChecklistHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, filterAssetId]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [filterAssetId]);
+  }, [page, filters, isWorker]);
 
   useEffect(() => {
     load();
@@ -202,52 +286,139 @@ export function ChecklistHistoryPage() {
         </div>
       </div>
 
-      {/* {isWorker && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-950">
-          <p className="font-semibold text-blue-900">
-            Quyền xem (KTV hiện trường)
-          </p>
-          <p className="mt-1 leading-relaxed">
-            Bạn thấy các phiếu <strong>đã được duyệt (APPROVED)</strong> của mọi
-            người (để tham khảo) và <strong>mọi phiếu do bạn nộp</strong> — kể
-            cả đang chờ duyệt hoặc bị từ chối. Bạn không xem được phiếu chưa
-            duyệt của đồng nghiệp.
-          </p>
-        </div>
-      )} */}
-
-      {filterAssetId && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 flex flex-wrap items-center justify-between gap-2">
-          <span>
-            Đang lọc theo <strong>tài sản #{filterAssetId}</strong>
-          </span>
-          <Link
-            to="/checklists/history"
-            className="text-sm font-semibold text-amber-900 underline shrink-0"
-          >
-            Bỏ lọc
-          </Link>
-        </div>
-      )}
-
-      {/* {!isWorker && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-700">
-          <p className="font-semibold text-slate-800">
-            Chuyên viên KTS / Giám sát
-          </p>
-          <p className="mt-1">
-            Bạn xem <strong>toàn bộ</strong> kết quả checklist trong hệ thống
-            (theo phân trang). Duyệt phiếu chờ tại{" "}
-            <Link
-              to="/checklists/review"
-              className="font-semibold text-indigo-700 underline"
+      <Card noPad>
+        <div className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                aria-hidden
+              />
+              <input
+                type="search"
+                value={filters.q}
+                onChange={(e) => updateFilter({ q: e.target.value })}
+                placeholder="Tìm theo tên tài sản, ghi chú, mã phiếu…"
+                className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500"
+              />
+            </div>
+            <select
+              value={filters.reviewStatus}
+              onChange={(e) => updateFilter({ reviewStatus: e.target.value })}
+              style={{ colorScheme: "light" }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
+                focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500"
             >
-              Tiếp nhận checklist
-            </Link>
-            .
-          </p>
+              {REVIEW_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value || "all"} value={opt.value} className="text-slate-900 bg-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filters.overallStatus}
+              onChange={(e) => updateFilter({ overallStatus: e.target.value })}
+              style={{ colorScheme: "light" }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
+                focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500"
+            >
+              {OVERALL_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value || "all"} value={opt.value} className="text-slate-900 bg-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowFilters((s) => !s)}
+              title="Mở thêm bộ lọc"
+            >
+              <Filter size={14} />
+              {showFilters ? "Ẩn bộ lọc" : "Bộ lọc"}
+              {activeFilterCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-bold w-4 h-4">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+            {activeFilterCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                title="Xoá tất cả bộ lọc"
+              >
+                <X size={14} /> Xoá lọc
+              </Button>
+            )}
+          </div>
+
+          {showFilters && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
+              <div className="sm:col-span-2 lg:col-span-1">
+                <AssetIdSearchPicker
+                  id="filter-asset"
+                  label="Tài sản"
+                  value={filters.assetId}
+                  onChange={(v) => updateFilter({ assetId: v || "" })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="filter-from"
+                  className="text-sm font-semibold text-gray-700 block"
+                >
+                  Từ ngày
+                </label>
+                <input
+                  id="filter-from"
+                  type="date"
+                  value={filters.checkFrom}
+                  max={filters.checkTo || undefined}
+                  onChange={(e) => updateFilter({ checkFrom: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm
+                    focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="filter-to"
+                  className="text-sm font-semibold text-gray-700 block"
+                >
+                  Đến ngày
+                </label>
+                <input
+                  id="filter-to"
+                  type="date"
+                  value={filters.checkTo}
+                  min={filters.checkFrom || undefined}
+                  onChange={(e) => updateFilter({ checkTo: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm
+                    focus:outline-none focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500"
+                />
+              </div>
+              {!isWorker && (
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm cursor-pointer select-none sm:col-span-2 lg:col-span-3">
+                  <input
+                    type="checkbox"
+                    checked={filters.mine}
+                    onChange={(e) => updateFilter({ mine: e.target.checked })}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="font-medium text-slate-800">
+                    Chỉ phiếu do tôi nộp
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
         </div>
-      )} */}
+      </Card>
 
       <Card title={`Phiếu (${payload.total})`}>
         {loading ? (

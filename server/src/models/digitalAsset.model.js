@@ -4,6 +4,11 @@
  * UNIQUE (DigitalAssetID, VersionNumber); migration 036 backfill + ràng buộc.
  * Kho (draftPrivacy): APPROVED/ARCHIVED mọi người; DRAFT/REJECTED/PENDING chỉ chủ + Admin.
  * Người duyệt (Trưởng/Phó PKT) xem PENDING ở tab Phê duyệt, không phải mục Tài liệu số.
+ *
+ * Lưu trữ cấp version (migration 072): mỗi AssetVersions có IsArchived/ArchivedAt/ArchivedBy.
+ * `getVersions(id)` mặc định chỉ trả version active (IsArchived=0); tab "Đã lưu trữ"
+ * dùng `findArchivedVersionsAll` để list global. Khi archive version current, BE
+ * gọi `findLatestActiveVersion` rồi `setCurrentVersion` để fallback.
  * Dùng trong: services/digitalAsset.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -51,6 +56,7 @@ function buildListQuery(filters) {
     documentCategoryId,
     q,
     draftPrivacy,
+    includeArchived,
   } = filters;
   const params = [];
   let join = BASE_JOIN;
@@ -58,6 +64,10 @@ function buildListQuery(filters) {
   if (status) {
     where += ' AND da.Status = ?';
     params.push(status);
+  } else if (!includeArchived) {
+    // Mặc định ẩn ARCHIVED khỏi danh sách "Đang dùng"; tab Lưu trữ đi qua
+    // endpoint riêng (`/archived-versions`).
+    where += " AND da.Status <> 'ARCHIVED'";
   }
   if (assetId) {
     where += ' AND da.AssetID = ?';
@@ -271,17 +281,172 @@ export async function addVersion({ digitalAssetId, filePath, fileSizeKB, changed
   }
 }
 
-export async function getVersions(digitalAssetId) {
+/**
+ * Liệt kê phiên bản của một tài liệu.
+ * `includeArchived=true` để hiển thị cả version đã lưu trữ (vd: tab Lưu trữ
+ * khi click vào "tài liệu gốc" để xem timeline đầy đủ).
+ */
+export async function getVersions(digitalAssetId, { includeArchived = false } = {}) {
+  const where = includeArchived
+    ? 'WHERE av.DigitalAssetID = ?'
+    : 'WHERE av.DigitalAssetID = ? AND av.IsArchived = 0';
   const [rows] = await getPool().query(
     `SELECT av.VersionID AS versionId, av.VersionNumber AS versionNumber,
             av.FilePath AS filePath, av.ChangeDate AS changeDate,
-            av.ChangeNote AS changeNote, e.FullName AS changedByName
+            av.ChangeNote AS changeNote, e.FullName AS changedByName,
+            av.IsArchived AS isArchived, av.ArchivedAt AS archivedAt,
+            av.ArchivedBy AS archivedBy, ea.FullName AS archivedByName
      FROM AssetVersions av
-     JOIN Employees e ON e.EmployeeID = av.ChangedBy
-     WHERE av.DigitalAssetID = ? ORDER BY av.VersionNumber DESC`,
+     JOIN Employees e  ON e.EmployeeID  = av.ChangedBy
+     LEFT JOIN Employees ea ON ea.EmployeeID = av.ArchivedBy
+     ${where}
+     ORDER BY av.VersionNumber DESC`,
     [digitalAssetId],
   );
   return rows;
+}
+
+/** Tìm 1 version theo VersionID (bao cả archived). */
+export async function findVersionById(versionId) {
+  const [rows] = await getPool().query(
+    `SELECT av.VersionID AS versionId, av.DigitalAssetID AS digitalAssetId,
+            av.VersionNumber AS versionNumber, av.FilePath AS filePath,
+            av.ChangeDate AS changeDate,
+            av.ChangeNote AS changeNote, av.ChangedBy AS changedBy,
+            av.IsArchived AS isArchived, av.ArchivedAt AS archivedAt,
+            av.ArchivedBy AS archivedBy
+     FROM AssetVersions av
+     WHERE av.VersionID = ?
+     LIMIT 1`,
+    [versionId],
+  );
+  return rows[0] || null;
+}
+
+/** Tìm version active mới nhất (theo VersionNumber DESC) — dùng để fallback. */
+export async function findLatestActiveVersion(digitalAssetId, excludeVersionId = null) {
+  const params = [digitalAssetId];
+  let extra = '';
+  if (excludeVersionId != null) {
+    extra = ' AND VersionID != ?';
+    params.push(excludeVersionId);
+  }
+  const [rows] = await getPool().query(
+    `SELECT VersionID AS versionId, VersionNumber AS versionNumber,
+            FilePath AS filePath
+     FROM AssetVersions
+     WHERE DigitalAssetID = ? AND IsArchived = 0${extra}
+     ORDER BY VersionNumber DESC
+     LIMIT 1`,
+    params,
+  );
+  return rows[0] || null;
+}
+
+/** Đếm số version active còn lại của tài liệu. */
+export async function countActiveVersions(digitalAssetId) {
+  const [[{ cnt }]] = await getPool().query(
+    `SELECT COUNT(*) AS cnt FROM AssetVersions
+     WHERE DigitalAssetID = ? AND IsArchived = 0`,
+    [digitalAssetId],
+  );
+  return Number(cnt);
+}
+
+/**
+ * Đặt CurrentVersion + đồng bộ FilePath. AssetVersions không lưu FileSizeKB
+ * nên giữ nguyên giá trị cũ trên DigitalAssets (không reset NULL khi fallback).
+ */
+export async function setCurrentVersion(digitalAssetId, version) {
+  await getPool().query(
+    `UPDATE DigitalAssets
+       SET CurrentVersion = ?, FilePath = ?
+     WHERE DigitalAssetID = ?`,
+    [version.versionNumber, version.filePath, digitalAssetId],
+  );
+}
+
+export async function archiveVersion(versionId, archivedBy) {
+  const [r] = await getPool().query(
+    `UPDATE AssetVersions
+       SET IsArchived = 1, ArchivedAt = ?, ArchivedBy = ?
+     WHERE VersionID = ? AND IsArchived = 0`,
+    [new Date(), archivedBy ?? null, versionId],
+  );
+  return r.affectedRows;
+}
+
+export async function restoreVersion(versionId) {
+  const [r] = await getPool().query(
+    `UPDATE AssetVersions
+       SET IsArchived = 0, ArchivedAt = NULL, ArchivedBy = NULL
+     WHERE VersionID = ? AND IsArchived = 1`,
+    [versionId],
+  );
+  return r.affectedRows;
+}
+
+/** Archive đồng loạt mọi version còn active của tài liệu (dùng khi archive cả tài liệu). */
+export async function archiveAllActiveVersions(digitalAssetId, archivedBy) {
+  const [r] = await getPool().query(
+    `UPDATE AssetVersions
+       SET IsArchived = 1, ArchivedAt = ?, ArchivedBy = ?
+     WHERE DigitalAssetID = ? AND IsArchived = 0`,
+    [new Date(), archivedBy ?? null, digitalAssetId],
+  );
+  return r.affectedRows;
+}
+
+/**
+ * Danh sách version đã archive (toàn hệ thống) — phục vụ tab "Đã lưu trữ" của
+ * Admin/PKT. Trả kèm thông tin tài liệu gốc và status hiện tại của tài liệu để
+ * người dùng nhận diện nhanh "tài liệu gốc còn dùng / đã ngưng".
+ */
+export async function findArchivedVersionsAll({ q, limit, offset } = {}) {
+  const params = [];
+  let where = 'WHERE av.IsArchived = 1';
+  const qTrim = q != null ? String(q).trim() : '';
+  if (qTrim) {
+    const like = `%${qTrim}%`;
+    where += ` AND (
+      da.FileName LIKE ? OR IFNULL(da.Description,'') LIKE ?
+      OR IFNULL(a.AssetName,'') LIKE ?
+      OR IFNULL(av.ChangeNote,'') LIKE ?
+    )`;
+    params.push(like, like, like, like);
+  }
+  const pag = limit != null ? 'LIMIT ? OFFSET ?' : '';
+  const listParams = [...params];
+  if (limit != null) listParams.push(limit, offset);
+
+  const baseFromJoin = `
+    FROM AssetVersions av
+    JOIN DigitalAssets da ON da.DigitalAssetID = av.DigitalAssetID
+    JOIN Employees    e   ON e.EmployeeID  = av.ChangedBy
+    LEFT JOIN Employees ea ON ea.EmployeeID = av.ArchivedBy
+    LEFT JOIN Assets    a  ON a.AssetID     = da.AssetID
+  `;
+  const [rows] = await getPool().query(
+    `SELECT av.VersionID AS versionId, av.DigitalAssetID AS digitalAssetId,
+            av.VersionNumber AS versionNumber, av.FilePath AS filePath,
+            av.ChangeDate AS changeDate,
+            av.ChangeNote AS changeNote, av.ArchivedAt AS archivedAt,
+            av.ArchivedBy AS archivedBy, ea.FullName AS archivedByName,
+            e.FullName AS changedByName,
+            da.FileName AS fileName, da.FileType AS fileType,
+            da.Status   AS docStatus, da.CurrentVersion AS docCurrentVersion,
+            da.AssetID  AS assetId,   a.AssetName AS assetName
+     ${baseFromJoin}
+     ${where}
+     ORDER BY av.ArchivedAt DESC
+     ${pag}`,
+    listParams,
+  );
+  const [[{ total }]] = await getPool().query(
+    `SELECT COUNT(*) AS total ${baseFromJoin} ${where}`,
+    params,
+  );
+  return { items: rows, total: Number(total) };
 }
 
 export async function remove(id) {

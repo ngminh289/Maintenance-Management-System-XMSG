@@ -62,7 +62,10 @@ export async function createForAsset(digitalAssetId, { employeeId, positionId, p
   return row;
 }
 
-export async function listForAsset(digitalAssetId, { employeeId, positionId }) {
+export async function listForAsset(
+  digitalAssetId,
+  { employeeId, positionId, positionLevel },
+) {
   const canRead = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'READ');
   if (!canRead) throw createError('Không có quyền xem phản hồi', 403);
 

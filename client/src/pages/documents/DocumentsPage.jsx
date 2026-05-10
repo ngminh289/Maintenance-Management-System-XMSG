@@ -1,8 +1,18 @@
 /**
- * DocumentsPage.jsx — Kho tài liệu số: upload/tag/danh mục (CV KTS = Trưởng/Phó PKT — 057); thêm phê duyệt + xóa cứng cho PKT/Admin.
+ * DocumentsPage.jsx — Kho tài liệu số: upload/tag/danh mục (CV KTS = Trưởng/Phó PKT — 057); thêm phê duyệt + lưu trữ cho PKT/Admin.
  * Danh sách: PENDING/DRAFT/REJECTED của chính user; APPROVED/ARCHIVED công khai; PENDING người khác không hiện.
  * Chọn tài sản khi upload/sửa: AssetIdSearchPicker (tìm server), không giới hạn 200 bản ghi.
  * Deep link: /documents?upload=1&assetId=… — mở modal upload với tài sản gắn sẵn (từ trang chi tiết tài sản).
+ *
+ * Nguyên tắc Sửa / Xoá / Lưu trữ (đồng bộ digitalAsset.service.js, migration 072):
+ *   - DRAFT / REJECTED: tác giả + Admin/PKT đều sửa được (tuỳ role).
+ *   - DRAFT: có thể xoá vĩnh viễn khỏi DB (DELETE); REJECTED chỉ sửa/gửi lại — không xoá cứng ở đây.
+ *   - PENDING: khoá hết — phải qua "Yêu cầu chỉnh sửa" để về DRAFT.
+ *   - APPROVED: chỉ Admin/PKT sửa metadata & lưu trữ; CV KTS chỉ xem.
+ *   - Lưu trữ (version hoặc cả tài liệu) chỉ áp dụng sau khi đã duyệt. Archive version
+ *     current → fallback current về phiên bản active mới nhất; hết version → archive cả tài liệu.
+ *   - Tab "Đã lưu trữ" (Admin + Trưởng/Phó PKT): list version archived + Khôi phục.
+ * UI gom hành động vào dropdown "ba chấm" (RowActionMenu).
  */
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -16,6 +26,9 @@ import { Input, Select } from "../../components/ui/Input.jsx";
 import { Pagination } from "../../components/ui/Pagination.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { PageLoader } from "../../components/ui/Spinner.jsx";
+import { RowActionMenu } from "../../components/ui/RowActionMenu.jsx";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
+import { DocumentDetailModal } from "../../components/documents/DocumentDetailModal.jsx";
 import {
   FileText,
   Upload,
@@ -24,18 +37,27 @@ import {
   History,
   RefreshCw,
   Tag,
-  ShieldCheck,
   Pencil,
   Layers,
   Settings2,
   MessageSquare,
   AlertCircle,
+  Archive,
+  ArchiveRestore,
   Trash2,
   FileSpreadsheet,
+  Eye,
 } from "lucide-react";
 import { fDateTime } from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
-import { canDo } from "../../utils/rbac.js";
+import {
+  canDo,
+  canEditDigitalAssetRow,
+  canArchiveDigitalAssetRow,
+  canHardDeleteDraftDigitalAssetRow,
+  canViewArchivedDocuments,
+  canRestoreDocument,
+} from "../../utils/rbac.js";
 import { documentFilePublicUrl } from "../../utils/documentUrl.js";
 import { exportRowsToExcel } from "../../utils/excelExport.js";
 import toast from "react-hot-toast";
@@ -128,7 +150,6 @@ export function DocumentsPage() {
   const canUpload = canDo(user, "DOCUMENT:CREATE");
   const canSubmitDoc = canDo(user, "DOCUMENT:SUBMIT");
   const canNewVersion = canDo(user, "DOCUMENT:UPDATE");
-  const canApproveDocs = canDo(user, "DOCUMENT:APPROVE");
   const canTagCreate = canDo(user, "TAG:CREATE");
   const canTagUpdate = canDo(user, "TAG:UPDATE");
   const canTagDelete = canDo(user, "TAG:DELETE");
@@ -139,7 +160,9 @@ export function DocumentsPage() {
   const canCatUpdate = canDo(user, "DOCUMENT_CATEGORY:UPDATE");
   const canCatDelete = canDo(user, "DOCUMENT_CATEGORY:DELETE");
   const canManageCatalog = canTagCreate || canCatCreate;
-  const canForceDelete = canDo(user, "DOCUMENT:DELETE");
+  const canSeeArchived = canViewArchivedDocuments(user);
+  const canRestoreDocs = canRestoreDocument(user);
+  const [tab, setTab] = useState("active");
 
   const [docs, setDocs] = useState([]);
   const [tags, setTags] = useState([]);
@@ -193,6 +216,33 @@ export function DocumentsPage() {
 
   const [editDoc, setEditDoc] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
+  // Confirm popup khi nhấn "Lưu" trong modal sửa (theo pattern Asset/WO).
+  const [editConfirmOpen, setEditConfirmOpen] = useState(false);
+
+  // Xem chi tiết (read-only).
+  const [viewDoc, setViewDoc] = useState(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Lưu trữ thay xoá cứng (072): chọn cả tài liệu hoặc 1 phiên bản.
+  const [archiveTarget, setArchiveTarget] = useState(null); // doc đang chọn để archive
+  const [archiveScope, setArchiveScope] = useState("DOCUMENT"); // 'DOCUMENT' | 'VERSION'
+  const [archiveVersions, setArchiveVersions] = useState([]); // versions còn active
+  const [archiveSelectedId, setArchiveSelectedId] = useState(null); // VersionID khi scope=VERSION
+  const [archiveVersionsLoading, setArchiveVersionsLoading] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  const [deleteDraftTarget, setDeleteDraftTarget] = useState(null);
+  const [deleteDraftLoading, setDeleteDraftLoading] = useState(false);
+
+  // Tab "Đã lưu trữ" (Admin/PKT) — list version archived.
+  const [archivedItems, setArchivedItems] = useState([]);
+  const [archivedTotal, setArchivedTotal] = useState(0);
+  const [archivedPage, setArchivedPage] = useState(1);
+  const [archivedSearchInput, setArchivedSearchInput] = useState("");
+  const [archivedSearch, setArchivedSearch] = useState("");
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState(null); // version archived đang chọn khôi phục
+  const [restoring, setRestoring] = useState(false);
 
   const [fbDoc, setFbDoc] = useState(null);
   const [fbList, setFbList] = useState([]);
@@ -397,24 +447,155 @@ export function DocumentsPage() {
     }
   };
 
-  const handleForceDelete = async (doc) => {
-    if (
-      !window.confirm(
-        `Xóa vĩnh viễn tài liệu "${doc.fileName}"? Hành động này không thể hoàn tác.`,
-      )
-    )
-      return;
+  const openViewDoc = useCallback(async (doc) => {
+    setViewDoc({ digitalAssetId: doc.digitalAssetId });
+    setViewLoading(true);
     try {
-      await api.delete(`/digital-assets/${doc.digitalAssetId}/force`);
-      toast.success("Đã xóa vĩnh viễn tài liệu");
-      load();
+      const res = await api.get(`/digital-assets/${doc.digitalAssetId}`);
+      setViewDoc(res.data.data);
     } catch (err) {
-      toast.error(err.response?.data?.message ?? "Không thể xóa");
+      toast.error(
+        err.response?.data?.message ?? "Không mở được chi tiết tài liệu",
+      );
+      setViewDoc(null);
+    } finally {
+      setViewLoading(false);
+    }
+  }, []);
+
+  // ── Lưu trữ (072) ────────────────────────────────────────────────────────
+  /**
+   * Mở popup chọn lưu trữ. Tự fetch versions còn active để hiển thị radio
+   * cho user chọn nếu họ muốn archive theo phiên bản cụ thể.
+   */
+  const openArchiveDoc = async (doc) => {
+    setArchiveTarget(doc);
+    setArchiveScope("DOCUMENT");
+    setArchiveSelectedId(null);
+    setArchiveVersions([]);
+    setArchiveVersionsLoading(true);
+    try {
+      const res = await api.get(
+        `/digital-assets/${doc.digitalAssetId}/versions`,
+      );
+      const list = Array.isArray(res.data.data) ? res.data.data : [];
+      setArchiveVersions(list);
+    } catch {
+      toast.error("Không tải được danh sách phiên bản");
+    } finally {
+      setArchiveVersionsLoading(false);
     }
   };
 
-  const saveEditDoc = async (e) => {
+  const closeArchiveDoc = () => {
+    if (archiving) return;
+    setArchiveTarget(null);
+    setArchiveScope("DOCUMENT");
+    setArchiveSelectedId(null);
+    setArchiveVersions([]);
+  };
+
+  const confirmArchive = async () => {
+    if (!archiveTarget) return;
+    setArchiving(true);
+    try {
+      if (archiveScope === "VERSION") {
+        if (!archiveSelectedId) {
+          toast.error("Chọn phiên bản cần lưu trữ");
+          setArchiving(false);
+          return;
+        }
+        const res = await api.post(
+          `/digital-assets/${archiveTarget.digitalAssetId}/versions/${archiveSelectedId}/archive`,
+        );
+        toast.success(res.data?.data?.message ?? "Đã lưu trữ phiên bản");
+      } else {
+        await api.post(
+          `/digital-assets/${archiveTarget.digitalAssetId}/archive-document`,
+        );
+        toast.success("Đã lưu trữ cả tài liệu");
+      }
+      closeArchiveDoc();
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không thể lưu trữ");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleHardDeleteDraft = async () => {
+    if (!deleteDraftTarget) return;
+    setDeleteDraftLoading(true);
+    try {
+      await api.delete(`/digital-assets/${deleteDraftTarget.digitalAssetId}`);
+      toast.success("Đã xoá vĩnh viễn tài liệu khỏi hệ thống");
+      setDeleteDraftTarget(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không xoá được tài liệu");
+    } finally {
+      setDeleteDraftLoading(false);
+    }
+  };
+
+  // ── Khôi phục (Admin / PKT) ─────────────────────────────────────────────
+  const loadArchived = useCallback(async () => {
+    if (!canSeeArchived) return;
+    setArchivedLoading(true);
+    try {
+      const params = { page: archivedPage, limit: LIMIT };
+      const q = archivedSearch.trim();
+      if (q) params.q = q;
+      const res = await api.get("/digital-assets/archived-versions", { params });
+      setArchivedItems(res.data.data?.items ?? []);
+      setArchivedTotal(res.data.data?.total ?? 0);
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không tải được kho lưu trữ");
+    } finally {
+      setArchivedLoading(false);
+    }
+  }, [archivedPage, archivedSearch, canSeeArchived]);
+
+  useEffect(() => {
+    if (tab !== "archived") return;
+    const t = setTimeout(() => setArchivedSearch(archivedSearchInput), 400);
+    return () => clearTimeout(t);
+  }, [archivedSearchInput, tab]);
+
+  useEffect(() => {
+    setArchivedPage(1);
+  }, [archivedSearch]);
+
+  useEffect(() => {
+    if (tab === "archived") loadArchived();
+  }, [tab, loadArchived]);
+
+  const confirmRestore = async () => {
+    if (!restoreTarget) return;
+    setRestoring(true);
+    try {
+      await api.post(
+        `/digital-assets/${restoreTarget.digitalAssetId}/versions/${restoreTarget.versionId}/restore`,
+      );
+      toast.success("Đã khôi phục phiên bản");
+      setRestoreTarget(null);
+      loadArchived();
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không thể khôi phục");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  // Submit form sửa: chỉ mở popup xác nhận, gọi API sau khi user chọn "Có".
+  const saveEditDoc = (e) => {
     e.preventDefault();
+    if (!editDoc) return;
+    setEditConfirmOpen(true);
+  };
+
+  const confirmSaveEditDoc = async () => {
     if (!editDoc) return;
     setEditSaving(true);
     try {
@@ -427,6 +608,7 @@ export function DocumentsPage() {
         tagIds: Array.isArray(editDoc.tagIds) ? editDoc.tagIds : [],
       });
       toast.success("Đã cập nhật tài liệu");
+      setEditConfirmOpen(false);
       setEditDoc(null);
       load();
     } catch (err) {
@@ -568,33 +750,58 @@ export function DocumentsPage() {
 
   return (
     <div className="space-y-5">
-      {/* <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/90 to-white px-4 py-3 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold text-blue-900">
-              Tài liệu: upload → gửi duyệt → Trưởng ca/TP phê duyệt → dùng qua QR tài sản.
-              {canSubmitDocFeedback && ' Mọi vai trừ Chuyên viên KTS có thể góp ý qua biểu tượng phản hồi trên từng dòng.'}
-              {canReviewDocFeedback && (
-                <>
-                  {' '}
-                  <Link to="/documents/feedback-inbox" className="underline font-bold text-blue-800">
-                    Hàng đợi phản hồi (KT)
-                  </Link>
-                </>
-              )}
-            </p>
-          </div>
-          {canApproveDocs && (
-            <Link
-              to="/approvals"
-              className="inline-flex items-center gap-1.5 shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
-            >
-              <ShieldCheck size={14} /> Xử lý phê duyệt
-            </Link>
-          )}
+      {canSeeArchived && (
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setTab("active")}
+            className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
+              tab === "active"
+                ? "bg-blue-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Đang dùng
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("archived")}
+            className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors inline-flex items-center gap-1.5 ${
+              tab === "archived"
+                ? "bg-amber-600 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Archive size={13} /> Đã lưu trữ
+          </button>
         </div>
-      </div> */}
+      )}
 
+      {tab === "archived" && canSeeArchived && (
+        <ArchivedVersionsPanel
+          items={archivedItems}
+          total={archivedTotal}
+          loading={archivedLoading}
+          page={archivedPage}
+          limit={LIMIT}
+          searchInput={archivedSearchInput}
+          onSearchChange={setArchivedSearchInput}
+          onPageChange={setArchivedPage}
+          canRestore={canRestoreDocs}
+          onRestore={(item) =>
+            setRestoreTarget({
+              digitalAssetId: item.digitalAssetId,
+              versionId: item.versionId,
+              versionNumber: item.versionNumber,
+              fileName: item.fileName,
+            })
+          }
+          fileUrlOf={(p) => fileUrl(p)}
+        />
+      )}
+
+      {tab === "active" && (
+        <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2 flex-1 min-w-[240px]">
           <div className="flex-1 min-w-[200px] max-w-md">
@@ -789,74 +996,27 @@ export function DocumentsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1.5 items-center">
-                        {canNewVersion && doc.status !== "PENDING" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditDoc({
-                                digitalAssetId: doc.digitalAssetId,
-                                description: doc.description ?? "",
-                                assetId: doc.assetId ?? "",
-                                documentCategoryId:
-                                  doc.documentCategoryId ?? "",
-                                tagIds: (doc.tags ?? []).map((t) => t.tagId),
-                              })
-                            }
-                            className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors"
-                            title="Sửa mô tả / tài sản / phân loại"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => openFeedback(doc)}
-                          className="p-1.5 rounded-lg hover:bg-violet-50 text-violet-600 transition-colors"
-                          title="Phản hồi / góp ý"
-                        >
-                          <MessageSquare size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openVersions(doc)}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                          title="Lịch sử phiên bản"
-                        >
-                          <History size={14} />
-                        </button>
-                        {canSubmitDoc && doc.status === "DRAFT" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleSubmitApproval(doc.digitalAssetId)
-                            }
-                            className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition-colors"
-                            title="Gửi phê duyệt"
-                          >
-                            <Send size={14} />
-                          </button>
-                        )}
-                        <a
-                          href={fileUrl(doc.filePath)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
-                          title="Mở file"
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                        {canForceDelete && (
-                          <button
-                            type="button"
-                            onClick={() => handleForceDelete(doc)}
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
-                            title="Xóa vĩnh viễn (Trưởng phòng)"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
+                      <DocRowActions
+                        doc={doc}
+                        user={user}
+                        canSubmitDoc={canSubmitDoc}
+                        fileUrl={fileUrl(doc.filePath)}
+                        onView={() => openViewDoc(doc)}
+                        onEdit={() =>
+                          setEditDoc({
+                            digitalAssetId: doc.digitalAssetId,
+                            description: doc.description ?? "",
+                            assetId: doc.assetId ?? "",
+                            documentCategoryId: doc.documentCategoryId ?? "",
+                            tagIds: (doc.tags ?? []).map((t) => t.tagId),
+                          })
+                        }
+                        onArchive={() => openArchiveDoc(doc)}
+                        onHardDelete={() => setDeleteDraftTarget(doc)}
+                        onFeedback={() => openFeedback(doc)}
+                        onVersions={() => openVersions(doc)}
+                        onSubmit={() => handleSubmitApproval(doc.digitalAssetId)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -871,6 +1031,8 @@ export function DocumentsPage() {
         totalPages={Math.ceil(total / LIMIT) || 1}
         onChange={setPage}
       />
+        </>
+      )}
 
       <Modal
         open={uploadOpen}
@@ -1535,6 +1697,458 @@ export function DocumentsPage() {
           )}
         </div>
       </Modal>
+
+      {/* Modal xem chi tiết (read-only) — đồng bộ pattern Asset/WO. */}
+      <DocumentDetailModal
+        open={!!viewDoc}
+        onClose={() => setViewDoc(null)}
+        doc={viewDoc && !viewLoading ? viewDoc : null}
+        loading={viewLoading}
+        fileUrl={viewDoc?.filePath ? fileUrl(viewDoc.filePath) : null}
+      />
+
+      {/* Confirm xác nhận lưu chỉnh sửa metadata. */}
+      <ConfirmDialog
+        open={editConfirmOpen}
+        title="Xác nhận chỉnh sửa"
+        message="Bạn có muốn lưu chi tiết chỉnh sửa không?"
+        confirmLabel="Có, lưu"
+        cancelLabel="Không"
+        loading={editSaving}
+        onConfirm={confirmSaveEditDoc}
+        onCancel={() => setEditConfirmOpen(false)}
+      />
+
+      {/* Modal Lưu trữ — chọn cả tài liệu hoặc 1 phiên bản (072). */}
+      <Modal
+        open={!!archiveTarget}
+        onClose={closeArchiveDoc}
+        title="Lưu trữ tài liệu"
+        size="md"
+      >
+        {archiveTarget && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+              <p className="text-xs font-semibold text-amber-800">
+                <Archive size={12} className="inline mr-1" />
+                Tài liệu sẽ được đem vào kho lưu trữ — không xoá cứng. Có thể
+                khôi phục bởi Quản trị viên hoặc Trưởng/Phó phòng KT-CN.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold text-gray-700">
+                {archiveTarget.fileName}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Phiên bản hiện tại:{" "}
+                <strong>v{archiveTarget.currentVersion}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="archive-scope"
+                  value="DOCUMENT"
+                  checked={archiveScope === "DOCUMENT"}
+                  onChange={() => setArchiveScope("DOCUMENT")}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    Lưu trữ cả tài liệu
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Toàn bộ phiên bản sẽ chuyển vào kho lưu trữ; tài liệu biến
+                    mất khỏi danh sách chính.
+                  </p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="archive-scope"
+                  value="VERSION"
+                  checked={archiveScope === "VERSION"}
+                  onChange={() => setArchiveScope("VERSION")}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Lưu trữ một phiên bản cụ thể
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Nếu là phiên bản hiện tại, hệ thống tự fallback về phiên
+                    bản còn active mới nhất. Hết phiên bản → tài liệu cũng vào
+                    kho lưu trữ.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {archiveScope === "VERSION" && (
+              <div className="rounded-lg border border-gray-200 max-h-56 overflow-y-auto">
+                {archiveVersionsLoading ? (
+                  <p className="text-xs text-gray-500 px-3 py-3">
+                    Đang tải phiên bản…
+                  </p>
+                ) : archiveVersions.length === 0 ? (
+                  <p className="text-xs text-gray-500 px-3 py-3">
+                    Không còn phiên bản active.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {archiveVersions.map((v) => {
+                      const isCurrent =
+                        Number(v.versionNumber) ===
+                        Number(archiveTarget.currentVersion);
+                      return (
+                        <li key={v.versionId}>
+                          <label className="flex items-start gap-2 cursor-pointer px-3 py-2 hover:bg-blue-50/40">
+                            <input
+                              type="radio"
+                              name="archive-version"
+                              value={v.versionId}
+                              checked={archiveSelectedId === v.versionId}
+                              onChange={() =>
+                                setArchiveSelectedId(v.versionId)
+                              }
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-gray-900 inline-flex items-center gap-2">
+                                v{v.versionNumber}
+                                {isCurrent && (
+                                  <Badge color="blue">Hiện tại</Badge>
+                                )}
+                              </p>
+                              <p className="text-[11px] text-gray-500">
+                                {fDateTime(v.changeDate)} • {v.changedByName}
+                                {v.changeNote ? ` — ${v.changeNote}` : ""}
+                              </p>
+                            </div>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={closeArchiveDoc}
+                disabled={archiving}
+              >
+                Huỷ
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                loading={archiving}
+                onClick={confirmArchive}
+                disabled={
+                  archiving ||
+                  (archiveScope === "VERSION" && !archiveSelectedId)
+                }
+              >
+                <Archive size={14} /> Lưu trữ
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Xoá vĩnh viễn — chỉ bản nháp (DRAFT). */}
+      <ConfirmDialog
+        open={!!deleteDraftTarget}
+        title="Xoá vĩnh viễn"
+        message={
+          deleteDraftTarget
+            ? `Xoá vĩnh viễn bản nháp "${deleteDraftTarget.fileName}" khỏi cơ sở dữ liệu? Thao tác này không thể hoàn tác.`
+            : ""
+        }
+        confirmLabel="Xoá vĩnh viễn"
+        cancelLabel="Huỷ"
+        variant="danger"
+        loading={deleteDraftLoading}
+        onConfirm={handleHardDeleteDraft}
+        onCancel={() => setDeleteDraftTarget(null)}
+      />
+
+      {/* Confirm Khôi phục phiên bản (Admin/PKT). */}
+      <ConfirmDialog
+        open={!!restoreTarget}
+        title="Khôi phục phiên bản"
+        message={
+          restoreTarget
+            ? `Khôi phục v${restoreTarget.versionNumber} của "${restoreTarget.fileName}"? ` +
+              "Phiên bản sẽ được đưa lại danh sách chính."
+            : ""
+        }
+        confirmLabel="Khôi phục"
+        cancelLabel="Huỷ"
+        loading={restoring}
+        onConfirm={confirmRestore}
+        onCancel={() => setRestoreTarget(null)}
+      />
+    </div>
+  );
+}
+
+/**
+ * DocRowActions — Menu "ba chấm" cho mỗi dòng tài liệu (gom Xem/Sửa/Lưu trữ +
+ * các thao tác phụ). Tách function ngoài để DocumentsPage gọn hơn.
+ */
+function DocRowActions({
+  doc,
+  user,
+  canSubmitDoc,
+  fileUrl,
+  onView,
+  onEdit,
+  onArchive,
+  onHardDelete,
+  onFeedback,
+  onVersions,
+  onSubmit,
+}) {
+  const isPending = doc.status === "PENDING";
+  const showEdit = canEditDigitalAssetRow(user, doc);
+  const showArchive = canArchiveDigitalAssetRow(user, doc);
+  const showHardDelete = canHardDeleteDraftDigitalAssetRow(user, doc);
+  const items = [
+    {
+      id: "view",
+      icon: Eye,
+      label: "Xem chi tiết",
+      onClick: onView,
+    },
+    showEdit && {
+      id: "edit",
+      icon: Pencil,
+      label: "Sửa thông tin",
+      onClick: onEdit,
+      hint: isPending
+        ? "Tài liệu đang chờ duyệt — không sửa được"
+        : undefined,
+      disabled: isPending,
+    },
+    showHardDelete && {
+      id: "hard-delete",
+      icon: Trash2,
+      label: "Xoá vĩnh viễn",
+      variant: "danger",
+      onClick: onHardDelete,
+      hint: "Chỉ áp dụng cho bản nháp — xoá khỏi cơ sở dữ liệu",
+      disabled: isPending,
+    },
+    showArchive && {
+      id: "archive",
+      icon: Archive,
+      label: "Lưu trữ",
+      variant: "danger",
+      onClick: onArchive,
+      hint: "Chỉ sau khi đã phê duyệt — đưa vào kho lưu trữ (không xoá cứng)",
+      disabled: isPending,
+    },
+    canSubmitDoc && doc.status === "DRAFT" && {
+      id: "submit",
+      icon: Send,
+      label: "Gửi phê duyệt",
+      onClick: onSubmit,
+      divider: true,
+    },
+    {
+      id: "feedback",
+      icon: MessageSquare,
+      label: "Phản hồi / góp ý",
+      onClick: onFeedback,
+    },
+    {
+      id: "versions",
+      icon: History,
+      label: "Lịch sử phiên bản",
+      onClick: onVersions,
+    },
+    fileUrl && {
+      id: "open",
+      icon: ExternalLink,
+      label: "Mở file gốc",
+      onClick: () => window.open(fileUrl, "_blank", "noopener,noreferrer"),
+    },
+  ].filter(Boolean);
+
+  return <RowActionMenu items={items} />;
+}
+
+/**
+ * ArchivedVersionsPanel — Tab "Đã lưu trữ" (Admin + Trưởng/Phó PKT).
+ * List từng phiên bản bị archive kèm thông tin tài liệu gốc + nút Khôi phục.
+ */
+function ArchivedVersionsPanel({
+  items,
+  total,
+  loading,
+  page,
+  limit,
+  searchInput,
+  onSearchChange,
+  onPageChange,
+  canRestore,
+  onRestore,
+  fileUrlOf,
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex-1 min-w-[260px] max-w-md">
+          <Input
+            label="Tìm trong kho lưu trữ"
+            value={searchInput}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Tên tài liệu, mô tả, tài sản, ghi chú phiên bản…"
+          />
+        </div>
+        {searchInput && (
+          <div className="pb-0.5">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => onSearchChange("")}
+            >
+              Xoá tìm kiếm
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {loading ? (
+          <PageLoader />
+        ) : items.length === 0 ? (
+          <EmptyState
+            icon={Archive}
+            title="Kho lưu trữ trống"
+            description="Chưa có phiên bản nào bị lưu trữ."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {[
+                    "Tài liệu",
+                    "Phiên bản",
+                    "Tài sản",
+                    "Người lưu trữ",
+                    "Thời điểm lưu trữ",
+                    "Trạng thái tài liệu",
+                    "",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left text-xs font-bold text-gray-700 uppercase tracking-wide px-4 py-3"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {items.map((it) => {
+                  const url = fileUrlOf(it.filePath);
+                  return (
+                    <tr key={it.versionId} className="hover:bg-amber-50/30">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <FileText
+                            size={16}
+                            className="text-amber-500 flex-shrink-0"
+                          />
+                          <div>
+                            <p className="font-semibold text-gray-900 truncate max-w-[240px]">
+                              {it.fileName}
+                            </p>
+                            {it.changeNote && (
+                              <p className="text-xs text-gray-500 truncate max-w-[240px]">
+                                {it.changeNote}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge color="yellow">v{it.versionNumber}</Badge>
+                        {Number(it.versionNumber) ===
+                          Number(it.docCurrentVersion) &&
+                          it.docStatus !== "ARCHIVED" && (
+                            <p className="text-[10px] text-amber-700 mt-1">
+                              Là current trước khi lưu trữ
+                            </p>
+                          )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-800">
+                        {it.assetName ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-800">
+                        {it.archivedByName ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {fDateTime(it.archivedAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {it.docStatus === "ARCHIVED" ? (
+                          <Badge color="gray">Tài liệu đã lưu trữ</Badge>
+                        ) : (
+                          <Badge color="green">Tài liệu còn dùng</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {url && (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"
+                            >
+                              <ExternalLink size={12} /> Xem file
+                            </a>
+                          )}
+                          {canRestore && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => onRestore(it)}
+                            >
+                              <ArchiveRestore size={13} /> Khôi phục
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <Pagination
+        page={page}
+        totalPages={Math.ceil(total / limit) || 1}
+        onChange={onPageChange}
+      />
     </div>
   );
 }
