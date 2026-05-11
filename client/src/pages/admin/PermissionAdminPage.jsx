@@ -13,6 +13,22 @@ import { Button } from "../../components/ui/Button.jsx";
 import { Select } from "../../components/ui/Input.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 
+const RESOURCE_LABEL_VI = {
+  ASSET: "Tài sản thiết bị",
+  WORK_ORDER: "Phiếu việc",
+  DIGITAL_ASSET: "Tài liệu số",
+  MAINTENANCE_PLAN: "Kế hoạch bảo trì",
+  CHECKLIST_TEMPLATE: "Mẫu checklist",
+  CHECKLIST_RESULT: "Kết quả checklist",
+  RUNTIME_LOG: "Nhật ký vận hành",
+  EMPLOYEE: "Nhân sự",
+  TAG: "Thẻ (Tag)",
+  WORKFLOW: "Mẫu luồng phê duyệt",
+  REPORT: "Báo cáo",
+  DOCUMENT_CATEGORY: "Danh mục tài liệu",
+  DOCUMENT_FEEDBACK: "Phản hồi tài liệu",
+};
+
 const DEFAULT_PERMISSION_MATRIX = [
   ["ASSET", ["CREATE", "READ", "UPDATE", "DELETE"]],
   ["WORK_ORDER", ["CREATE", "READ", "UPDATE", "APPROVE", "DELETE"]],
@@ -203,7 +219,7 @@ export function PermissionAdminPage() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">
-                    Resource
+                    Tài nguyên
                   </th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-700">
                     Quyền
@@ -213,8 +229,13 @@ export function PermissionAdminPage() {
               <tbody className="divide-y divide-gray-100">
                 {matrixRows.map((row) => (
                   <tr key={row.resourceType}>
-                    <td className="px-4 py-3 font-semibold text-gray-800 whitespace-nowrap">
-                      {row.resourceType}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <p className="font-semibold text-gray-800">
+                        {RESOURCE_LABEL_VI[row.resourceType] ?? row.resourceType}
+                      </p>
+                      <p className="text-xs text-gray-400 font-mono mt-0.5">
+                        {row.resourceType}
+                      </p>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">

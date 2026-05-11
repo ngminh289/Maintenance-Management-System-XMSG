@@ -12,5 +12,5 @@ export const create   = asyncHandler(async (req, res) => ok(res, await service.c
 export const update   = asyncHandler(async (req, res) => ok(res, await service.update(req.params.id, req.body)));
 export const remove   = asyncHandler(async (req, res) => { await service.remove(req.params.id); return ok(res, { message: 'Đã xóa workflow.' }); });
 export const addStep  = asyncHandler(async (req, res) => ok(res, await service.addStep(req.params.id, req.body)));
-export const updateStep = asyncHandler(async (req, res) => { await service.updateStep(req.params.stepId, req.body); return ok(res, { message: 'Đã cập nhật bước.' }); });
-export const removeStep = asyncHandler(async (req, res) => { await service.removeStep(req.params.stepId); return ok(res, { message: 'Đã xóa bước.' }); });
+export const updateStep = asyncHandler(async (req, res) => ok(res, await service.updateStep(req.params.stepId, req.body)));
+export const removeStep = asyncHandler(async (req, res) => ok(res, await service.removeStep(req.params.stepId)));

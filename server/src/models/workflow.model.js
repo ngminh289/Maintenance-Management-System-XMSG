@@ -1,5 +1,7 @@
 /**
  * workflow.model.js — SQL thuần cho WorkflowTemplates + WorkflowSteps.
+ * `countUsage` đếm ApprovalLogs đang tham chiếu workflow → service dùng để
+ * khoá sửa bước / loại tài liệu khi mẫu đã được dùng (an toàn dữ liệu).
  * Dùng trong: services/workflow.service.js.
  */
 import { getPool } from '../config/database.js';
@@ -44,12 +46,63 @@ export async function create({ workflowName, documentType, totalLevels, descript
   return result.insertId;
 }
 
-export async function update(id, { workflowName, description }) {
+export async function update(id, { workflowName, description, documentType, totalLevels }) {
+  const sets = [];
+  const params = [];
+  if (workflowName !== undefined) {
+    sets.push('WorkflowName = ?');
+    params.push(workflowName);
+  }
+  if (description !== undefined) {
+    sets.push('Description = ?');
+    params.push(description || null);
+  }
+  if (documentType !== undefined) {
+    sets.push('DocumentType = ?');
+    params.push(documentType);
+  }
+  if (totalLevels !== undefined) {
+    sets.push('TotalLevels = ?');
+    params.push(Number(totalLevels));
+  }
+  if (!sets.length) return 0;
+  params.push(id);
   const [result] = await getPool().query(
-    'UPDATE WorkflowTemplates SET WorkflowName = ?, Description = ? WHERE WorkflowID = ?',
-    [workflowName, description || null, id],
+    `UPDATE WorkflowTemplates SET ${sets.join(', ')} WHERE WorkflowID = ?`,
+    params,
   );
   return result.affectedRows;
+}
+
+/**
+ * Đếm số ApprovalLogs đang dùng workflow này.
+ * Dùng để khoá sửa bước / loại tài liệu nếu đã có đơn duyệt áp dụng (an toàn lịch sử).
+ */
+export async function countUsage(workflowId) {
+  const [[{ cnt }]] = await getPool().query(
+    'SELECT COUNT(*) AS cnt FROM ApprovalLogs WHERE WorkflowID = ?',
+    [workflowId],
+  );
+  return Number(cnt);
+}
+
+/** Lấy step theo StepID — để service xác thực step thuộc đúng workflow. */
+export async function findStepById(stepId) {
+  const [rows] = await getPool().query(
+    'SELECT StepID AS stepId, WorkflowID AS workflowId, StepLevel AS stepLevel, PositionID AS positionId FROM WorkflowSteps WHERE StepID = ?',
+    [stepId],
+  );
+  return rows[0] || null;
+}
+
+/** Đồng bộ TotalLevels = max(StepLevel) sau khi xoá / sửa bước. */
+export async function syncTotalLevels(workflowId) {
+  await getPool().query(
+    `UPDATE WorkflowTemplates wt
+       SET TotalLevels = COALESCE((SELECT MAX(StepLevel) FROM WorkflowSteps WHERE WorkflowID = wt.WorkflowID), 0)
+     WHERE wt.WorkflowID = ?`,
+    [workflowId],
+  );
 }
 
 export async function remove(id) {
@@ -70,10 +123,22 @@ export async function addStep({ workflowId, stepLevel, positionId }) {
   return result.insertId;
 }
 
-export async function updateStep(stepId, { positionId }) {
+export async function updateStep(stepId, { positionId, stepLevel }) {
+  const sets = [];
+  const params = [];
+  if (positionId !== undefined) {
+    sets.push('PositionID = ?');
+    params.push(positionId);
+  }
+  if (stepLevel !== undefined) {
+    sets.push('StepLevel = ?');
+    params.push(stepLevel);
+  }
+  if (!sets.length) return 0;
+  params.push(stepId);
   const [result] = await getPool().query(
-    'UPDATE WorkflowSteps SET PositionID = ? WHERE StepID = ?',
-    [positionId, stepId],
+    `UPDATE WorkflowSteps SET ${sets.join(', ')} WHERE StepID = ?`,
+    params,
   );
   return result.affectedRows;
 }

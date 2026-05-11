@@ -1,6 +1,7 @@
 /**
  * DocumentFeedbackInboxPage.jsx — Chuyên viên KTS: hàng đợi phản hồi / góp ý tài liệu, cập nhật trạng thái.
  * API: GET/PATCH /api/document-feedback. Liên quan: rbac DOCUMENT_FEEDBACK:REVIEW, migration 038.
+ * Điều hướng về kho tài liệu: link "← Về kho tài liệu" ở đầu trang (không lặp link "Mở kho" trên từng dòng).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -216,17 +217,9 @@ export function DocumentFeedbackInboxPage() {
                     <td className="px-4 py-3 align-top text-gray-600 text-xs">{row.documentStatus}</td>
                     <td className="px-4 py-3 align-top text-gray-700 whitespace-nowrap">{fDateTime(row.createdAt)}</td>
                     <td className="px-4 py-3 align-top">
-                      <div className="flex flex-col gap-1.5">
-                        <Button type="button" size="sm" onClick={() => openEdit(row)}>
-                          Cập nhật
-                        </Button>
-                        <Link
-                          to="/documents"
-                          className="text-xs text-blue-600 hover:underline font-medium"
-                        >
-                          Mở kho
-                        </Link>
-                      </div>
+                      <Button type="button" size="sm" onClick={() => openEdit(row)}>
+                        Cập nhật
+                      </Button>
                     </td>
                   </tr>
                 ))}
