@@ -41,3 +41,17 @@ export async function hasPermission(positionId, permissionName, resourceType) {
   );
   return rows.length > 0;
 }
+
+/** Nhân viên đang hoạt động có quyền cụ thể (dùng gửi thông báo tiếp nhận checklist, v.v.). */
+export async function findActiveEmployeeIdsByPermission(permissionName, resourceType) {
+  const [rows] = await getPool().query(
+    `SELECT DISTINCT e.EmployeeID AS employeeId
+     FROM Employees e
+     INNER JOIN Roles_Permissions rp ON rp.PositionID = e.PositionID
+     WHERE e.IsActive = 1
+       AND rp.PermissionName = ?
+       AND rp.ResourceType = ?`,
+    [permissionName, resourceType],
+  );
+  return rows.map((r) => Number(r.employeeId)).filter((id) => id > 0);
+}

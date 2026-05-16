@@ -158,6 +158,74 @@ export async function findPendingForPosition(positionId) {
   return rows;
 }
 
+/** Tất cả đơn PENDING — Admin (L4+) xem toàn bộ hàng đợi phê duyệt. */
+export async function findAllPending() {
+  const [rows] = await getPool().query(
+    `SELECT ${COLS_BASE},
+            ws.PositionID  AS requiredPositionId,
+            pos_ws.PositionName AS stepPositionName,
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN wo.Description
+              WHEN 'DIGITAL_ASSET'    THEN da.FileName
+              WHEN 'MAINTENANCE_PLAN' THEN ms.ScheduleName
+            END AS resourceDescription,
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN wa.AssetName
+              WHEN 'DIGITAL_ASSET'    THEN daa.AssetName
+              WHEN 'MAINTENANCE_PLAN' THEN msa.AssetName
+            END AS resourceAssetName,
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN lwo.LocationName
+              WHEN 'DIGITAL_ASSET'    THEN lda.LocationName
+              WHEN 'MAINTENANCE_PLAN' THEN lms.LocationName
+            END AS resourceAssetLocation,
+            CASE al.ResourceType
+              WHEN 'WORK_ORDER'       THEN wo.Status
+              WHEN 'DIGITAL_ASSET'    THEN da.Status
+              WHEN 'MAINTENANCE_PLAN' THEN ms.Status
+            END AS resourceStatus,
+            sub.FullName AS submitterName,
+            wo.PlannedDate    AS woPlannedDate,
+            wo.Priority       AS woPriority,
+            wo.WO_Source      AS woSource,
+            wo.EstimatedHours AS woEstimatedHours,
+            wo.Description    AS woFullDescription,
+            wo.ScheduleID     AS woScheduleId,
+            ms.Description       AS scheduleDescription,
+            ms.MaintenanceType   AS scheduleMaintenanceType,
+            ms.FrequencyValue    AS scheduleFrequencyValue,
+            ms.FrequencyUnit     AS scheduleFrequencyUnit,
+            ms.StartDate         AS scheduleStartDate,
+            ms.NextDueDate       AS scheduleNextDueDate,
+            ms.Priority          AS schedulePriority,
+            ms.EstimatedTime     AS scheduleEstimatedTime,
+            da.FileType       AS digitalFileType,
+            da.Description    AS digitalDescription,
+            da.CurrentVersion AS digitalCurrentVersion,
+            da.UploadDate     AS digitalUploadDate,
+            da.FileSizeKB     AS digitalFileSizeKb
+     FROM ApprovalLogs al
+     JOIN WorkflowTemplates wt  ON wt.WorkflowID  = al.WorkflowID
+     JOIN WorkflowSteps     ws  ON ws.WorkflowID  = al.WorkflowID AND ws.StepLevel = al.CurrentLevel
+     LEFT JOIN Positions    pos_ws ON pos_ws.PositionID = ws.PositionID
+     LEFT JOIN Employees    e   ON e.EmployeeID   = al.ApproverID
+     LEFT JOIN Employees    sub ON sub.EmployeeID = al.SubmittedBy
+     LEFT JOIN WorkOrders   wo  ON wo.WO_ID        = al.ResourceID AND al.ResourceType = 'WORK_ORDER'
+     LEFT JOIN Assets       wa  ON wa.AssetID       = wo.AssetID
+     LEFT JOIN Locations    lwo ON lwo.LocationID   = wa.LocationID
+     LEFT JOIN DigitalAssets da  ON da.DigitalAssetID = al.ResourceID AND al.ResourceType = 'DIGITAL_ASSET'
+     LEFT JOIN Assets        daa ON daa.AssetID        = da.AssetID
+     LEFT JOIN Locations    lda ON lda.LocationID   = daa.LocationID
+     LEFT JOIN MaintenanceSchedules ms  ON ms.ScheduleID = al.ResourceID AND al.ResourceType = 'MAINTENANCE_PLAN'
+     LEFT JOIN Assets               msa ON msa.AssetID    = ms.AssetID
+     LEFT JOIN Locations    lms ON lms.LocationID   = msa.LocationID
+     WHERE al.Status = 'PENDING'
+       AND (al.ResourceType <> 'WORK_ORDER' OR wo.IsDeleted = 0)
+     ORDER BY al.ActionDate`,
+  );
+  return rows;
+}
+
 /** Cùng logic findPendingForPosition, nhưng bước yêu cầu nằm trong danh sách (phó = trưởng tương ứng). */
 export async function findPendingForAnyPosition(positionIds) {
   const pids = (positionIds || []).map(Number).filter((n) => n > 0);

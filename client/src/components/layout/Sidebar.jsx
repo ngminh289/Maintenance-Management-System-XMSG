@@ -14,7 +14,7 @@ import {
   ScrollText, ChevronsUpDown, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { canAccess, canDo, getRoleKey } from '../../utils/rbac.js';
+import { canAccess, canDo, getRoleKey, isAdminUser } from '../../utils/rbac.js';
 
 // roleKey → badge label hiển thị cạnh tên (TC / Trưởng phòng tách PositionID — rbac.js)
 const ROLE_BADGE = {
@@ -221,7 +221,7 @@ export function Sidebar({ open, onClose }) {
         if (item.children) {
           const children = item.children.filter((ch) => {
             if (ch.routeKey !== null && !canAccess(user, ch.routeKey)) return false;
-            if (ch.action && !canDo(user, ch.action)) return false;
+            if (ch.action && !canDo(user, ch.action) && !isAdminUser(user)) return false;
             return true;
           });
           return { ...item, children };
@@ -231,7 +231,7 @@ export function Sidebar({ open, onClose }) {
       .filter((item) => {
         if (item.children) return item.children.length > 0;
         if (item.routeKey !== null && !canAccess(user, item.routeKey)) return false;
-        if (item.action && !canDo(user, item.action)) return false;
+        if (item.action && !canDo(user, item.action) && !isAdminUser(user)) return false;
         return true;
       });
     return { ...group, items };

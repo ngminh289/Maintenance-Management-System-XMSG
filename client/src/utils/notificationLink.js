@@ -9,7 +9,12 @@ export function buildNotificationResourceUrl(noti) {
 
   if (!resourceType || resourceId == null) return null;
 
-  // Thông báo thuộc luồng phê duyệt luôn mở đúng tab Phê duyệt.
+  // Checklist chờ tiếp nhận — không dùng tab Phê duyệt WO/tài liệu.
+  if (type === "APPROVAL_REQUEST" && resourceType === "CHECKLIST") {
+    return `/checklists/review?checklistId=${encodeURIComponent(resourceId)}`;
+  }
+
+  // WO / tài liệu / lịch bảo trì — tab Phê duyệt chung.
   if (type === "APPROVAL_REQUEST") {
     return `/approvals?resourceType=${encodeURIComponent(resourceType)}&resourceId=${encodeURIComponent(resourceId)}`;
   }
@@ -22,9 +27,7 @@ export function buildNotificationResourceUrl(noti) {
     case "MAINTENANCE_PLAN":
       return `/schedules?scheduleId=${resourceId}`;
     case "CHECKLIST":
-      return type === "APPROVAL_REQUEST"
-        ? `/checklists/review?checklistId=${resourceId}`
-        : `/checklists/history?focus=${resourceId}`;
+      return `/checklists/history?checklistId=${resourceId}`;
     case "MAINTENANCE_GROUP":
       return `/employees?groupId=${resourceId}`;
     case "ASSET":

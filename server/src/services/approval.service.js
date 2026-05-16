@@ -196,6 +196,8 @@ async function verifyApprover(log, approverId) {
 
   const emp = await employeeModel.findById(approverId);
   if (!emp) throw createError("Không tìm thấy nhân viên", 404);
+  // Quản trị (L4+): được duyệt mọi bước (giám sát / xử lý thay khi cần).
+  if (Number(emp.positionLevel) >= 4) return { emp, step };
   const allowed = new Set(approverPidsForStep(step.positionId));
   if (!allowed.has(emp.positionId)) {
     throw createError("Bạn không có quyền phê duyệt bước này", 403);
@@ -454,7 +456,10 @@ function workflowStepPidsForViewer(positionId) {
   return [p];
 }
 
-export async function getPendingForMe(positionId) {
+export async function getPendingForMe(positionId, positionLevel) {
+  if (Number(positionLevel) >= 4) {
+    return model.findAllPending();
+  }
   return model.findPendingForAnyPosition(workflowStepPidsForViewer(positionId));
 }
 

@@ -36,6 +36,7 @@ import * as notifService from "./notification.service.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 import * as assetQrAccessLogModel from "../models/assetQrAccessLog.model.js";
 import * as maintenanceScheduleModel from "../models/maintenanceSchedule.model.js";
+import * as permissionModel from "../models/permission.model.js";
 
 /** Level ≤ 1: công nhân — giới hạn xem checklist như mô tả file header. */
 const CHECKLIST_VIEW_WORKER_MAX_LEVEL = 1;
@@ -589,11 +590,13 @@ export async function submitResult({
     await resultModel.createDetails(checklistId, enriched);
   }
 
-  await notifService.notifyManagers(
-    `Checklist #${checklistId} chờ TC/TP: ${asset.assetName} — ${overallStatus}. Người nộp ID ${checkerId}.`,
+  await notifService.notifyByPermission(
+    "CHECKLIST_RESULT",
+    "APPROVE",
+    `Checklist #${checklistId} chờ tiếp nhận: ${asset.assetName} — ${overallStatus}.`,
     "APPROVAL_REQUEST",
-    3,
     { resourceType: "CHECKLIST", resourceId: checklistId },
+    ["UPDATE"],
   );
 
   return {
@@ -612,17 +615,20 @@ export async function getPendingReviewResults(limit = 50) {
   return resultModel.findPendingReview(limit);
 }
 
-/** Chỉ Trưởng ca (PositionID = 3) xử lý tiếp nhận checklist. */
-const PID_CHECKLIST_REVIEW = new Set([3]);
+async function assertCanReviewChecklist(positionId) {
+  const pid = Number(positionId);
+  const canApprove = await permissionModel.hasPermission(pid, "APPROVE", "CHECKLIST_RESULT");
+  if (canApprove) return;
+  const canUpdate = await permissionModel.hasPermission(pid, "UPDATE", "CHECKLIST_RESULT");
+  if (canUpdate) return;
+  throw createError("Bạn không có quyền tiếp nhận checklist (CHECKLIST_RESULT:APPROVE)", 403);
+}
 
 export async function reviewChecklistResult(
   checklistId,
   { supervisorId, supervisorPositionId, decision, supervisorNotes },
 ) {
-  const pid = Number(supervisorPositionId);
-  if (!PID_CHECKLIST_REVIEW.has(pid)) {
-    throw createError("Chỉ Trưởng ca được xác nhận checklist tại trường này", 403);
-  }
+  await assertCanReviewChecklist(supervisorPositionId);
   const row = await resultModel.findById(checklistId);
   if (!row) throw createError("Không tìm thấy kết quả checklist", 404);
   if (row.reviewStatus !== "PENDING") {

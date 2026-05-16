@@ -13,13 +13,24 @@ import { Button } from "../../components/ui/Button.jsx";
 import { Select } from "../../components/ui/Input.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 
+/** Gợi ý hiển thị cạnh tên quyền (ô checkbox vẫn giữ mã EN). */
+function permissionDisplayLabel(permissionName, resourceType) {
+  if (resourceType === "CHECKLIST_RESULT" && permissionName === "APPROVE") {
+    return "APPROVE · Tiếp nhận checklist";
+  }
+  if (resourceType === "CHECKLIST_RESULT" && permissionName === "UPDATE") {
+    return "UPDATE · Sửa/xác nhận kết quả";
+  }
+  return permissionName;
+}
+
 const RESOURCE_LABEL_VI = {
   ASSET: "Tài sản thiết bị",
   WORK_ORDER: "Phiếu việc",
   DIGITAL_ASSET: "Tài liệu số",
   MAINTENANCE_PLAN: "Kế hoạch bảo trì",
   CHECKLIST_TEMPLATE: "Mẫu checklist",
-  CHECKLIST_RESULT: "Kết quả checklist",
+  CHECKLIST_RESULT: "Kết quả checklist (tiếp nhận = APPROVE)",
   RUNTIME_LOG: "Nhật ký vận hành",
   EMPLOYEE: "Nhân sự",
   TAG: "Thẻ (Tag)",
@@ -261,7 +272,9 @@ export function PermissionAdminPage() {
                                   handleTogglePermission(row.resourceType, permissionName)
                                 }
                               />
-                              <span className="font-medium tracking-wide">{permissionName}</span>
+                              <span className="font-medium tracking-wide">
+                                {permissionDisplayLabel(permissionName, row.resourceType)}
+                              </span>
                             </label>
                           );
                         })}

@@ -8,7 +8,7 @@ import * as service from '../services/approval.service.js';
 
 /** Danh sách pending approval của user hiện tại */
 export const getPending = asyncHandler(async (req, res) =>
-  ok(res, await service.getPendingForMe(req.user.positionId)));
+  ok(res, await service.getPendingForMe(req.user.positionId, req.user.positionLevel)));
 
 /** Lịch sử phê duyệt của một tài nguyên */
 export const getHistory = asyncHandler(async (req, res) => {

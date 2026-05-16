@@ -3,11 +3,11 @@
  * Phân quyền nghiêm ngặt theo RBAC.
  * Templates: CV KTS + Trưởng/Phó PKT (2,7,9) CRUD; các vị trí còn lại chỉ READ.
  * Nghiệp vụ hiện tại: mỗi loại tài sản có thể có N template checklist.
- * Results: CN + Trưởng phòng nộp (CREATE); TC/TP UPDATE = tiếp nhận checklist; NV KT/TC không nộp (chỉ xem QR).
+ * Results: CN + Trưởng phòng nộp (CREATE); tiếp nhận = CHECKLIST_RESULT:APPROVE (UPDATE giữ tương thích DB cũ).
  */
 import { Router } from 'express';
 import { requireAuth }       from '../middleware/auth.middleware.js';
-import { requirePermission } from '../middleware/requirePermission.js';
+import { requirePermission, requirePermissionAny } from '../middleware/requirePermission.js';
 import { validate }          from '../middleware/validate.js';
 import { uploadChecklistSubmit } from '../config/upload.js';
 import { cloudinaryAfterAny } from '../middleware/cloudinaryUpload.middleware.js';
@@ -19,16 +19,6 @@ import * as ctrl from '../controllers/checklist.controller.js';
 export const checklistRouter = Router();
 
 checklistRouter.use(requireAuth);
-
-function requireTruongCaReview(req, res, next) {
-  if (Number(req.user?.positionId ?? 0) !== 3) {
-    return res.status(403).json({
-      success: false,
-      message: 'Chỉ Trưởng ca mới được tiếp nhận checklist.',
-    });
-  }
-  return next();
-}
 
 // ── Templates ──────────────────────────────────────────────────────────────
 checklistRouter.get('/templates',
@@ -75,8 +65,7 @@ checklistRouter.get('/qr/:assetId', ctrl.getQRInfo);
 
 // Hàng chờ Trưởng ca (BFD mục 3) — trước /results/:id để không nhầm id
 checklistRouter.get('/results/pending-review',
-  requireTruongCaReview,
-  requirePermission('CHECKLIST_RESULT', 'UPDATE'),
+  requirePermissionAny('CHECKLIST_RESULT', ['APPROVE', 'UPDATE']),
   ctrl.getPendingReviewResults,
 );
 
@@ -87,8 +76,7 @@ checklistRouter.get('/results', ctrl.getResults);
 checklistRouter.get('/results/asset/:assetId', ctrl.getResultsByAsset);
 
 checklistRouter.post('/results/:id/review',
-  requireTruongCaReview,
-  requirePermission('CHECKLIST_RESULT', 'UPDATE'),
+  requirePermissionAny('CHECKLIST_RESULT', ['APPROVE', 'UPDATE']),
   validate(reviewChecklistSchema),
   ctrl.reviewChecklistResult,
 );

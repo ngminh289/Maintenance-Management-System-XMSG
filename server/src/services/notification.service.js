@@ -7,6 +7,7 @@
  */
 import * as model from "../models/notification.model.js";
 import * as employeeModel from "../models/employee.model.js";
+import * as permissionModel from "../models/permission.model.js";
 import { getPagination } from "../utils/paginate.js";
 
 /**
@@ -36,6 +37,31 @@ export async function sendBulk(recipientIds, message, type = "SYSTEM_ALERT", ctx
 export async function notifyManagers(message, type = "SYSTEM_ALERT", minLevel = 2, ctx = {}) {
   const managers = await employeeModel.findAllByLevel(minLevel);
   await Promise.all(managers.map((m) => send(m.employeeId, message, type, ctx)));
+}
+
+/**
+ * Gửi cho mọi nhân viên có quyền RBAC (vd. CHECKLIST_RESULT + APPROVE = tiếp nhận checklist).
+ * @param {string[]} [fallbackPermissionNames] — thử thêm nếu danh sách chính rỗng (tương thích DB cũ dùng UPDATE).
+ */
+export async function notifyByPermission(
+  resourceType,
+  permissionName,
+  message,
+  type = "SYSTEM_ALERT",
+  ctx = {},
+  fallbackPermissionNames = [],
+) {
+  let ids = await permissionModel.findActiveEmployeeIdsByPermission(permissionName, resourceType);
+  if (ids.length === 0 && fallbackPermissionNames.length > 0) {
+    const sets = await Promise.all(
+      fallbackPermissionNames.map((name) =>
+        permissionModel.findActiveEmployeeIdsByPermission(name, resourceType),
+      ),
+    );
+    ids = [...new Set(sets.flat())];
+  }
+  if (ids.length === 0) return;
+  await sendBulk(ids, message, type, ctx);
 }
 
 export async function getMyNotifications(recipientId, query) {

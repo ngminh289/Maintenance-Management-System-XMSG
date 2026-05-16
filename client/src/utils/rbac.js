@@ -88,10 +88,10 @@ const ROUTE_ACCESS = {
   "checklist-manage":     [true,  true,  true,  true,  true,  true],
   documents:              [true,  true,  true,  true, true,  true],
   /** KTS + T/P PKT: menu dùng ma trận; nếu API trả permissions thì READ hoặc REVIEW đều mở (xử lý canAccess). */
-  'document-feedback-inbox': [false, true, false, false, false, true],
+  'document-feedback-inbox': [false, true, false, true,  false, true],
   workflows:              [false, false, false, true,  false, false],
   'admin-settings':       [false, false, false, true,  false, false],
-  approvals:              [false, false, true,  false, false, true],
+  approvals:              [false, false, true,  true,  false, true],
   employees:              [false, true,  true,  true,  false, false],
 };
 
@@ -207,7 +207,16 @@ export function getFirstAllowedReportPath(user) {
   return null;
 }
 
+/** Quản trị (L4+): xem toàn bộ mục sidebar — không phụ thuộc ma trận từng route. */
+export function isAdminUser(user) {
+  if (!user) return false;
+  return getRoleKey(user) === 'admin' || Number(user.positionLevel ?? 0) >= 4;
+}
+
 export function canAccess(user, routeKey) {
+  if (!user) return false;
+  if (isAdminUser(user) && routeKey) return true;
+
   const permissionSet = getPermissionSet(user);
   /** Hàng đợi phản hồi: DB có thể chỉ gán READ cho KTS; REVIEW vẫn dùng khi xử lý API. */
   if (routeKey === 'document-feedback-inbox' && permissionSet) {
@@ -216,9 +225,14 @@ export function canAccess(user, routeKey) {
     if (rev === true || read === true) return true;
   }
   if (routeKey === "checklist-review") {
-    const byPosition = Number(user?.positionId ?? 0) === 3;
-    const byDb = hasPermissionBySet(permissionSet, "CHECKLIST_RESULT", "UPDATE");
-    return byDb === null ? byPosition : byPosition && byDb;
+    if (!permissionSet) {
+      return Number(user?.positionId ?? 0) === 3;
+    }
+    const canApprove = hasPermissionBySet(permissionSet, "CHECKLIST_RESULT", "APPROVE");
+    const canUpdate = hasPermissionBySet(permissionSet, "CHECKLIST_RESULT", "UPDATE");
+    if (canApprove === true || canUpdate === true) return true;
+    if (canApprove === false && canUpdate === false) return false;
+    return Number(user?.positionId ?? 0) === 3;
   }
   if (routeKey === 'report-performance') return canAccessPerformanceReport(user);
   if (routeKey === 'report-resource-usage') return canAccessResourceUsageReport(user);
@@ -356,7 +370,12 @@ export function canDo(user, action) {
     return k === "congNhan" || k === "truongCa" || k === "truongPhong";
   }
   if (action === "CHECKLIST_RESULT:APPROVE" || action === "CHECKLIST_REVIEW:WRITE") {
-    return pid === 3; // Chỉ Trưởng ca
+    const byDb = canDoByDbPermission(user, "CHECKLIST_RESULT:APPROVE");
+    if (byDb === true) return true;
+    const byUpdate = canDoByDbPermission(user, "CHECKLIST_RESULT:UPDATE");
+    if (byUpdate === true) return true;
+    if (byDb === false && byUpdate === false) return false;
+    return pid === 3;
   }
   if (action === "SCHEDULE:APPROVE" || action === "WORK_ORDER:APPROVE") {
     return canApproveByPid(pid, PIDS_TUYEN_BAO_TRI);

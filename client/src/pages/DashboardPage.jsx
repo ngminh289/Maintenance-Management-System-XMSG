@@ -388,7 +388,7 @@ function AdminDashboard() {
           <h3 className="font-bold text-gray-900 text-sm mb-4">Hành động quản trị nhanh</h3>
           {[
             { to: '/employees', icon: Users, label: 'Quản lý nhân sự & phân quyền' },
-            { to: '/workflows', icon: GitBranch, label: 'Mẫu luồng phê duyệt (BFD 4.1)' },
+            { to: '/workflows', icon: GitBranch, label: 'Mẫu luồng phê duyệt' },
             { to: '/assets', icon: Cpu, label: 'Xem danh sách tài sản (chỉ đọc)' },
             { to: '/work-orders', icon: Wrench, label: 'Phiếu việc — tạo phiếu chờ duyệt' },
             { to: '/documents', icon: FileText, label: 'Kho tài liệu — gửi duyệt bản nháp' },
@@ -404,12 +404,6 @@ function AdminDashboard() {
               <ArrowRight size={14} className="text-gray-500 ml-auto" />
             </Link>
           ))}
-          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-            <p className="font-semibold">BFD 4.1 — Khởi tạo luồng phê duyệt:</p>
-            <p className="mt-1">
-              Admin có thể cấu hình mẫu luồng, tạo phiếu chờ duyệt, gửi lịch/tài liệu vào duyệt; không thay Trưởng ca thực hiện bước duyệt trên hàng chờ.
-            </p>
-          </div>
         </div>
       </div>
     </div>
