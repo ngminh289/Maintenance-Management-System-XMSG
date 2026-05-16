@@ -190,14 +190,25 @@ export async function submit({
   return logId;
 }
 
+/** Quản trị (L4+): chỉ xem hàng chờ — không duyệt theo workflow (không có bước Admin trong mẫu luồng). */
+async function assertNotApprovalViewOnly(approverId) {
+  const emp = await employeeModel.findById(approverId);
+  if (!emp) throw createError("Không tìm thấy nhân viên", 404);
+  if (Number(emp.positionLevel) >= 4) {
+    throw createError(
+      "Tài khoản quản trị chỉ được xem hàng chờ phê duyệt, không thực hiện duyệt/từ chối.",
+      403,
+    );
+  }
+}
+
 async function verifyApprover(log, approverId) {
+  await assertNotApprovalViewOnly(approverId);
   const step = await model.getWorkflowStep(log.workflowId, log.currentLevel);
   if (!step) throw createError("Không tìm thấy bước phê duyệt", 404);
 
   const emp = await employeeModel.findById(approverId);
   if (!emp) throw createError("Không tìm thấy nhân viên", 404);
-  // Quản trị (L4+): được duyệt mọi bước (giám sát / xử lý thay khi cần).
-  if (Number(emp.positionLevel) >= 4) return { emp, step };
   const allowed = new Set(approverPidsForStep(step.positionId));
   if (!allowed.has(emp.positionId)) {
     throw createError("Bạn không có quyền phê duyệt bước này", 403);

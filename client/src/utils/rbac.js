@@ -213,6 +213,11 @@ export function isAdminUser(user) {
   return getRoleKey(user) === 'admin' || Number(user.positionLevel ?? 0) >= 4;
 }
 
+/** Tab Phê duyệt: Admin xem hàng chờ toàn hệ thống, không duyệt/từ chối (không có trong WorkflowSteps). */
+export function isApprovalViewOnly(user) {
+  return isAdminUser(user);
+}
+
 export function canAccess(user, routeKey) {
   if (!user) return false;
   if (isAdminUser(user) && routeKey) return true;

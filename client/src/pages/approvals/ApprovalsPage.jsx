@@ -4,6 +4,7 @@
  * Hiển thị đủ ngữ cảnh: loại tài nguyên, mẫu luồng, tài sản, vị trí, mô tả chi tiết theo từng loại.
  * Dữ liệu mở rộng: approvalLog.model.js findPendingForPosition.
  * Duyệt WO: có thể nhập Giờ ước tính (gửi kèm POST approve → WorkOrders.EstimatedHours).
+ * Quản trị (L4+): chỉ xem hàng chờ — isApprovalViewOnly (rbac.js); BE chặn approve/reject.
  */
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
@@ -37,6 +38,8 @@ import {
   WO_PRIORITY_LABEL,
 } from "../../utils/format.js";
 import toast from "react-hot-toast";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import { isApprovalViewOnly } from "../../utils/rbac.js";
 
 const RESOURCE_CONFIG = {
   WORK_ORDER: { label: "Phiếu việc", icon: Wrench, color: "blue" },
@@ -312,6 +315,9 @@ function ApprovalDetailPanel({ item }) {
 }
 
 export function ApprovalsPage() {
+  const { user } = useAuth();
+  const viewOnly = isApprovalViewOnly(user);
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -391,6 +397,7 @@ export function ApprovalsPage() {
   }, [selected, assignMode, assignGroupId]);
 
   const handleAction = async () => {
+    if (viewOnly) return;
     if (!selected) return;
     if (
       (action === "REJECTED" || action === "REQUEST_CHANGES") &&
@@ -470,8 +477,9 @@ export function ApprovalsPage() {
           Phê duyệt &amp; xử lý
         </h1>
         <p className="text-sm text-gray-600 mt-1 max-w-3xl">
-          Xem thông tin chi tiết từng yêu cầu (phiếu việc, lịch bảo trì, tài
-          liệu) trước khi duyệt, từ chối hoặc yêu cầu chỉnh sửa.
+          {viewOnly
+            ? "Chế độ quản trị: xem toàn bộ hàng chờ. "
+            : "Xem thông tin chi tiết từng yêu cầu (phiếu việc, lịch bảo trì, tài liệu) trước khi duyệt, từ chối hoặc yêu cầu chỉnh sửa."}
         </p>
       </div>
 
@@ -605,7 +613,8 @@ export function ApprovalsPage() {
                   }}
                   className="flex-shrink-0 self-center"
                 >
-                  Xem &amp; xử lý <ChevronRight size={12} />
+                  {viewOnly ? "Xem chi tiết" : "Xem & xử lý"}{" "}
+                  <ChevronRight size={12} />
                 </Button>
               </div>
             );
@@ -626,24 +635,31 @@ export function ApprovalsPage() {
           setApprovePriority("");
           setApproveDescription("");
         }}
-        title="Phê duyệt — xem đầy đủ thông tin"
+        title={
+          viewOnly
+            ? "Chi tiết yêu cầu phê duyệt (chỉ xem)"
+            : "Phê duyệt — xem đầy đủ thông tin"
+        }
         size="lg"
       >
         {selected && (
           <div className="space-y-4">
             <ApprovalDetailPanel item={selected} />
 
-            <Select
-              label="Hành động"
-              value={action}
-              onChange={(e) => setAction(e.target.value)}
-            >
-              <option value="APPROVED">✓ Duyệt</option>
-              <option value="REJECTED">✗ Từ chối</option>
-              <option value="REQUEST_CHANGES">↩ Yêu cầu chỉnh sửa</option>
-            </Select>
+            {!viewOnly && (
+              <Select
+                label="Hành động"
+                value={action}
+                onChange={(e) => setAction(e.target.value)}
+              >
+                <option value="APPROVED">✓ Duyệt</option>
+                <option value="REJECTED">✗ Từ chối</option>
+                <option value="REQUEST_CHANGES">↩ Yêu cầu chỉnh sửa</option>
+              </Select>
+            )}
 
-            {selected.resourceType === "WORK_ORDER" &&
+            {!viewOnly &&
+              selected.resourceType === "WORK_ORDER" &&
               action === "APPROVED" && (
                 <div className="space-y-3">
                   <Input
@@ -682,7 +698,8 @@ export function ApprovalsPage() {
                 </div>
               )}
 
-            {selected.resourceType === "WORK_ORDER" &&
+            {!viewOnly &&
+              selected.resourceType === "WORK_ORDER" &&
               isWoFinalStep(selected) &&
               action === "APPROVED" && (
                 <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-3 space-y-2">
@@ -757,19 +774,21 @@ export function ApprovalsPage() {
                 </div>
               )}
 
-            <Textarea
-              label={`Ghi chú${action !== "APPROVED" ? " *" : ""}`}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder={
-                action === "APPROVED"
-                  ? "Ghi chú khi duyệt (tuỳ chọn)"
-                  : action === "REJECTED"
-                    ? "Lý do từ chối (bắt buộc)"
-                    : "Nội dung cần chỉnh sửa (bắt buộc)"
-              }
-              rows={3}
-            />
+            {!viewOnly && (
+              <Textarea
+                label={`Ghi chú${action !== "APPROVED" ? " *" : ""}`}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder={
+                  action === "APPROVED"
+                    ? "Ghi chú khi duyệt (tuỳ chọn)"
+                    : action === "REJECTED"
+                      ? "Lý do từ chối (bắt buộc)"
+                      : "Nội dung cần chỉnh sửa (bắt buộc)"
+                }
+                rows={3}
+              />
+            )}
 
             <div className="flex justify-end gap-3 pt-1">
               <Button
@@ -788,31 +807,33 @@ export function ApprovalsPage() {
               >
                 Đóng
               </Button>
-              <Button
-                variant={
-                  action === "APPROVED"
-                    ? "success"
-                    : action === "REJECTED"
-                      ? "danger"
-                      : "primary"
-                }
-                onClick={handleAction}
-                loading={saving}
-              >
-                {action === "APPROVED" ? (
-                  <>
-                    <CheckCircle size={14} /> Xác nhận duyệt
-                  </>
-                ) : action === "REJECTED" ? (
-                  <>
-                    <XCircle size={14} /> Từ chối
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw size={14} /> Yêu cầu sửa
-                  </>
-                )}
-              </Button>
+              {!viewOnly && (
+                <Button
+                  variant={
+                    action === "APPROVED"
+                      ? "success"
+                      : action === "REJECTED"
+                        ? "danger"
+                        : "primary"
+                  }
+                  onClick={handleAction}
+                  loading={saving}
+                >
+                  {action === "APPROVED" ? (
+                    <>
+                      <CheckCircle size={14} /> Xác nhận duyệt
+                    </>
+                  ) : action === "REJECTED" ? (
+                    <>
+                      <XCircle size={14} /> Từ chối
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={14} /> Yêu cầu sửa
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         )}
