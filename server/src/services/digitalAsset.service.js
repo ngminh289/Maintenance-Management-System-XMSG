@@ -23,6 +23,7 @@
  *
  * PENDING: khoá hết — phải thu hồi qua "Yêu cầu chỉnh sửa" (REQUEST_CHANGES) → BE chuyển về DRAFT.
  * Đọc danh sách: DRAFT/REJECTED/PENDING chỉ chủ; APPROVED/ARCHIVED công khai trong kho.
+ * GET ?forApproval=1: người duyệt (APPROVE) + Admin xem hàng chờ được đọc file PENDING (tab Phê duyệt).
  * Liên quan: models/digitalAsset.model.js, migration 036, 056, 057, 072.
  */
 import { unlink } from 'fs/promises';
@@ -33,6 +34,7 @@ import * as model            from '../models/digitalAsset.model.js';
 import * as tagModel         from '../models/tag.model.js';
 import * as documentCategoryModel from '../models/documentCategory.model.js';
 import * as approvalSvc from './approval.service.js';
+import * as permissionModel from '../models/permission.model.js';
 import { resolveDocumentAbsolutePath } from '../config/upload.js';
 
 /** Trưởng / Phó phòng KT-CN — quyền tương đương admin với DAM (theo migration 057). */
@@ -83,6 +85,32 @@ export function assertCanReadDigitalAsset(da, viewer) {
     throw createError('Không tìm thấy tài liệu', 404);
   }
   if (Number(da.uploadedBy) === eid) return;
+  throw createError('Không tìm thấy tài liệu', 404);
+}
+
+/**
+ * Tab Phê duyệt: cho phép đọc tài liệu PENDING (không hiện trong kho tài liệu).
+ * Admin L4+ chỉ xem; người duyệt cần DIGITAL_ASSET APPROVE (hoặc UPDATE tương thích DB cũ).
+ */
+async function assertCanReadForApprovalFlow(da, viewer) {
+  try {
+    assertCanReadDigitalAsset(da, viewer);
+    return;
+  } catch (err) {
+    if (err?.status !== 404) throw err;
+  }
+  if (da.status !== 'PENDING') {
+    throw createError('Không tìm thấy tài liệu', 404);
+  }
+  const level = Number(viewer?.positionLevel ?? 0);
+  if (level >= 4) return;
+  const pid = Number(viewer?.positionId);
+  if (!Number.isFinite(pid) || pid < 1) {
+    throw createError('Không tìm thấy tài liệu', 404);
+  }
+  const canApprove = await permissionModel.hasPermission(pid, 'APPROVE', 'DIGITAL_ASSET');
+  const canUpdate = await permissionModel.hasPermission(pid, 'UPDATE', 'DIGITAL_ASSET');
+  if (canApprove || canUpdate) return;
   throw createError('Không tìm thấy tài liệu', 404);
 }
 
@@ -139,10 +167,14 @@ export async function getAll(query, viewer) {
   return paginatedResult(withTags, total, page, limit);
 }
 
-export async function getById(id, viewer) {
+export async function getById(id, viewer, options = {}) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
-  assertCanReadDigitalAsset(da, viewer);
+  if (options.forApproval) {
+    await assertCanReadForApprovalFlow(da, viewer);
+  } else {
+    assertCanReadDigitalAsset(da, viewer);
+  }
   const [tags, versions] = await Promise.all([
     tagModel.getTagsByDigitalAsset(id),
     model.getVersions(id),

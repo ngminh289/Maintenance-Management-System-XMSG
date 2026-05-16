@@ -5,6 +5,7 @@
  * Dữ liệu mở rộng: approvalLog.model.js findPendingForPosition.
  * Duyệt WO: có thể nhập Giờ ước tính (gửi kèm POST approve → WorkOrders.EstimatedHours).
  * Quản trị (L4+): chỉ xem hàng chờ — isApprovalViewOnly (rbac.js); BE chặn approve/reject.
+ * Tài liệu số: tải filePath từ API để xem trước / mở file trước khi duyệt.
  */
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
@@ -19,6 +20,8 @@ import {
   ChevronRight,
   MapPin,
   ExternalLink,
+  Loader2,
+  Eye,
 } from "lucide-react";
 import { approvalApi } from "../../api/approval.api.js";
 import { employeeApi } from "../../api/employee.api.js";
@@ -40,6 +43,9 @@ import {
 import toast from "react-hot-toast";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import { isApprovalViewOnly } from "../../utils/rbac.js";
+import { documentFilePublicUrl } from "../../utils/documentUrl.js";
+
+const FILE_BASE = import.meta.env.VITE_API_BASE;
 
 const RESOURCE_CONFIG = {
   WORK_ORDER: { label: "Phiếu việc", icon: Wrench, color: "blue" },
@@ -148,15 +154,109 @@ function listSummaryLine(item) {
   return parts.length ? parts.join(" · ") : null;
 }
 
+/** Tải tài liệu số đang chờ duyệt — xem trước ảnh/PDF + nút mở file. */
+function DigitalAssetApprovalPreview({ digitalAssetId }) {
+  const [doc, setDoc] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!digitalAssetId) return;
+    let cancelled = false;
+    setLoading(true);
+    setDoc(null);
+    api
+      .get(`/digital-assets/${digitalAssetId}`, { params: { forApproval: '1' } })
+      .then((res) => {
+        if (!cancelled) setDoc(res.data.data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setDoc(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [digitalAssetId]);
+
+  const publicUrl = doc?.filePath
+    ? documentFilePublicUrl(doc.filePath, FILE_BASE)
+    : "";
+  const ft = String(doc?.fileType ?? "").toLowerCase();
+  const isImage = /^(png|jpe?g|gif|webp|bmp|svg)$/.test(ft);
+  const isPdf = ft === "pdf";
+
+  return (
+    <div className="pt-3 mt-3 border-t border-gray-200 space-y-3">
+      <p className="text-xs font-bold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+        <Eye size={13} /> Nội dung tài liệu
+      </p>
+      {loading && (
+        <p className="text-xs text-gray-500 flex items-center gap-2">
+          <Loader2 size={14} className="animate-spin" /> Đang tải file…
+        </p>
+      )}
+      {!loading && !doc && (
+        <p className="text-xs text-amber-700">Không tải được tài liệu để xem.</p>
+      )}
+      {!loading && doc && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {publicUrl ? (
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-2"
+              >
+                <ExternalLink size={12} /> Mở / tải file
+              </a>
+            ) : null}
+            <Link
+              to={`/documents?docId=${digitalAssetId}&fromApproval=1`}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-purple-700 hover:underline px-1 py-2"
+            >
+              <ExternalLink size={12} /> Chi tiết trong kho
+            </Link>
+          </div>
+          {publicUrl && isImage && (
+            <img
+              src={publicUrl}
+              alt={doc.fileName ?? "Tài liệu"}
+              className="max-h-56 w-auto max-w-full rounded-lg border border-gray-200 bg-white object-contain"
+            />
+          )}
+          {publicUrl && isPdf && (
+            <iframe
+              title="Xem trước PDF"
+              src={publicUrl}
+              className="w-full h-64 rounded-lg border border-gray-200 bg-white"
+            />
+          )}
+          {publicUrl && !isImage && !isPdf && (
+            <p className="text-xs text-gray-500">
+              Định dạng <strong>{doc.fileType}</strong> — dùng nút「Mở / tải file」để xem trên máy.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ApprovalDetailPanel({ item }) {
-  const docLink = item.resourceType === "DIGITAL_ASSET" ? `/documents` : null;
+  const docLink =
+    item.resourceType === "DIGITAL_ASSET"
+      ? `/documents?docId=${item.resourceId}`
+      : null;
   const woLink =
     item.resourceType === "WORK_ORDER"
       ? `/work-orders/${item.resourceId}`
       : null;
 
   return (
-    <div className="bg-gray-50 rounded-xl p-4 space-y-1 max-h-[min(52vh,480px)] overflow-y-auto">
+    <div className="bg-gray-50 rounded-xl p-4 space-y-1 max-h-[min(62vh,560px)] overflow-y-auto">
       <DetailRow label="Mẫu luồng">{item.workflowName}</DetailRow>
       <DetailRow label="Mã tham chiếu">#{item.resourceId}</DetailRow>
       <DetailRow label="Cấp duyệt">
@@ -281,6 +381,7 @@ function ApprovalDetailPanel({ item }) {
               ? `${fNumber(item.digitalFileSizeKb)} KB`
               : null}
           </DetailRow>
+          <DigitalAssetApprovalPreview digitalAssetId={item.resourceId} />
         </>
       )}
 
@@ -293,7 +394,7 @@ function ApprovalDetailPanel({ item }) {
             <ExternalLink size={12} /> Mở phiếu việc
           </Link>
         )}
-        {docLink && (
+        {docLink && item.resourceType !== "DIGITAL_ASSET" && (
           <Link
             to={docLink}
             className="inline-flex items-center gap-1 text-xs font-semibold text-purple-600 hover:underline"

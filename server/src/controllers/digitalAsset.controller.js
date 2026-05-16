@@ -18,7 +18,9 @@ export const getAll = asyncHandler(async (req, res) =>
   ok(res, await service.getAll(req.query, req.user)));
 
 export const getById = asyncHandler(async (req, res) =>
-  ok(res, await service.getById(req.params.id, req.user)));
+  ok(res, await service.getById(req.params.id, req.user, {
+    forApproval: req.query.forApproval === '1' || req.query.forApproval === 'true',
+  })));
 
 /** Ghi nhận lượt mở file tài liệu (phục vụ Báo cáo sử dụng tài nguyên). */
 export const logDocumentView = asyncHandler(async (req, res) => {

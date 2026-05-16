@@ -447,11 +447,12 @@ export function DocumentsPage() {
     }
   };
 
-  const openViewDoc = useCallback(async (doc) => {
+  const openViewDoc = useCallback(async (doc, opts = {}) => {
     setViewDoc({ digitalAssetId: doc.digitalAssetId });
     setViewLoading(true);
     try {
-      const res = await api.get(`/digital-assets/${doc.digitalAssetId}`);
+      const params = opts.forApproval ? { forApproval: "1" } : {};
+      const res = await api.get(`/digital-assets/${doc.digitalAssetId}`, { params });
       setViewDoc(res.data.data);
     } catch (err) {
       toast.error(
@@ -462,6 +463,21 @@ export function DocumentsPage() {
       setViewLoading(false);
     }
   }, []);
+
+  /** Deep-link từ phê duyệt / thông báo: /documents?docId= */
+  useEffect(() => {
+    const raw = searchParams.get("docId");
+    if (!raw || !/^\d+$/.test(raw)) return;
+    openViewDoc({ digitalAssetId: Number(raw) }, { forApproval: true });
+    setSearchParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        n.delete("docId");
+        return n;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams, openViewDoc]);
 
   // ── Lưu trữ (072) ────────────────────────────────────────────────────────
   /**
