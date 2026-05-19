@@ -21,6 +21,7 @@ import {
   XCircle,
   CheckCircle,
   ExternalLink,
+  MessageSquare,
   Tag,
   Cpu,
   MapPin,
@@ -39,6 +40,7 @@ import { Button } from "../../components/ui/Button.jsx";
 import { Input, Textarea, Select } from "../../components/ui/Input.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { Card } from "../../components/ui/Card.jsx";
+import { Modal } from "../../components/ui/Modal.jsx";
 import { Spinner } from "../../components/ui/Spinner.jsx";
 import {
   CHECKLIST_STATUS_COLOR,
@@ -69,6 +71,8 @@ export function ChecklistPage() {
   const { assetId: assetIdFromPath } = useParams();
   const [searchParams] = useSearchParams();
   const canSubmitChecklist = canDo(user, "CHECKLIST_RESULT:CREATE");
+  const canSubmitDocFeedback = canDo(user, "DOCUMENT_FEEDBACK:CREATE");
+  const canReviewDocFeedback = canDo(user, "DOCUMENT_FEEDBACK:REVIEW");
   const canOpenAssetPage = canAccess(user, "assets");
   const [assetInput, setAssetInput] = useState("");
   const [qrData, setQrData] = useState(null);
@@ -88,6 +92,11 @@ export function ChecklistPage() {
   /** Map TemplateItemID → File cho câu inputType Photo */
   const [itemPhotos, setItemPhotos] = useState({});
   const [activeTagFilter, setActiveTagFilter] = useState("ALL");
+  const [fbDoc, setFbDoc] = useState(null);
+  const [fbBody, setFbBody] = useState("");
+  const [fbList, setFbList] = useState([]);
+  const [fbLoading, setFbLoading] = useState(false);
+  const [fbSending, setFbSending] = useState(false);
   /** WO từ lịch — truyền từ WorkOrderDetail (?woId=) để nộp checklist gắn phiếu. */
   const linkedWoId = searchParams.get("woId")?.trim() || "";
   const canSubmitLinkedWoChecklist = useMemo(() => {
@@ -181,6 +190,49 @@ export function ChecklistPage() {
       doc.tags?.some((t) => String(t.tagId) === String(activeTagFilter)),
     );
   }, [qrData, activeTagFilter]);
+
+  const openDocFeedback = async (doc) => {
+    setFbDoc(doc);
+    setFbBody("");
+    setFbLoading(true);
+    setFbList([]);
+    try {
+      const res = await api.get(
+        `/digital-assets/${doc.digitalAssetId}/feedback`,
+      );
+      setFbList(Array.isArray(res.data.data) ? res.data.data : []);
+    } catch {
+      toast.error("Không tải được danh sách phản hồi");
+    } finally {
+      setFbLoading(false);
+    }
+  };
+
+  const sendDocFeedback = async (e) => {
+    e.preventDefault();
+    if (!fbDoc || !canSubmitDocFeedback) return;
+    const t = fbBody.trim();
+    if (!t) {
+      toast.error("Nhập nội dung góp ý");
+      return;
+    }
+    setFbSending(true);
+    try {
+      await api.post(`/digital-assets/${fbDoc.digitalAssetId}/feedback`, {
+        body: t,
+      });
+      toast.success("Đã gửi phản hồi từ hiện trường");
+      setFbBody("");
+      const res = await api.get(
+        `/digital-assets/${fbDoc.digitalAssetId}/feedback`,
+      );
+      setFbList(Array.isArray(res.data.data) ? res.data.data : []);
+    } catch (err) {
+      toast.error(err.response?.data?.message ?? "Không gửi được phản hồi");
+    } finally {
+      setFbSending(false);
+    }
+  };
 
   const activeChecklistTemplate = useMemo(() => {
     const allTemplates = qrData?.checklistTemplates;
@@ -1148,24 +1200,36 @@ export function ChecklistPage() {
                                   </div>
                                 )}
                               </div>
-                              <a
-                                href={documentFilePublicUrl(
-                                  doc.filePath,
-                                  import.meta.env.VITE_API_BASE,
+                              <div className="flex items-center gap-0.5 flex-shrink-0">
+                                {(canSubmitDocFeedback || canReviewDocFeedback) && (
+                                  <button
+                                    type="button"
+                                    title="Phản hồi / góp ý từ hiện trường"
+                                    onClick={() => openDocFeedback(doc)}
+                                    className="p-1.5 hover:bg-teal-50 rounded-lg text-teal-600 transition-colors"
+                                  >
+                                    <MessageSquare size={15} />
+                                  </button>
                                 )}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 flex-shrink-0"
-                                onClick={() => {
-                                  const id = doc.digitalAssetId;
-                                  if (id == null) return;
-                                  void api
-                                    .post(`/digital-assets/${id}/view-log`)
-                                    .catch(() => {});
-                                }}
-                              >
-                                <ExternalLink size={15} />
-                              </a>
+                                <a
+                                  href={documentFilePublicUrl(
+                                    doc.filePath,
+                                    import.meta.env.VITE_API_BASE,
+                                  )}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500"
+                                  onClick={() => {
+                                    const id = doc.digitalAssetId;
+                                    if (id == null) return;
+                                    void api
+                                      .post(`/digital-assets/${id}/view-log`)
+                                      .catch(() => {});
+                                  }}
+                                >
+                                  <ExternalLink size={15} />
+                                </a>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1413,6 +1477,122 @@ export function ChecklistPage() {
             </>
           );
         })()}
+
+      <Modal
+        open={!!fbDoc}
+        onClose={() => {
+          setFbDoc(null);
+          setFbList([]);
+          setFbBody("");
+        }}
+        title={fbDoc ? `Phản hồi: ${fbDoc.fileName}` : ""}
+        size="lg"
+      >
+        {fbDoc && (
+          <div className="space-y-4">
+            {canReviewDocFeedback && (
+              <p className="text-sm bg-teal-50 border border-teal-200 text-teal-900 rounded-lg px-3 py-2">
+                Bạn đang xem toàn bộ phản hồi cho tài liệu này. Cập nhật trạng
+                thái tại{" "}
+                <Link
+                  to="/documents/feedback-inbox"
+                  className="font-bold underline"
+                >
+                  hàng đợi Chuyên viên KTS
+                </Link>
+                .
+              </p>
+            )}
+            {canSubmitDocFeedback && (
+              <form
+                onSubmit={sendDocFeedback}
+                className="space-y-2 border-b border-gray-200 pb-4"
+              >
+                <label className="text-sm font-semibold text-gray-800 block">
+                  Gửi góp ý / phản hồi từ hiện trường
+                </label>
+                <textarea
+                  value={fbBody}
+                  onChange={(e) => setFbBody(e.target.value)}
+                  rows={3}
+                  maxLength={4000}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900
+                    placeholder:text-gray-600 placeholder:opacity-100
+                    focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500"
+                  placeholder="Mô tả vấn đề hoặc đề xuất cập nhật nội dung SOP…"
+                />
+                <div className="flex justify-end">
+                  <Button type="submit" size="sm" loading={fbSending}>
+                    <MessageSquare size={13} /> Gửi phản hồi
+                  </Button>
+                </div>
+              </form>
+            )}
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                {canReviewDocFeedback ? "Tất cả phản hồi" : "Phản hồi của bạn"}
+              </h4>
+              {fbLoading ? (
+                <p className="text-sm text-gray-400 py-4 text-center">
+                  Đang tải…
+                </p>
+              ) : fbList.length === 0 ? (
+                <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                  Chưa có phản hồi nào.
+                </p>
+              ) : (
+                <ul className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                  {fbList.map((f) => (
+                    <li
+                      key={f.feedbackId}
+                      className="border border-gray-100 rounded-lg p-3 bg-gray-50/80"
+                    >
+                      <div className="flex flex-wrap justify-between gap-2 text-xs text-gray-500 mb-1">
+                        <span className="font-semibold text-gray-800">
+                          {f.authorName}
+                        </span>
+                        <span>{fDateTime(f.createdAt)}</span>
+                      </div>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                        {f.body}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2 items-center">
+                        <Badge
+                          color={
+                            f.status === "RESOLVED"
+                              ? "green"
+                              : f.status === "DISMISSED"
+                                ? "gray"
+                                : f.status === "IN_REVIEW"
+                                  ? "blue"
+                                  : "yellow"
+                          }
+                        >
+                          {f.status === "OPEN"
+                            ? "Chờ xử lý"
+                            : f.status === "IN_REVIEW"
+                              ? "Đang xem xét"
+                              : f.status === "RESOLVED"
+                                ? "Đã xử lý"
+                                : f.status === "DISMISSED"
+                                  ? "Không xử lý"
+                                  : f.status}
+                        </Badge>
+                        {f.reviewNote && (
+                          <span className="text-xs text-gray-600">
+                            <span className="font-semibold">KT:</span>{" "}
+                            {f.reviewNote}
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
