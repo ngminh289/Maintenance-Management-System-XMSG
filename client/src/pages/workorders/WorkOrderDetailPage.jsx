@@ -27,6 +27,7 @@ import {
   Star,
   Archive,
   ArchiveRestore,
+  Users,
 } from "lucide-react";
 import { EmployeeCard } from "../../components/ui/EmployeeCard.jsx";
 import { workOrderApi } from "../../api/workOrder.api.js";
@@ -78,6 +79,106 @@ function woPhotoSrc(filePath) {
   return `${API_ORIGIN.replace(/\/$/, "")}/${rel}`;
 }
 
+/** Popover danh sách thành viên nhóm (phân công WO). */
+function GroupMembersPopover({ members, loading, error }) {
+  if (loading) {
+    return (
+      <p className="px-3 py-2 text-xs text-gray-500">Đang tải thành viên…</p>
+    );
+  }
+  if (error) {
+    return (
+      <p className="px-3 py-2 text-xs text-red-600">Không tải được thành viên</p>
+    );
+  }
+  if (!members?.length) {
+    return (
+      <p className="px-3 py-2 text-xs text-gray-500">Nhóm chưa có thành viên</p>
+    );
+  }
+  return (
+    <ul className="max-h-52 overflow-y-auto py-1 divide-y divide-gray-100">
+      {members.map((m) => {
+        const isLeader = Number(m.isGroupLeader) === 1;
+        return (
+          <li
+            key={m.employeeId}
+            className={`px-3 py-2 text-xs ${isLeader ? "bg-amber-50/80" : ""}`}
+          >
+            <p className="font-semibold text-gray-900">
+              {m.fullName}
+              {isLeader && (
+                <span className="ml-1.5 text-[10px] font-bold text-amber-800 bg-amber-100 px-1 py-0.5 rounded">
+                  TN
+                </span>
+              )}
+            </p>
+            <p className="text-gray-500 mt-0.5 truncate">
+              {m.positionName}
+              {m.empSpecialty ? ` · ${m.empSpecialty}` : ""}
+              {m.craftLevel ? ` · Bậc ${m.craftLevel}` : ""}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Một dòng nhóm trong modal phân công — nút Users mở modal thành viên. */
+function MaintenanceGroupAssignRow({ group, selected, onSelect, onViewMembers }) {
+  const g = group;
+  return (
+    <div
+      className={`flex items-stretch border-b border-gray-100 last:border-0 ${
+        selected ? "bg-blue-50" : "hover:bg-gray-50"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex-1 flex items-center gap-3 px-3 py-2.5 text-left min-w-0"
+      >
+        <div
+          className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+            selected ? "bg-blue-600 text-white" : "bg-indigo-100 text-indigo-700"
+          }`}
+        >
+          {g.groupName?.[0] ?? "N"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p
+            className={`text-sm font-semibold ${selected ? "text-blue-700" : "text-gray-900"}`}
+          >
+            {g.groupName}
+          </p>
+          <p className="text-xs text-gray-500 truncate">
+            {g.memberCount ?? 0} thành viên
+            {g.specialty ? ` · ${g.specialty}` : ""}
+            {g.leaderName ? ` · TN: ${g.leaderName}` : " · Chưa có trưởng nhóm"}
+          </p>
+        </div>
+        {selected && (
+          <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded flex-shrink-0">
+            ✓
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        title="Xem thành viên nhóm"
+        onClick={(e) => {
+          e.stopPropagation();
+          onViewMembers();
+        }}
+        className="px-2.5 flex items-center justify-center border-l border-gray-100 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+      >
+        <Users size={16} />
+      </button>
+    </div>
+  );
+}
+
 export function WorkOrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -99,6 +200,9 @@ export function WorkOrderDetailPage() {
   const [assignGroupFilter, setAssignGroupFilter] = useState(""); // lọc chuyên môn nhóm
   const [selectedGroup, setSelectedGroup] = useState("");
   const [groupMembers, setGroupMembers] = useState([]);
+  /** Cache thành viên theo groupId — modal xem thành viên khi phân công */
+  const [groupMembersCache, setGroupMembersCache] = useState({});
+  const [groupMembersModal, setGroupMembersModal] = useState(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState("");
   const [approveAction, setApproveAction] = useState("APPROVED");
@@ -485,15 +589,87 @@ export function WorkOrderDetailPage() {
     }
   };
 
-  /** Load thành viên nhóm khi chọn nhóm */
+  const openGroupMembersModal = (g) => {
+    const key = String(g.groupId);
+    const cached = groupMembersCache[key];
+    if (cached?.fetched) {
+      setGroupMembersModal({
+        groupId: g.groupId,
+        groupName: g.groupName,
+        loading: false,
+        members: cached.members ?? [],
+        error: !!cached.error,
+      });
+      return;
+    }
+    setGroupMembersModal({
+      groupId: g.groupId,
+      groupName: g.groupName,
+      loading: true,
+      members: undefined,
+      error: false,
+    });
+  };
+
+  useEffect(() => {
+    const groupId = groupMembersModal?.groupId;
+    if (!groupId || !groupMembersModal.loading) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.get(`/maintenance-groups/${groupId}`);
+        if (cancelled) return;
+        const members = r.data.data?.members ?? [];
+        const key = String(groupId);
+        setGroupMembersCache((prev) => ({
+          ...prev,
+          [key]: { fetched: true, members },
+        }));
+        setGroupMembersModal((prev) =>
+          prev && String(prev.groupId) === String(groupId)
+            ? { ...prev, loading: false, members, error: false }
+            : prev,
+        );
+      } catch {
+        if (cancelled) return;
+        const key = String(groupId);
+        setGroupMembersCache((prev) => ({
+          ...prev,
+          [key]: { fetched: true, members: [], error: true },
+        }));
+        setGroupMembersModal((prev) =>
+          prev && String(prev.groupId) === String(groupId)
+            ? { ...prev, loading: false, members: [], error: true }
+            : prev,
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [groupMembersModal?.groupId, groupMembersModal?.loading]);
+
+  /** Chọn nhóm — dùng cache nếu đã hover/xem thành viên trước đó */
   const handleSelectGroup = async (gid) => {
     setSelectedGroup(gid);
-    setSelectedLeader("");
     setGroupMembers([]);
     if (!gid) return;
+    const key = String(gid);
+    const cached = groupMembersCache[key];
+    if (cached?.fetched) {
+      setGroupMembers(cached.members ?? []);
+      return;
+    }
     try {
       const r = await api.get(`/maintenance-groups/${gid}`);
-      setGroupMembers(r.data.data?.members ?? []);
+      const members = r.data.data?.members ?? [];
+      setGroupMembers(members);
+      setGroupMembersCache((prev) => ({
+        ...prev,
+        [key]: { loading: false, fetched: true, members },
+      }));
     } catch {
       toast.error("Không tải được thành viên nhóm");
     }
@@ -1585,8 +1761,9 @@ export function WorkOrderDetailPage() {
           setAssignSpecialty("");
           setSelectedEmp("");
           setSelectedGroup("");
-          setSelectedLeader("");
           setGroupMembers([]);
+          setGroupMembersModal(null);
+          setGroupMembersCache({});
         }}
         title="Phân công thực hiện"
         size="md"
@@ -1609,6 +1786,8 @@ export function WorkOrderDetailPage() {
                   setAssignSpecialty("");
                   setAssignCraftLevel("");
                   setAssignGroupFilter("");
+                  setGroupMembersModal(null);
+                  setGroupMembersCache({});
                 }}
                 className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors ${
                   assignMode === mode
@@ -1765,9 +1944,12 @@ export function WorkOrderDetailPage() {
                 }}
                 className="w-full text-sm text-gray-900 bg-white border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 outline-none placeholder:text-gray-400"
               />
+              <p className="text-xs text-gray-500">
+                Bấm icon <Users size={12} className="inline -mt-0.5" /> bên phải mỗi nhóm để xem thành viên.
+              </p>
 
               {/* Danh sách nhóm */}
-              <div className="border border-gray-200 rounded-xl overflow-auto max-h-44 divide-y divide-gray-100">
+              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-44 overflow-y-auto">
                 {groups
                   .filter(
                     (g) =>
@@ -1780,39 +1962,16 @@ export function WorkOrderDetailPage() {
                         .includes(assignGroupFilter.toLowerCase()),
                   )
                   .map((g) => {
-                    const sel = String(selectedGroup) === String(g.groupId);
+                    const gid = g.groupId;
+                    const sel = String(selectedGroup) === String(gid);
                     return (
-                      <button
-                        key={g.groupId}
-                        type="button"
-                        onClick={() => handleSelectGroup(g.groupId)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${sel ? "bg-blue-50" : "hover:bg-gray-50"}`}
-                      >
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${sel ? "bg-blue-600 text-white" : "bg-indigo-100 text-indigo-700"}`}
-                        >
-                          {g.groupName?.[0] ?? "N"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p
-                            className={`text-sm font-semibold ${sel ? "text-blue-700" : "text-gray-900"}`}
-                          >
-                            {g.groupName}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {g.memberCount ?? 0} thành viên
-                            {g.specialty ? ` · ${g.specialty}` : ""}
-                            {g.leaderName
-                              ? ` · TN: ${g.leaderName}`
-                              : " · Chưa có trưởng nhóm"}
-                          </p>
-                        </div>
-                        {sel && (
-                          <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded flex-shrink-0">
-                            ✓
-                          </span>
-                        )}
-                      </button>
+                      <MaintenanceGroupAssignRow
+                        key={gid}
+                        group={g}
+                        selected={sel}
+                        onSelect={() => handleSelectGroup(gid)}
+                        onViewMembers={() => openGroupMembersModal(g)}
+                      />
                     );
                   })}
                 {groups.filter(
@@ -1899,6 +2058,26 @@ export function WorkOrderDetailPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!groupMembersModal}
+        onClose={() => setGroupMembersModal(null)}
+        title={
+          groupMembersModal
+            ? `Thành viên · ${groupMembersModal.groupName}`
+            : "Thành viên nhóm"
+        }
+        size="sm"
+        stacked
+      >
+        {groupMembersModal && (
+          <GroupMembersPopover
+            members={groupMembersModal.members}
+            loading={groupMembersModal.loading}
+            error={groupMembersModal.error}
+          />
+        )}
       </Modal>
 
       <Modal

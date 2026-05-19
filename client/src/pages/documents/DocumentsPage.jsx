@@ -920,10 +920,10 @@ export function DocumentsPage() {
             description="Thử đổi từ khóa / bộ lọc, hoặc upload tài liệu mới."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
                   {[
                     "Tài liệu",
                     "Phân loại",
@@ -940,23 +940,23 @@ export function DocumentsPage() {
                     >
                       {h}
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
                 {docs.map((doc) => (
                   <tr
                     key={doc.digitalAssetId}
                     id={`doc-${doc.digitalAssetId}`}
                     className="hover:bg-blue-50/30"
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
                         <FileText
                           size={16}
                           className="text-blue-400 flex-shrink-0"
                         />
-                        <div>
+                            <div>
                           <p className="font-semibold text-gray-900 truncate max-w-[200px]">
                             {doc.fileName}
                           </p>
@@ -971,18 +971,18 @@ export function DocumentsPage() {
                               comment={doc.lastReviseComment}
                             />
                           )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-800">
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-800">
                       {doc.documentCategoryName ? (
                         <Badge color="indigo">{doc.documentCategoryName}</Badge>
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1 max-w-[140px]">
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1 max-w-[140px]">
                         {(doc.tags ?? []).length === 0 ? (
                           <span className="text-gray-400">—</span>
                         ) : (
@@ -995,23 +995,23 @@ export function DocumentsPage() {
                             </span>
                           ))
                         )}
-                      </div>
-                    </td>
+                          </div>
+                        </td>
                     <td className="px-4 py-3 font-medium text-gray-800">
                       {doc.assetName ?? "—"}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <Badge color="blue">v{doc.currentVersion}</Badge>
-                    </td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge color="blue">v{doc.currentVersion}</Badge>
+                        </td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-700">
                       {fDateTime(doc.uploadDate)}
                     </td>
-                    <td className="px-4 py-3">
+                        <td className="px-4 py-3">
                       <Badge color={DA_STATUS_COLOR[doc.status]}>
                         {DA_STATUS_LABEL[doc.status] ?? doc.status}
                       </Badge>
-                    </td>
-                    <td className="px-4 py-3">
+                        </td>
+                        <td className="px-4 py-3">
                       <DocRowActions
                         doc={doc}
                         user={user}
@@ -1020,7 +1020,7 @@ export function DocumentsPage() {
                         onView={() => openViewDoc(doc)}
                         onEdit={() =>
                           setEditDoc({
-                            digitalAssetId: doc.digitalAssetId,
+                                  digitalAssetId: doc.digitalAssetId,
                             description: doc.description ?? "",
                             assetId: doc.assetId ?? "",
                             documentCategoryId: doc.documentCategoryId ?? "",
@@ -1033,12 +1033,12 @@ export function DocumentsPage() {
                         onVersions={() => openVersions(doc)}
                         onSubmit={() => handleSubmitApproval(doc.digitalAssetId)}
                       />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
         )}
       </div>
 
@@ -1126,7 +1126,7 @@ export function DocumentsPage() {
                       type="button"
                       onClick={() =>
                         setMeta((p) => ({
-                          ...p,
+                        ...p,
                           tagIds: sel
                             ? p.tagIds.filter((x) => x !== t.tagId)
                             : [...p.tagIds, t.tagId],
@@ -1750,7 +1750,7 @@ export function DocumentsPage() {
                 Tài liệu sẽ được đem vào kho lưu trữ — không xoá cứng. Có thể
                 khôi phục bởi Quản trị viên hoặc Trưởng/Phó phòng KT-CN.
               </p>
-            </div>
+    </div>
 
             <div>
               <p className="text-sm font-semibold text-gray-700">

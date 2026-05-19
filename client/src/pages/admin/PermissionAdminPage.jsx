@@ -16,10 +16,10 @@ import { useAuth } from "../../contexts/AuthContext.jsx";
 /** Gợi ý hiển thị cạnh tên quyền (ô checkbox vẫn giữ mã EN). */
 function permissionDisplayLabel(permissionName, resourceType) {
   if (resourceType === "CHECKLIST_RESULT" && permissionName === "APPROVE") {
-    return "APPROVE · Tiếp nhận checklist";
+    return "APPROVE";
   }
   if (resourceType === "CHECKLIST_RESULT" && permissionName === "UPDATE") {
-    return "UPDATE · Sửa/xác nhận kết quả";
+    return "UPDATE";
   }
   return permissionName;
 }
@@ -30,7 +30,7 @@ const RESOURCE_LABEL_VI = {
   DIGITAL_ASSET: "Tài liệu số",
   MAINTENANCE_PLAN: "Kế hoạch bảo trì",
   CHECKLIST_TEMPLATE: "Mẫu checklist",
-  CHECKLIST_RESULT: "Kết quả checklist (tiếp nhận = APPROVE)",
+  CHECKLIST_RESULT: "Kết quả checklist",
   RUNTIME_LOG: "Nhật ký vận hành",
   EMPLOYEE: "Nhân sự",
   TAG: "Thẻ (Tag)",
@@ -92,17 +92,25 @@ export function PermissionAdminPage() {
           positionName: p.positionName,
           level: Number(p.level ?? 0),
         }))
-        .sort((a, b) => a.level - b.level || a.positionName.localeCompare(b.positionName));
-      const permissionRows = normalizePermissionRows(permissionRes?.data?.data ?? []);
+        .sort(
+          (a, b) =>
+            a.level - b.level || a.positionName.localeCompare(b.positionName),
+        );
+      const permissionRows = normalizePermissionRows(
+        permissionRes?.data?.data ?? [],
+      );
       setPositions(positionRows);
       setAllPermissions(permissionRows);
       setSelectedPositionId((prev) => {
-        if (prev && positionRows.some((p) => p.positionId === Number(prev))) return prev;
+        if (prev && positionRows.some((p) => p.positionId === Number(prev)))
+          return prev;
         return positionRows[0] ? String(positionRows[0].positionId) : "";
       });
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.message || "Không tải được dữ liệu phân quyền");
+      toast.error(
+        err?.response?.data?.message || "Không tải được dữ liệu phân quyền",
+      );
     } finally {
       setLoading(false);
     }
@@ -113,7 +121,8 @@ export function PermissionAdminPage() {
   }, [loadData]);
 
   const selectedPid = Number(selectedPositionId || 0);
-  const selectedPosition = positions.find((p) => p.positionId === selectedPid) || null;
+  const selectedPosition =
+    positions.find((p) => p.positionId === selectedPid) || null;
 
   const selectedRows = useMemo(
     () => allPermissions.filter((r) => r.positionId === selectedPid),
@@ -123,7 +132,10 @@ export function PermissionAdminPage() {
   const permissionIdByKey = useMemo(() => {
     const map = new Map();
     for (const row of selectedRows) {
-      map.set(toPermissionKey(row.resourceType, row.permissionName), row.permissionId);
+      map.set(
+        toPermissionKey(row.resourceType, row.permissionName),
+        row.permissionId,
+      );
     }
     return map;
   }, [selectedRows]);
@@ -179,9 +191,12 @@ export function PermissionAdminPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Phân quyền hệ thống</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          Phân quyền hệ thống
+        </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Quản trị viên cấu hình quyền theo chức vụ. Thay đổi sẽ áp dụng sau khi người dùng tải lại phiên.
+          Quản trị viên cấu hình quyền theo chức vụ. Thay đổi sẽ áp dụng sau khi
+          người dùng tải lại phiên.
         </p>
       </div>
 
@@ -212,7 +227,8 @@ export function PermissionAdminPage() {
             <div className="inline-flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-[1px]">
               <ShieldCheck size={14} />
               <span>
-                Đang chỉnh quyền cho: <strong>{selectedPosition.positionName}</strong>
+                Đang chỉnh quyền cho:{" "}
+                <strong>{selectedPosition.positionName}</strong>
               </span>
             </div>
           )}
@@ -221,9 +237,13 @@ export function PermissionAdminPage() {
 
       <Card title="Ma trận quyền theo resource">
         {loading ? (
-          <p className="text-sm text-gray-500 py-6">Đang tải dữ liệu phân quyền...</p>
+          <p className="text-sm text-gray-500 py-6">
+            Đang tải dữ liệu phân quyền...
+          </p>
         ) : !selectedPositionId ? (
-          <p className="text-sm text-gray-500 py-6">Chưa có chức vụ để cấu hình.</p>
+          <p className="text-sm text-gray-500 py-6">
+            Chưa có chức vụ để cấu hình.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -242,7 +262,8 @@ export function PermissionAdminPage() {
                   <tr key={row.resourceType}>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <p className="font-semibold text-gray-800">
-                        {RESOURCE_LABEL_VI[row.resourceType] ?? row.resourceType}
+                        {RESOURCE_LABEL_VI[row.resourceType] ??
+                          row.resourceType}
                       </p>
                       <p className="text-xs text-gray-400 font-mono mt-0.5">
                         {row.resourceType}
@@ -251,7 +272,10 @@ export function PermissionAdminPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         {row.permissions.map((permissionName) => {
-                          const key = toPermissionKey(row.resourceType, permissionName);
+                          const key = toPermissionKey(
+                            row.resourceType,
+                            permissionName,
+                          );
                           const checked = permissionIdByKey.has(key);
                           const isSaving = savingKey === key;
                           return (
@@ -269,11 +293,17 @@ export function PermissionAdminPage() {
                                 checked={checked}
                                 disabled={isSaving || loading}
                                 onChange={() =>
-                                  handleTogglePermission(row.resourceType, permissionName)
+                                  handleTogglePermission(
+                                    row.resourceType,
+                                    permissionName,
+                                  )
                                 }
                               />
                               <span className="font-medium tracking-wide">
-                                {permissionDisplayLabel(permissionName, row.resourceType)}
+                                {permissionDisplayLabel(
+                                  permissionName,
+                                  row.resourceType,
+                                )}
                               </span>
                             </label>
                           );
@@ -290,4 +320,3 @@ export function PermissionAdminPage() {
     </div>
   );
 }
-
