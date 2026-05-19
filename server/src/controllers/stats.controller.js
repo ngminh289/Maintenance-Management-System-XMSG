@@ -847,6 +847,12 @@ export const resourceUsageReport = asyncHandler(async (req, res) => {
   const pool = getPool();
   const p = [m];
 
+  const [[checklistTotals]] = await pool.query(
+    `SELECT COUNT(*) AS totalSubmissions
+     FROM ChecklistResults cr
+     WHERE cr.CheckTime >= DATE_SUB(NOW(), INTERVAL ? MONTH)`,
+    p,
+  );
   const [checklistByAssetChecker] = await pool.query(
     `SELECT
        cr.AssetID   AS assetId,
@@ -991,6 +997,7 @@ export const resourceUsageReport = asyncHandler(async (req, res) => {
         "Góp ý OPEN/IN_REVIEW mà chưa có bản ghi AssetVersions với ChangeDate sau thời điểm góp ý (coi như chưa phản ứng bằng phiên bản mới).",
     },
     checklistSubmissions: {
+      totalSubmissions: Number(checklistTotals?.totalSubmissions ?? 0),
       byAssetChecker: checklistByAssetChecker,
     },
     qrFieldUsage: {

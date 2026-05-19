@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import {
   QrCode,
+  ClipboardList,
   FileText,
   Flame,
   History,
@@ -152,6 +153,19 @@ export function ResourceUsageReportsPage() {
     [data],
   );
 
+  const checklistTotal = useMemo(() => {
+    const fromApi = data?.checklistSubmissions?.totalSubmissions;
+    if (fromApi != null) return Number(fromApi);
+    return (data?.checklistSubmissions?.byAssetChecker ?? []).reduce(
+      (s, r) => s + Number(r.submissionCount ?? 0),
+      0,
+    );
+  }, [data]);
+
+  const checklistRows = data?.checklistSubmissions?.byAssetChecker ?? [];
+  const qrTotal = Number(data?.qrFieldUsage?.totalOpens ?? 0);
+  const periodMonths = data?.months ?? months;
+
   if (loading && !data) return <PageLoader />;
 
   return (
@@ -237,21 +251,55 @@ export function ResourceUsageReportsPage() {
       )}
 
       {data && activeTab === "qr" && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Card title="Lượt mở màn hình QR (getQRInfo)">
-              <p className="text-3xl font-bold text-indigo-600">
-                {data.qrFieldUsage?.totalOpens ?? 0}
+        <div className="space-y-6">
+          <Card title={`Tổng quan hiện trường · ${periodMonths} tháng`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-4">
+                <div className="flex items-center gap-2 text-indigo-800 mb-2">
+                  <QrCode size={18} />
+                  <span className="text-xs font-bold uppercase tracking-wide">
+                    Quét / mở QR
+                  </span>
+                </div>
+                <p className="text-3xl font-bold text-indigo-600 tabular-nums">
+                  {qrTotal}
+                </p>
+                <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                  Số lần mở màn hình kiểm tra tài sản (quét mã hoặc nhập mã).
+                </p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-4">
+                <div className="flex items-center gap-2 text-emerald-800 mb-2">
+                  <ClipboardList size={18} />
+                  <span className="text-xs font-bold uppercase tracking-wide">
+                    Nộp checklist
+                  </span>
+                </div>
+                <p className="text-3xl font-bold text-emerald-600 tabular-nums">
+                  {checklistTotal}
+                </p>
+                <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                  Số phiếu đã gửi kết quả kiểm tra hiện trường trong kỳ.
+                </p>
+              </div>
+            </div>
+            {qrTotal > 0 && checklistTotal === 0 && (
+              <p className="text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 mt-4">
+                Đã có lượt quét QR nhưng chưa có phiếu checklist trong kỳ —
+                quét mã chỉ mở trang thông tin; cần bấm{" "}
+                <strong>Gửi kết quả kiểm tra</strong> để ghi nhận phiếu.
               </p>
-            </Card>
-            <Card title="Phiếu checklist đã nộp (trong kỳ)">
-              <p className="text-sm text-gray-600">
-                Xếp hạng theo tài sản và người nộp bản ghi Checklist.{" "}
-              </p>
-            </Card>
-          </div>
-          {qrByDay.length > 0 && (
-            <Card title="Lượt mở QR theo ngày">
+            )}
+          </Card>
+          {(qrByDay.length > 0 ||
+            (data.qrFieldUsage?.topAssets?.length ?? 0) > 0) && (
+            <section className="space-y-4">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <QrCode size={16} className="text-indigo-600" />
+                Hoạt động quét QR
+              </h3>
+              {qrByDay.length > 0 && (
+            <Card title="Lượt mở theo ngày">
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={qrByDay}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -267,57 +315,82 @@ export function ResourceUsageReportsPage() {
                 </LineChart>
               </ResponsiveContainer>
             </Card>
+              )}
+            {(data.qrFieldUsage?.topAssets?.length ?? 0) > 0 && (
+              <Card title="Thiết bị được quét nhiều nhất">
+                <div className="space-y-1.5">
+                  {data.qrFieldUsage.topAssets.map((a) => (
+                    <div
+                      key={a.assetId}
+                      className="flex justify-between py-1 border-b border-gray-100 last:border-0"
+                    >
+                      <span className="text-sm text-gray-800">
+                        {a.assetName}
+                      </span>
+                      <Badge color="blue">{a.openCount}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+            </section>
           )}
-          {data.checklistSubmissions?.byAssetChecker?.length > 0 && (
-            <Card title="Bảng: phiếu theo tài sản + người nộp">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      {["Tài sản", "Người nộp", "Số phiếu"].map((h) => (
-                        <th
-                          key={h}
-                          className="text-left px-3 py-2 text-xs font-bold text-gray-700"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {data.checklistSubmissions.byAssetChecker.map((r, i) => (
-                      <tr key={i} className="hover:bg-gray-50/80">
-                        <td className="px-3 py-2 font-medium text-gray-900">
-                          {r.assetName}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">
-                          {r.checkerName}
-                        </td>
-                        <td className="px-3 py-2">
-                          <Badge color="indigo">{r.submissionCount}</Badge>
-                        </td>
+          <section className="space-y-3 pt-2">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <ClipboardList size={16} className="text-emerald-600" />
+              Phiếu checklist đã nộp
+              <Badge color="green">{checklistTotal}</Badge>
+            </h3>
+            <Card>
+              {checklistRows.length > 0 ? (
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        {["Tài sản", "Người nộp", "Số phiếu"].map((h) => (
+                          <th
+                            key={h}
+                            className="text-left px-3 py-2 text-xs font-bold text-gray-700"
+                          >
+                            {h}
+                          </th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {checklistRows.map((r, i) => (
+                        <tr key={i} className="hover:bg-gray-50/80">
+                          <td className="px-3 py-2 font-medium text-gray-900">
+                            {r.assetName}
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {r.checkerName}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge color="indigo">{r.submissionCount}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 px-4">
+                  <ClipboardList
+                    size={32}
+                    className="mx-auto text-gray-300 mb-3"
+                  />
+                  <p className="text-sm font-medium text-gray-700">
+                    Chưa có phiếu checklist trong {periodMonths} tháng gần nhất
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
+                    Khi KTV hoặc Trưởng ca gửi kiểm tra hiện trường, bảng xếp
+                    hạng theo tài sản và người nộp sẽ hiện tại đây.
+                  </p>
+                </div>
+              )}
             </Card>
-          )}
-          {data.qrFieldUsage?.topAssets?.length > 0 && (
-            <Card title="Thiết bị nhiều lượt mở QR">
-              <div className="space-y-1.5">
-                {data.qrFieldUsage.topAssets.map((a) => (
-                  <div
-                    key={a.assetId}
-                    className="flex justify-between py-1 border-b border-gray-100 last:border-0"
-                  >
-                    <span className="text-sm text-gray-800">{a.assetName}</span>
-                    <Badge color="blue">{a.openCount}</Badge>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+          </section>
         </div>
       )}
 
