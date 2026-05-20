@@ -12,6 +12,12 @@ import { Button }     from '../components/ui/Button.jsx';
 import { Input }      from '../components/ui/Input.jsx';
 import { Badge }      from '../components/ui/Badge.jsx';
 import { getRoleKey, ROLE_LABELS, ROLE_COLORS } from '../utils/rbac.js';
+import {
+  PID_TRUONG_PHONG_BAO_TRI,
+  PID_TRUONG_PHONG_KT,
+  PID_PHO_BAO_TRI,
+  PID_PHO_PHONG_KT,
+} from '../constants/positionIds.js';
 import toast from 'react-hot-toast';
 import { User, Lock, Mail, Phone, Building2, Briefcase, ShieldCheck, Camera, Wrench, Star } from 'lucide-react';
 
@@ -22,10 +28,20 @@ const BADGE_COLOR = {
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_MB = 5;
 
+function resolvePositionTitle(user) {
+  const pid = Number(user?.positionId ?? 0);
+  if (pid === PID_TRUONG_PHONG_BAO_TRI) return 'Trưởng phòng Bảo trì';
+  if (pid === PID_PHO_BAO_TRI) return 'Phó phòng Bảo trì';
+  if (pid === PID_TRUONG_PHONG_KT) return 'Trưởng phòng Kỹ thuật - CN';
+  if (pid === PID_PHO_PHONG_KT) return 'Phó phòng Kỹ thuật - CN';
+  return user?.positionName ?? '—';
+}
+
 export function ProfilePage() {
   const { user, refetchMe } = useAuth();
   const roleKey = getRoleKey(user);
   const rc      = ROLE_COLORS[roleKey] ?? 'gray';
+  const resolvedPositionTitle = resolvePositionTitle(user);
   const badge   = {
     label: ROLE_LABELS[roleKey] ?? roleKey,
     color: BADGE_COLOR[rc] ?? 'gray',
@@ -137,7 +153,7 @@ export function ProfilePage() {
           <h2 className="text-xl font-bold text-gray-900">{user.fullName}</h2>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge color={badge.color}>{badge.label}</Badge>
-            <span className="text-sm text-gray-600">{user.positionName}</span>
+            <span className="text-sm text-gray-600">{resolvedPositionTitle}</span>
           </div>
           {/* Thông tin kỹ năng */}
           {(user.specialty || user.craftLevel) && (
@@ -191,7 +207,7 @@ export function ProfilePage() {
             { icon: ShieldCheck, label: 'Tên đăng nhập', value: user.username },
             { icon: Mail,       label: 'Email',          value: user.email },
             { icon: Phone,      label: 'Điện thoại',     value: user.phone ?? '—' },
-            { icon: Briefcase,  label: 'Chức vụ',        value: user.positionName },
+            { icon: Briefcase,  label: 'Chức vụ',        value: resolvedPositionTitle },
             { icon: Building2,  label: 'Phòng ban',      value: user.departmentName ?? '—' },
           ].map(({ icon: Icon, label, value }) => (
             <div key={label} className="flex items-start gap-3 p-3 rounded-xl bg-gray-50">

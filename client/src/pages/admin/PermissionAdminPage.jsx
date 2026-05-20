@@ -16,12 +16,19 @@ import { useAuth } from "../../contexts/AuthContext.jsx";
 /** Gợi ý hiển thị cạnh tên quyền (ô checkbox vẫn giữ mã EN). */
 function permissionDisplayLabel(permissionName, resourceType) {
   if (resourceType === "CHECKLIST_RESULT" && permissionName === "APPROVE") {
-    return "APPROVE";
+    return "Tiếp nhận checklist";
   }
-  if (resourceType === "CHECKLIST_RESULT" && permissionName === "UPDATE") {
-    return "UPDATE";
-  }
-  return permissionName;
+  const map = {
+    CREATE: "Tạo",
+    READ: "Xem",
+    UPDATE: "Cập nhật",
+    DELETE: "Xóa",
+    APPROVE: "Phê duyệt",
+    EXPORT: "Xuất báo cáo",
+    REVIEW: "Tiếp nhận / xử lý",
+    SUBMIT: "Gửi duyệt",
+  };
+  return map[permissionName] ?? permissionName;
 }
 
 const RESOURCE_LABEL_VI = {
@@ -210,7 +217,7 @@ export function PermissionAdminPage() {
             >
               {positions.map((p) => (
                 <option key={p.positionId} value={p.positionId}>
-                  {p.positionName} (Level {p.level})
+                  {p.positionName} (Cấp {p.level})
                 </option>
               ))}
             </Select>
@@ -264,9 +271,6 @@ export function PermissionAdminPage() {
                       <p className="font-semibold text-gray-800">
                         {RESOURCE_LABEL_VI[row.resourceType] ??
                           row.resourceType}
-                      </p>
-                      <p className="text-xs text-gray-400 font-mono mt-0.5">
-                        {row.resourceType}
                       </p>
                     </td>
                     <td className="px-4 py-3">

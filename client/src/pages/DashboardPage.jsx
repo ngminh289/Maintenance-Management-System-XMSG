@@ -27,10 +27,20 @@ import { StatCard }     from '../components/ui/Card.jsx';
 import { Badge }        from '../components/ui/Badge.jsx';
 import { PageLoader }   from '../components/ui/Spinner.jsx';
 import { useAuth }      from '../contexts/AuthContext.jsx';
-import { getDashboardType, getFirstAllowedReportPath } from '../utils/rbac.js';
+import { getDashboardType, getFirstAllowedReportPath, getRoleKey, ROLE_LABELS } from '../utils/rbac.js';
 import { fDate, WO_STATUS_LABEL, WO_STATUS_COLOR, WO_PRIORITY_COLOR, WO_PRIORITY_LABEL } from '../utils/format.js';
 
 const toInt = (v) => Number(v ?? 0) || 0;
+
+function getUserSubtitle(user) {
+  const positionName = String(user?.positionName ?? '').trim();
+  const departmentName = String(user?.departmentName ?? '').trim();
+  if (positionName && departmentName) return `${positionName} — ${departmentName}`;
+  if (positionName) return positionName;
+  if (departmentName) return departmentName;
+  const roleKey = getRoleKey(user);
+  return ROLE_LABELS[roleKey] ?? 'Người dùng hệ thống';
+}
 
 function DashboardGreeting({ user, tone = 'blue' }) {
   const toneClass =
@@ -48,7 +58,7 @@ function DashboardGreeting({ user, tone = 'blue' }) {
       </div>
       <div>
         <p className="font-bold">Xin chào, {user?.fullName ?? 'người dùng'}!</p>
-        <p className={`text-sm ${subToneClass}`}>{user?.positionName ?? '—'} — {user?.departmentName ?? '—'}</p>
+        <p className={`text-sm ${subToneClass}`}>{getUserSubtitle(user)}</p>
       </div>
     </div>
   );
@@ -530,7 +540,7 @@ function FieldDashboard() {
         </div>
         <div>
           <p className="font-bold text-blue-900">Xin chào, {user?.fullName}!</p>
-          <p className="text-sm text-blue-700">{user?.positionName} — {user?.departmentName}</p>
+          <p className="text-sm text-blue-700">{getUserSubtitle(user)}</p>
         </div>
       </div>
 
