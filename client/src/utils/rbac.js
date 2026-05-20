@@ -50,11 +50,60 @@ export const ROLE_LABELS = {
   congNhan: "KTV hiện trường",
   kyThuat: "Chuyên viên KTS",
   truongCa: "Trưởng ca bảo trì",
-  truongPhong: "Trưởng / Phó phòng Bảo trì",
-  headPtkT: "Trưởng / Phó phòng Kỹ thuật - CN",
+  truongPhong: "Lãnh đạo phòng Bảo trì",
+  headPtkT: "Lãnh đạo phòng Kỹ thuật - CN",
   admin: "Admin",
   bGD: "Giám đốc",
 };
+
+/**
+ * Nhãn chức vụ hiển thị người dùng cuối: Trưởng và Phó tách riêng theo PositionID.
+ */
+export function getRoleLabel(user) {
+  if (!user) return "—";
+  const pid = Number(user.positionId ?? 0);
+  if (pid === PID_TRUONG_PHONG_BAO_TRI) return "Trưởng phòng Bảo trì";
+  if (pid === PID_PHO_BAO_TRI) return "Phó phòng Bảo trì";
+  if (pid === PID_TRUONG_PHONG_KT) return "Trưởng phòng Kỹ thuật - CN";
+  if (pid === PID_PHO_PHONG_KT) return "Phó phòng Kỹ thuật - CN";
+  const pn = String(user.positionName ?? "").trim();
+  const ambiguousPn = /trưởng\s*\/\s*phó/i.test(pn);
+  if (pn && !ambiguousPn) return pn;
+  if (ambiguousPn) {
+    const rk = getRoleKey(user);
+    return ROLE_LABELS[rk] ?? "—";
+  }
+  const rk = getRoleKey(user);
+  return ROLE_LABELS[rk] ?? rk;
+}
+
+/**
+ * Badge gọn trong sidebar (một dòng, không gộp Trưởng/Phó).
+ * @returns {{ label: string, color: string } | null}
+ */
+export function getSidebarRoleBadge(user) {
+  if (!user) return null;
+  const rk = getRoleKey(user);
+  const pid = Number(user.positionId ?? 0);
+  const base = {
+    admin: { label: "Admin", color: "bg-red-500" },
+    bGD: { label: "GĐ", color: "bg-purple-500" },
+    truongCa: { label: "Trưởng ca", color: "bg-blue-500" },
+    kyThuat: { label: "CV KTS", color: "bg-teal-500" },
+    congNhan: { label: "KTV HT", color: "bg-gray-500" },
+  };
+  if (rk === "truongPhong") {
+    if (pid === PID_TRUONG_PHONG_BAO_TRI) return { label: "TP Bảo trì", color: "bg-indigo-500" };
+    if (pid === PID_PHO_BAO_TRI) return { label: "Phó BT", color: "bg-indigo-500" };
+    return { label: "BT", color: "bg-indigo-500" };
+  }
+  if (rk === "headPtkT") {
+    if (pid === PID_TRUONG_PHONG_KT) return { label: "TP KT-CN", color: "bg-teal-600" };
+    if (pid === PID_PHO_PHONG_KT) return { label: "Phó KT-CN", color: "bg-teal-600" };
+    return { label: "PKT", color: "bg-teal-600" };
+  }
+  return base[rk] ?? { label: "—", color: "bg-gray-500" };
+}
 
 export const ROLE_COLORS = {
   congNhan: "gray",

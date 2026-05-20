@@ -355,8 +355,7 @@ export function SchedulesPage() {
   const actorPid = Number(user?.positionId) || 0;
   const isAdmin = actorLevel >= 4;
   const isTruongCa = actorPid === 3;
-  const isTruongPhongLane =
-    actorLevel >= 3 && !isTruongCa; // Trưởng/Phó BT (6/8) hoặc PKT (7/9)
+  const isTruongPhongLane = actorLevel >= 3 && !isTruongCa; // Trưởng/Phó BT (6/8) hoặc PKT (7/9)
   const isKyThuat = actorLevel === 2;
   const isBgd = actorLevel >= 5 && !isAdmin;
 
@@ -411,7 +410,8 @@ export function SchedulesPage() {
         "Trạng thái": STATUS_LABEL[s.status] ?? s.status ?? "",
         "Loại bảo trì":
           MAINTENANCE_TYPE_LABEL[s.maintenanceType] ?? s.maintenanceType ?? "",
-        "Tần suất": `${s.frequencyValue ?? ""} ${UNIT_LABEL[s.frequencyUnit] ?? s.frequencyUnit ?? ""}`.trim(),
+        "Tần suất":
+          `${s.frequencyValue ?? ""} ${UNIT_LABEL[s.frequencyUnit] ?? s.frequencyUnit ?? ""}`.trim(),
         "Ngày bắt đầu": fDate(s.startDate) ?? "",
         "Ngày đến hạn": fDate(s.nextDueDate) ?? "",
         "Ngày thực hiện cuối": fDate(s.lastExecutedDate) ?? "",
@@ -679,7 +679,7 @@ export function SchedulesPage() {
                                 size="xs"
                                 variant="secondary"
                                 onClick={() => handleSubmit(s.scheduleId)}
-                                title="Gửi Trưởng phòng duyệt"
+                                title="Gửi duyệt"
                               >
                                 <Send size={11} /> Gửi
                               </Button>
@@ -883,12 +883,16 @@ export function SchedulesPage() {
             <>
               Lịch <strong>"{deleteItem?.scheduleName}"</strong> đã phát sinh{" "}
               <strong>{deletePreview.woGroups.willKeep.length}</strong> Phiếu
-              việc đang thực hiện hoặc đã đóng. Hệ thống sẽ <strong>huỷ Lịch</strong>{" "}
-              nhưng <strong>giữ lại Phiếu việc</strong> để bảo toàn dữ liệu lịch
-              sử
+              việc đang thực hiện hoặc đã đóng. Hệ thống sẽ{" "}
+              <strong>huỷ Lịch</strong> nhưng{" "}
+              <strong>giữ lại Phiếu việc</strong> để bảo toàn dữ liệu lịch sử
               {deletePreview.woGroups.willCancel.length > 0 ? (
                 <>
-                  {" "}và <strong>huỷ {deletePreview.woGroups.willCancel.length}</strong>{" "}
+                  {" "}
+                  và{" "}
+                  <strong>
+                    huỷ {deletePreview.woGroups.willCancel.length}
+                  </strong>{" "}
                   phiếu chưa khởi động
                 </>
               ) : null}

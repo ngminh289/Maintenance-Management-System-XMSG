@@ -27,19 +27,19 @@ import { StatCard }     from '../components/ui/Card.jsx';
 import { Badge }        from '../components/ui/Badge.jsx';
 import { PageLoader }   from '../components/ui/Spinner.jsx';
 import { useAuth }      from '../contexts/AuthContext.jsx';
-import { getDashboardType, getFirstAllowedReportPath, getRoleKey, ROLE_LABELS } from '../utils/rbac.js';
+import { getDashboardType, getFirstAllowedReportPath, getRoleLabel } from '../utils/rbac.js';
 import { fDate, WO_STATUS_LABEL, WO_STATUS_COLOR, WO_PRIORITY_COLOR, WO_PRIORITY_LABEL } from '../utils/format.js';
 
 const toInt = (v) => Number(v ?? 0) || 0;
 
 function getUserSubtitle(user) {
-  const positionName = String(user?.positionName ?? '').trim();
-  const departmentName = String(user?.departmentName ?? '').trim();
-  if (positionName && departmentName) return `${positionName} — ${departmentName}`;
-  if (positionName) return positionName;
-  if (departmentName) return departmentName;
-  const roleKey = getRoleKey(user);
-  return ROLE_LABELS[roleKey] ?? 'Người dùng hệ thống';
+  const dept = String(user?.departmentName ?? '').trim();
+  const title = String(getRoleLabel(user) ?? '').trim();
+  const safeTitle = title && title !== '—' ? title : '';
+  if (safeTitle && dept) return `${safeTitle} — ${dept}`;
+  if (safeTitle) return safeTitle;
+  if (dept) return dept;
+  return 'Người dùng hệ thống';
 }
 
 function DashboardGreeting({ user, tone = 'blue' }) {

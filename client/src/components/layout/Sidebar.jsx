@@ -14,18 +14,7 @@ import {
   ScrollText, ChevronsUpDown, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { canAccess, canDo, getRoleKey, isAdminUser } from '../../utils/rbac.js';
-
-// roleKey → badge label hiển thị cạnh tên (TC / Trưởng phòng tách PositionID — rbac.js)
-const ROLE_BADGE = {
-  admin:       { label: 'Admin',         color: 'bg-red-500' },
-  bGD:         { label: 'GĐ',            color: 'bg-purple-500' },
-  truongCa:    { label: 'Trưởng ca',     color: 'bg-blue-500' },
-  truongPhong: { label: 'Trưởng/Phó BT', color: 'bg-indigo-500' },
-  headPtkT:   { label: 'Trưởng/Phó PKT', color: 'bg-teal-600' },
-  kyThuat:     { label: 'CV KTS',        color: 'bg-teal-500' },
-  congNhan:    { label: 'KTV HT',        color: 'bg-gray-500' },
-};
+import { canAccess, canDo, getSidebarRoleBadge, isAdminUser } from '../../utils/rbac.js';
 
 // Định nghĩa menu 3 cấp — routeKey/action bám rbac.js
 const MENU_GROUPS = [
@@ -212,8 +201,7 @@ function ExpandableNavItem({
 export function Sidebar({ open, onClose }) {
   const { pathname } = useLocation();
   const { user } = useAuth();
-  const roleKey  = getRoleKey(user);
-  const badge    = roleKey ? ROLE_BADGE[roleKey] : null;
+  const badge = getSidebarRoleBadge(user);
 
   const visibleGroups = useMemo(() => MENU_GROUPS.map((group) => {
     const items = (group.items ?? [])
@@ -333,11 +321,13 @@ export function Sidebar({ open, onClose }) {
                 <p className="text-sm font-semibold text-white truncate">{user.fullName}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {badge && (
-                    <span className={`text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md ${badge.color}`}>
+                    <span className={`text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md whitespace-nowrap ${badge.color}`}>
                       {badge.label}
                     </span>
                   )}
-                  <p className="text-xs text-slate-400 truncate">{user.positionName}</p>
+                  {user.departmentName ? (
+                    <p className="text-xs text-slate-400 truncate">{user.departmentName}</p>
+                  ) : null}
                 </div>
               </div>
               <ChevronRight size={14} className="text-slate-500 flex-shrink-0" />
