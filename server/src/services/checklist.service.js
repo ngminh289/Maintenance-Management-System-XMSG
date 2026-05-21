@@ -3,9 +3,9 @@
  *
  * Gửi checklist: lưu kết quả + chi tiết, ReviewStatus=PENDING — KHÔNG đổi tài sản / WO / bộ đếm.
  * Trưởng ca / Trưởng phòng duyệt (APPROVE): mới chạy logic theo OverallStatus:
- *   OK      → nếu checklist độc lập (không gắn WO) thì AVAILABLE; checklist gắn WO không tự đóng phiếu
- *   WARNING → MONITORING, WO PREDICTIVE HIGH + thông báo
- *   NG      → BROKEN, WO CORRECTIVE EMERGENCY + thông báo (MAINTENANCE khi KTV bắt đầu IN_PROGRESS)
+ *   OK      → checklist độc lập: AVAILABLE; gắn WO: không đổi TS / không đóng phiếu gốc
+ *   WARNING → MONITORING + WO PREDICTIVE HIGH (cả QR và checklist trên phiếu lịch)
+ *   NG      → BROKEN + WO CORRECTIVE EMERGENCY (cả QR và checklist trên phiếu lịch)
  * Đồng hồ giờ chạy (recordReading) chỉ gọi khi APPROVE.
  *
  * REJECT: giữ nguyên tài sản, thông báo cho người nộp.
@@ -440,13 +440,15 @@ export async function applyApprovedChecklistEffects(row) {
   }
 
   let newWorkOrderId = null;
+  const linkedToWo =
+    woId != null && woId !== "" && Number.isFinite(Number(woId)) && Number(woId) > 0;
+  const parentWoRef = linkedToWo ? ` (phát hiện trên WO #${Number(woId)})` : "";
 
   /**
-   * Checklist gắn WO chỉ dùng để xác nhận checklist-slot và cập nhật dữ liệu checklist.
-   * Không tự động đổi trạng thái WO (đặc biệt không auto COMPLETED) để tránh bỏ qua
-   * luồng nghiệm thu AWAITING_CLOSURE -> COMPLETED của Trưởng ca/Trưởng phòng.
+   * Checklist gắn WO + OK: chỉ fulfill slot (reviewChecklistResult), không đổi TS / không đóng phiếu gốc.
+   * NG / WARNING: vẫn tạo phiếu khẩn / dự báo như checklist QR độc lập (case lịch bảo trì).
    */
-  if (woId) {
+  if (linkedToWo && overallStatus === "OK") {
     return null;
   }
 
@@ -458,7 +460,7 @@ export async function applyApprovedChecklistEffects(row) {
       assetId,
       woSource: "PREDICTIVE",
       priority: "HIGH",
-      description: `[CẢNH BÁO] Checklist #${checklistId}: ${asset.assetName} — Theo dõi thêm (đã xác nhận giám sát)`,
+      description: `[CẢNH BÁO] Checklist #${checklistId}: ${asset.assetName} — Theo dõi thêm (đã xác nhận giám sát)${parentWoRef}`,
       createdBy: checkerId,
     });
     await notifService.notifyManagers(
@@ -473,7 +475,7 @@ export async function applyApprovedChecklistEffects(row) {
       assetId,
       woSource: "CORRECTIVE",
       priority: "EMERGENCY",
-      description: `[SỰ CỐ] Checklist #${checklistId}: ${asset.assetName} — NG (đã xác nhận giám sát)`,
+      description: `[SỰ CỐ] Checklist #${checklistId}: ${asset.assetName} — NG (đã xác nhận giám sát)${parentWoRef}`,
       createdBy: checkerId,
     });
     await notifService.notifyManagers(
