@@ -366,11 +366,31 @@ function canApproveByPid(pid, list) {
   return list.includes(Number(pid));
 }
 
+/**
+ * Phân công WO (UI): DB chỉ có WORK_ORDER READ/CREATE/UPDATE/DELETE/APPROVE — không có ASSIGN.
+ * API dùng UPDATE + actorLevel >= 3 (workOrderFieldAssign.service.js).
+ */
+export function canAssignWorkOrder(user) {
+  if (!user) return false;
+  const role = getRoleKey(user);
+  if (role === "truongCa" || role === "truongPhong" || role === "headPtkT") return true;
+  if (role === "admin") {
+    const byDb = canDoByDbPermission(user, "WORK_ORDER:UPDATE");
+    if (byDb !== null) return byDb;
+    return true;
+  }
+  return false;
+}
+
 export function canDo(user, action) {
   // Tab "Đã lưu trữ" / Khôi phục: không có trong bảng Roles_Permissions — nếu để
   // canDoByDbPermission chạy trước thì Set.has → false và thoát sớm, Admin cũng không thấy tab.
   if (action === "WORK_ORDER:RESTORE" || action === "WORK_ORDER:VIEW_ARCHIVED") {
     return getRoleKey(user) === "admin" || Number(user?.positionId) === 4;
+  }
+  // ASSIGN không có trong Roles_Permissions — tránh canDoByDb → false khi user có permissions[].
+  if (action === "WORK_ORDER:ASSIGN") {
+    return canAssignWorkOrder(user);
   }
 
   const canByDb = canDoByDbPermission(user, action);

@@ -58,6 +58,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog.jsx";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import {
   canDo,
+  canAssignWorkOrder,
   LEVEL_TRUONG_CA,
   canEditWorkOrderRow,
   canDeleteWorkOrderRow,
@@ -811,7 +812,7 @@ export function WorkOrderDetailPage() {
     !isArchived &&
     wo.status === "PENDING_APPROVAL" &&
     canDo(user, "WORK_ORDER:APPROVE");
-  const canAssign = !isArchived && canDo(user, "WORK_ORDER:ASSIGN");
+  const canAssign = !isArchived && canAssignWorkOrder(user);
   /** Ghi chú vật tư: chỉ trưởng nhóm hoặc TC+ */
   const canEditClosureDraft =
     canUpdate &&

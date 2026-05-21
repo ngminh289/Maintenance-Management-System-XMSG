@@ -1,0 +1,435 @@
+================================================================================
+  HỆ THỐNG QUẢN LÝ BẢO TRÌ KHO (WAREHOUSE MAINTENANCE)
+  Tài liệu thiết kế hệ thống, kiến trúc và quy trình phát triển
+  Phục vụ trình bày đồ án
+================================================================================
+
+1. TỔNG QUAN DỰ ÁN
+--------------------------------------------------------------------------------
+
+1.1. Tên và mục tiêu
+    - Tên dự án (monorepo): warehouse-maintenance
+    - Mục tiêu: Số hóa quy trình bảo trì thiết bị/tài sản trong kho/xí nghiệp:
+      quản lý tài sản, lập lịch bảo trì, phiếu việc (Work Order), checklist
+      hiện trường (QR), kho tài liệu SOP, phê duyệt nhiều cấp, báo cáo KPI.
+
+1.2. Đối tượng sử dụng (vai trò chính)
+    - KTV hiện trường (Level 1): thực hiện checklist, nhận phiếu được giao.
+    - Chuyên viên KTS (Level 2): soạn lịch, tài liệu, mẫu checklist, tạo phiếu.
+    - Trưởng ca (Level 3): duyệt lịch/phiếu/checklist, phân công nhóm.
+    - Trưởng/Phó phòng BT, PKT (Level 3–4): quản trị nghiệp vụ, báo cáo.
+    - Admin / Ban Giám đốc: cấu hình, xem tổng quan (một số thao tác chỉ đọc).
+
+1.3. Phạm vi chức năng chính
+    - Quản lý tài sản (Assets) + loại tài sản 2 cấp + vị trí + đồng hồ giờ chạy.
+    - Lịch bảo trì: định kỳ (ngày/tuần/tháng) và dự báo (theo giờ chạy).
+    - Phiếu việc (Work Orders): thủ công, từ lịch, từ checklist NG/Cảnh báo, khẩn cấp.
+    - Checklist: mẫu theo loại tài sản, quét QR, nộp ảnh, giám sát duyệt.
+    - Kho tài liệu số (DAM): version, phản hồi từ hiện trường, lưu trữ.
+    - Phê duyệt (Approval) theo workflow template.
+    - Thông báo trong hệ thống.
+    - Báo cáo: vận hành, sử dụng tài nguyên (QR/checklist), hiệu suất.
+
+
+2. KIẾN TRÚC HỆ THỐNG
+--------------------------------------------------------------------------------
+
+2.1. Mô hình tổng thể: Client – Server – Database (3 tầng)
+
+    +------------------+       HTTPS/REST        +------------------+
+    |  CLIENT (Web)    |  <------------------->  |  SERVER (API)    |
+    |  React + Vite    |   JSON + Cookie JWT     |  Express.js      |
+    |  Port: 5173 dev  |                         |  Port: 3000      |
+    +------------------+                         +--------+---------+
+                                                          |
+                                                          | mysql2
+                                                          v
+                                                 +------------------+
+                                                 |  MySQL 8         |
+                                                 |  warehouse_      |
+                                                 |  maintenance     |
+                                                 +------------------+
+
+    - Client: SPA (Single Page Application), routing phía trình duyệt.
+    - Server: REST API, xác thực JWT (httpOnly cookie), phân quyền RBAC.
+    - Database: quan hệ, InnoDB, migration có version (_migrations).
+
+2.2. Kiến trúc phần mềm phía Server (MVC mở rộng)
+
+    HTTP Request
+         |
+         v
+    [ Routes ]          Định tuyến URL (/api/work-orders, /api/checklists, ...)
+         |
+         v
+    [ Middleware ]      auth, RBAC (permission), validate, errorHandler
+         |
+         v
+    [ Controllers ]     Nhận req/res, gọi service, trả JSON chuẩn
+         |
+         v
+    [ Services ]        Nghiệp vụ: luồng phê duyệt, tạo WO từ lịch, checklist...
+         |
+         v
+    [ Models ]          SQL thuần (mysql2), không ORM — truy vấn rõ ràng
+         |
+         v
+    [ MySQL ]
+
+    Nguyên tắc:
+    - Controller mỏng, Service dày (business logic).
+    - Model chỉ chứa SQL, không gọi service khác (tránh vòng lặp).
+    - Validator tách file (Joi-like thủ công) trước khi vào service.
+
+2.3. Kiến trúc phía Client
+
+    [ App.jsx ]           Router + RoleGuard (phân quyền menu/trang)
+         |
+         v
+    [ Pages ]             Màn hình theo module (workorders, schedules, ...)
+         |
+         +-- [ api/*.api.js ]     Axios gọi REST
+         +-- [ contexts/ ]          AuthContext (user, permissions)
+         +-- [ components/ui/ ]     Button, Modal, Input tái sử dụng
+         +-- [ utils/rbac.js ]      canDo(permission), nhãn vai trò
+
+2.4. Cấu trúc thư mục monorepo
+
+    Warehouse/
+    ├── package.json              # workspaces: server + client
+    ├── client/                   # Frontend React
+    │   ├── src/
+    │   │   ├── pages/            # Trang theo nghiệp vụ
+    │   │   ├── components/       # UI + layout
+    │   │   ├── api/              # Lớp gọi API
+    │   │   ├── contexts/         # Auth
+    │   │   └── utils/            # rbac, format
+    │   └── vite.config.js
+    └── server/                   # Backend Express
+        ├── src/
+        │   ├── routes/
+        │   ├── controllers/
+        │   ├── services/
+        │   ├── models/
+        │   ├── middleware/
+        │   ├── validators/
+        │   └── config/           # DB, env, upload, mailer
+        ├── sql/
+        │   ├── schema.sql        # Khởi tạo bảng
+        │   ├── seed.sql          # Dữ liệu mẫu
+        │   └── migrations/       # 001..076 (evolution DB)
+        └── scripts/
+            └── setup-db.js       # Chạy schema + migration + seed
+
+
+3. CÔNG NGHỆ SỬ DỤNG
+--------------------------------------------------------------------------------
+
+3.1. Frontend
+    - React 19, React Router 7
+    - Vite 6 (build tool)
+    - Tailwind CSS 3 (giao diện)
+    - Axios (HTTP client)
+    - Recharts (biểu đồ báo cáo)
+    - react-hot-toast (thông báo UI)
+    - lucide-react (icon)
+
+3.2. Backend
+    - Node.js (ES Modules)
+    - Express 4
+    - mysql2 (connection pool)
+    - jsonwebtoken + cookie-parser (xác thực)
+    - bcrypt (mật khẩu)
+    - multer + Cloudinary (tùy chọn — upload ảnh/tài liệu)
+    - nodemailer (xác thực email, quên mật khẩu)
+    - helmet, cors, morgan (bảo mật & log)
+
+3.3. Cơ sở dữ liệu
+    - MySQL 8, charset utf8mb4
+    - Database: warehouse_maintenance
+    - Quản lý schema: schema.sql + migrations tự động (_migrations)
+
+3.4. Triển khai (tham khảo)
+    - Dev: concurrently chạy server + client (npm run dev ở root)
+    - Client build: Vite → static (có thể deploy Vercel — vercel.json)
+    - API: Node process (PM2 / Docker tùy môi trường thực tế)
+
+
+4. THIẾT KẾ CƠ SỞ DỮ LIỆU (TÓM TẮT)
+--------------------------------------------------------------------------------
+
+4.1. Nhóm bảng chính
+
+    Tổ chức & người dùng:
+    - Departments, Positions, Employees
+    - Roles_Permissions (RBAC: Role + Permission + Resource)
+
+    Tài sản & vận hành:
+    - AssetTypes (cây 2 cấp), Locations, Assets, AssetCounters
+    - AssetPhotos, AssetStatusHistory, AssetRuntimeLogs
+
+    Bảo trì & phiếu việc:
+    - MaintenanceSchedules (lịch PM/Predictive)
+    - MaintenanceScheduleChecklistTemplates (N mẫu checklist / lịch)  [*]
+    - WorkOrders, WO_Assignments, WorkOrderPhotos
+    - ScheduledChecklistSlots (lượt checklist bắt buộc / WO từ lịch)  [*]
+    - AssetMaintenanceHistory
+
+    Checklist:
+    - ChecklistTemplates, ChecklistTemplateItems
+    - ChecklistResults, ChecklistDetails
+
+    Tài liệu (DAM):
+    - DigitalAssets, AssetVersions, DocumentCategories, Tags
+    - DocumentFeedback (góp ý hiện trường)
+
+    Phê duyệt & thông báo:
+    - WorkflowTemplates, WorkflowSteps, ApprovalLogs
+    - Notifications, AuditLogs
+
+    [*] Mở rộng đồ án: nhiều checklist template trên một lịch và nhiều slot/phiếu.
+
+4.2. Mô hình nhiều checklist trên lịch và phiếu việc (điểm nhấn kỹ thuật)
+
+    Trước đây (1-1):
+    - MaintenanceSchedules.ChecklistTemplateID → một mẫu
+    - ScheduledChecklistSlots: UNIQUE(WorkOrderID) → một slot/phiếu
+
+    Hiện tại (N-N qua bảng trung gian):
+    - MaintenanceScheduleChecklistTemplates (ScheduleID, TemplateID, SortOrder)
+    - ScheduledChecklistSlots: UNIQUE(WorkOrderID, TemplateID)
+      Mỗi lượt = một yêu cầu checklist trên phiếu, dùng cho báo cáo compliance.
+
+    Luồng dữ liệu:
+    Lịch (2 mẫu) --> sinh WO --> 2 dòng ScheduledChecklistSlots (OPEN)
+         --> KTV nộp checklist từng mẫu --> PENDING duyệt
+         --> Trưởng ca APPROVE --> slot FULFILLED
+         --> Phiếu coi là đủ checklist khi TẤT CẢ slot FULFILLED/WAIVED
+
+    Báo cáo "Tỷ lệ hoàn thành checklist định kỳ" đếm theo SLOT (không đếm
+    trực tiếp ChecklistResults) để tránh lệch khi có checklist ngoài lịch.
+
+4.3. Sơ đồ quan hệ rút gọn (trình bày slide)
+
+    MaintenanceSchedules ----< MaintenanceScheduleChecklistTemplates >---- ChecklistTemplates
+            |                                                                      ^
+            | (1-N)                                                                  |
+            v                                                                      |
+       WorkOrders ----< ScheduledChecklistSlots >----------------------------------+
+            |
+            +----< ChecklistResults (WO_ID, TemplateID)
+            +----< WO_Assignments >---- Employees
+
+
+5. PHÂN QUYỀN (RBAC)
+--------------------------------------------------------------------------------
+
+5.1. Mô hình
+    - Permission dạng: RESOURCE:ACTION
+      Ví dụ: WORK_ORDER:CREATE, WORK_ORDER:APPROVE, CHECKLIST_RESULT:CREATE,
+             MAINTENANCE_PLAN:UPDATE, DOCUMENT_FEEDBACK:REVIEW
+    - Gán permission theo Position (chức vụ), không hard-code từng user.
+    - Frontend: utils/rbac.js — canDo(user, permission)
+    - Backend: middleware kiểm tra permission trước controller.
+
+5.2. Phân luồng (lane)
+    - Lane Bảo trì: tài sản, lịch, phiếu, checklist hiện trường.
+    - Lane KTS/DAM: tài liệu số, mẫu checklist, phản hồi tài liệu.
+    - Ban Giám đốc: thường READ trên nghiệp vụ, xem Dashboard & báo cáo.
+
+5.3. Bảo vệ route phía Client
+    - ProtectedRoute: bắt buộc đăng nhập.
+    - RoleGuard routeKey: map menu → tập permission tối thiểu.
+
+
+6. CÁC LUỒNG NGHIỆP VỤ CHÍNH (CHO SLIDE TRÌNH BÀY)
+--------------------------------------------------------------------------------
+
+6.1. Luồng lịch bảo trì định kỳ → phiếu việc → checklist
+
+    [Soạn lịch DRAFT] --> [Gửi phê duyệt] --> [Trưởng ca duyệt] --> PENDING
+         |
+         | (đến hạn / quá hạn)
+         v
+    [Tự động / thủ công: generateWorkOrder]
+         |
+         +--> Tạo WorkOrder (PENDING_APPROVAL) --> workflow duyệt phiếu
+         +--> ensureSlotsForWorkOrder: tạo N slot checklist (theo N mẫu gắn lịch)
+         |
+         v
+    [Phân công KTV / Trưởng nhóm] --> IN_PROGRESS
+         |
+         v
+    [Trưởng nhóm: checklist từng mẫu qua QR] --> PENDING duyệt giám sát
+         |
+         v
+    [APPROVE từng checklist] --> slot FULFILLED (đúng TemplateID)
+         |
+         v
+    [Đủ tất cả slot] --> báo hoàn thành / nghiệm thu phiếu --> COMPLETED
+
+6.2. Luồng checklist độc lập (NG / Cảnh báo)
+
+    Quét QR --> Nộp checklist --> PENDING
+         --> Trưởng ca duyệt APPROVE
+         --> Nếu NG: tạo phiếu CORRECTIVE khẩn; nếu WARNING: MONITORING + phiếu dự báo
+         --> Cập nhật đồng hồ giờ chạy (AssetCounters) khi duyệt
+
+6.3. Luồng tài liệu số (DAM)
+
+    Upload --> Phê duyệt version --> APPROVED --> gắn tag/tài sản
+    Hiện trường xem SOP + góp ý (DocumentFeedback) --> KTS xử lý hộp thư
+
+6.4. Luồng phê duyệt chung (ApprovalLogs)
+
+    Resource: WORK_ORDER | MAINTENANCE_PLAN | DIGITAL_ASSET | ...
+    WorkflowTemplate định nghĩa số bước (Trưởng ca / Trưởng phòng)
+    Mỗi bước ghi ApprovalLogs; từ chối có thể trả DRAFT/REJECTED
+
+
+7. API VÀ TÍCH HỢP
+--------------------------------------------------------------------------------
+
+7.1. Tiền tố API: /api
+
+    Nhóm route chính (server/src/routes/index.js):
+    - /api/auth          Đăng nhập, JWT, đổi mật khẩu
+    - /api/assets        Tài sản
+    - /api/work-orders   Phiếu việc
+    - /api/maintenance-schedules  Lịch bảo trì
+    - /api/checklists    Mẫu, QR, nộp, duyệt kết quả
+    - /api/digital-assets  Tài liệu
+    - /api/approvals     Phê duyệt
+    - /api/stats         Báo cáo, thống kê
+    - /api/notifications Thông báo
+    - /api/employees, /api/permissions, ...
+
+7.2. Định dạng phản hồi
+    - Thành công: { success: true, data: ... }
+    - Lỗi: middleware errorHandler → HTTP status + message tiếng Việt
+    - Phân trang: page, limit, total (utils/paginate.js)
+
+7.3. Upload file
+    - Ảnh phiếu, ảnh checklist, tài liệu: multer → uploads/ hoặc Cloudinary
+    - Đường dẫn lưu trong DB (FilePath / URL)
+
+
+8. QUY TRÌNH PHÁT TRIỂN ỨNG DỤNG
+--------------------------------------------------------------------------------
+
+8.1. Môi trường phát triển
+
+    Yêu cầu:
+    - Node.js 18+
+    - MySQL 8
+    - npm (workspaces)
+
+    Cài đặt lần đầu:
+    1) Clone repository
+    2) npm install (ở thư mục gốc — cài cả server và client)
+    3) Tạo server/.env (DB_HOST, DB_USER, DB_PASSWORD, JWT_SECRET, ...)
+    4) npm run db:setup -w server   (schema + migrations + seed)
+    5) npm run dev                 (chạy API + Vite song song)
+
+8.2. Quy trình thay đổi CSDL (Migration-driven)
+
+    - File schema.sql: khởi tạo bảng lần đầu (IF NOT EXISTS).
+    - Mỗi thay đổi sau deploy: thêm file server/sql/migrations/0xx_mo_ta.sql
+    - Script setup-db.js đọc thư mục migrations theo tên file, ghi bảng _migrations
+      để không chạy trùng.
+    - Quy ước đặt tên: 074_multi_schedule_checklist_templates.sql, ...
+
+    Lưu ý khi trình bày:
+    - Migration 074: bảng junction + TemplateID trên slot + đổi unique index
+    - Migration 075/076: backfill slot thiếu, sửa index khi FK cần index phụ
+
+8.3. Quy trình phát triển tính năng (chu trình đề xuất)
+
+    Bước 1 — Phân tích yêu cầu
+        Use case, vai trò, luồng màn hình, ràng buộc nghiệp vụ.
+
+    Bước 2 — Thiết kế
+        ERD cập nhật, API contract (endpoint + JSON), wireframe UI.
+
+    Bước 3 — CSDL
+        Viết migration, chạy local, kiểm tra dữ liệu mẫu.
+
+    Bước 4 — Backend
+        Model (SQL) --> Service (logic) --> Route + Controller + Validator
+        Test bằng Postman / trình duyệt Network.
+
+    Bước 5 — Frontend
+        api/*.js --> Page/Component --> RoleGuard nếu cần
+        Đồng bộ rbac.js và nhãn tiếng Việt.
+
+    Bước 6 — Kiểm thử
+        Luồng chính (happy path) + lỗi quyền + edge case (vd: 2 checklist/phiếu).
+
+    Bước 7 — Triển khai
+        build client, start server, chạy migration trên DB staging/production.
+
+8.4. Quản lý mã nguồn (khuyến nghị trình bày)
+
+    - Nhánh main: ổn định
+    - Nhánh feature/*: tính năng (vd: multi-checklist-wo)
+    - Commit message ngắn gọn tiếng Việt hoặc tiếng Anh có prefix: feat:, fix:, docs:
+    - Không commit file .env, uploads nhạy cảm
+
+
+9. BẢO MẬT (TÓM TẮT)
+--------------------------------------------------------------------------------
+
+    - Mật khẩu: bcrypt hash
+    - Phiên đăng nhập: JWT trong httpOnly cookie (giảm XSS đánh cắp token)
+    - CORS: whitelist origin client (env CLIENT_ORIGINS)
+    - Helmet: header bảo mật HTTP
+    - RBAC: kiểm tra permission từng API
+    - Rate limit (có thể bật trên /api)
+    - Upload: giới hạn kích thước, kiểm tra loại file
+
+
+10. GỢI Ý CẤU TRÚC SLIDE TRÌNH BÀY ĐỒ ÁN (10–15 phút)
+--------------------------------------------------------------------------------
+
+    Slide 1:  Đặt vấn đề & mục tiêu
+    Slide 2:  Kiến trúc 3 tầng (sơ đồ khối)
+    Slide 3:  Công nghệ sử dụng (bảng)
+    Slide 4:  Use case / Actor (KTV, KTS, Trưởng ca, ...)
+    Slide 5:  ERD rút gọn (nhóm Assets, WO, Checklist, Schedule)
+    Slide 6:  Luồng lịch bảo trì + phiếu + checklist (sequence đơn giản)
+    Slide 7:  Demo màn hình: Dashboard, Phiếu việc, QR Checklist
+    Slide 8:  Điểm nhấn: Nhiều checklist template / lịch + ScheduledChecklistSlots
+    Slide 9:  RBAC & phê duyệt
+    Slide 10: Báo cáo (compliance checklist, QR, downtime)
+    Slide 11: Quy trình phát triển & migration DB
+    Slide 12: Kết quả đạt được, hạn chế, hướng phát triển
+
+11. HẠN CHẾ VÀ HƯỚNG PHÁT TRIỂN (GỢI Ý)
+--------------------------------------------------------------------------------
+
+    Hạn chế hiện tại:
+    - Chưa có automated test (unit/e2e) đầy đủ
+    - Một số migration phụ thuộc thứ tự thủ công
+    - Mobile-first chưa tối ưu hoàn toàn
+
+    Hướng phát triển:
+    - Ứng dụng mobile PWA cho checklist QR offline
+    - Dashboard real-time (WebSocket)
+    - Tích hợp ERP/kho vật tư
+    - CI/CD + Docker Compose cho triển khai đồng nhất
+
+
+12. LỆNH THAM KHẢO NHANH (DEMO)
+--------------------------------------------------------------------------------
+
+    Cài DB:     npm run db:setup -w server
+    Chạy dev:   npm run dev
+    API:        http://localhost:3000/api
+    Client:     http://localhost:5173
+    Đăng nhập:  tài khoản seed trong server/sql/seed.sql (Admin mẫu)
+
+
+================================================================================
+  Tài liệu được tổng hợp từ mã nguồn dự án Warehouse (client + server).
+  Cập nhật: theo phiên bản có multi-checklist trên lịch bảo trì và phiếu việc.
+================================================================================
