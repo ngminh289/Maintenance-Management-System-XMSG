@@ -141,6 +141,25 @@ export async function findLatestByWorkOrderId(woId) {
   return rows[0] || null;
 }
 
+/** Mọi checklist gắn WO (mới nhất trước) — hiển thị nhiều mẫu trên chi tiết phiếu. */
+export async function findAllByWorkOrderId(woId) {
+  const wid = Number(woId);
+  if (!Number.isFinite(wid) || wid < 1) return [];
+  const [rows] = await getPool().query(
+    `SELECT cr.ChecklistID AS checklistId, cr.OverallStatus AS overallStatus,
+            cr.CheckTime AS checkTime, cr.Notes AS notes, e.FullName AS checkerName,
+            cr.ReadingValue AS readingValue, cr.ReviewStatus AS reviewStatus,
+            cr.CheckerID AS checkerId, cr.TemplateID AS templateId, ct.TemplateName AS templateName
+     FROM ChecklistResults cr
+     JOIN Employees e ON e.EmployeeID = cr.CheckerID
+     LEFT JOIN ChecklistTemplates ct ON ct.TemplateID = cr.TemplateID
+     WHERE cr.WO_ID = ?
+     ORDER BY ct.TemplateName ASC, cr.CheckTime DESC`,
+    [wid],
+  );
+  return rows;
+}
+
 export async function findRecentApprovedByAsset(assetId, limit = 3) {
   const n = Math.min(Math.max(Number(limit) || 3, 1), 10);
   const [rows] = await getPool().query(

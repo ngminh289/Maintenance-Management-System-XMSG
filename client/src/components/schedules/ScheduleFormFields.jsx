@@ -16,7 +16,7 @@ export const EMPTY_SCHEDULE_FORM = {
   startDate: '',
   endDate: '',
   priority: 'MEDIUM',
-  checklistTemplateId: '',
+  checklistTemplateIds: [],
 };
 
 const UNIT_LABEL = {
@@ -54,10 +54,11 @@ export function mapScheduleToForm(schedule) {
     startDate: toDateInputValue(schedule?.startDate),
     endDate: toDateInputValue(schedule?.endDate),
     priority: schedule?.priority ?? 'MEDIUM',
-    checklistTemplateId:
-      schedule?.checklistTemplateId != null
-        ? String(schedule.checklistTemplateId)
-        : '',
+    checklistTemplateIds: Array.isArray(schedule?.checklistTemplateIds)
+      ? schedule.checklistTemplateIds.map(String)
+      : schedule?.checklistTemplateId != null
+        ? [String(schedule.checklistTemplateId)]
+        : [],
   };
 }
 
@@ -96,9 +97,9 @@ export function buildSchedulePayload(form) {
     startDate: form.startDate,
     endDate: form.endDate || undefined,
     priority: (form.priority || 'MEDIUM').toUpperCase(),
-    checklistTemplateId: form.checklistTemplateId
-      ? Number(form.checklistTemplateId)
-      : null,
+    checklistTemplateIds: (form.checklistTemplateIds || [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0),
   };
 }
 
@@ -161,8 +162,18 @@ export function ScheduleFormFields({
     );
   }, [checklistTemplates, selectedAssetTypeId]);
 
+  const toggleTemplateId = (templateId) => {
+    const id = String(templateId);
+    const cur = form.checklistTemplateIds || [];
+    const next = cur.includes(id)
+      ? cur.filter((x) => x !== id)
+      : [...cur, id];
+    setF('checklistTemplateIds', next);
+  };
+
   const handleAssetChange = async (assetId) => {
     setF('assetId', assetId);
+    setF('checklistTemplateIds', []);
     if (!assetId || isPredictive) return;
     try {
       let asset = visibleAssets.find((a) => String(a.assetId) === String(assetId));
@@ -308,19 +319,49 @@ export function ScheduleFormFields({
           <option value="HIGH">Cao</option>
           <option value="URGENT">Khẩn</option>
         </Select>
-        <Select
-          label="Checklist template (tuỳ chọn)"
-          value={form.checklistTemplateId ?? ''}
-          onChange={(e) => setF('checklistTemplateId', e.target.value)}
-          disabled={ro || !selectedAssetTypeId}
-        >
-          <option value="">-- Không gắn template cố định --</option>
-          {templateOptions.map((tpl) => (
-            <option key={tpl.templateId} value={tpl.templateId}>
-              {tpl.templateName}
-            </option>
-          ))}
-        </Select>
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-medium text-gray-700">
+          Checklist template (tuỳ chọn — chọn nhiều mẫu)
+        </p>
+        {!selectedAssetTypeId ? (
+          <p className="text-xs text-gray-500">
+            Chọn tài sản trước để hiển thị mẫu checklist phù hợp.
+          </p>
+        ) : templateOptions.length === 0 ? (
+          <p className="text-xs text-gray-500">
+            Chưa có mẫu checklist cho loại tài sản này.
+          </p>
+        ) : (
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2">
+            {templateOptions.map((tpl) => {
+              const id = String(tpl.templateId);
+              const checked = (form.checklistTemplateIds || []).includes(id);
+              return (
+                <label
+                  key={tpl.templateId}
+                  className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 rounded border-gray-300"
+                    checked={checked}
+                    disabled={ro}
+                    onChange={() => toggleTemplateId(id)}
+                  />
+                  <span>{tpl.templateName}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {(form.checklistTemplateIds || []).length > 0 && (
+          <p className="mt-1 text-xs text-teal-800">
+            Đã chọn {(form.checklistTemplateIds || []).length} mẫu — mỗi phiếu việc
+            từ lịch sẽ yêu cầu nộp đủ các mẫu này.
+          </p>
+        )}
       </div>
 
       <Textarea

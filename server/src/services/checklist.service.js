@@ -36,6 +36,7 @@ import * as notifService from "./notification.service.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 import * as assetQrAccessLogModel from "../models/assetQrAccessLog.model.js";
 import * as maintenanceScheduleModel from "../models/maintenanceSchedule.model.js";
+import * as scheduleTemplateModel from "../models/maintenanceScheduleChecklistTemplate.model.js";
 import * as permissionModel from "../models/permission.model.js";
 
 /** Level ≤ 1: công nhân — giới hạn xem checklist như mô tả file header. */
@@ -258,10 +259,58 @@ export async function getQRInfo(assetId, viewer = {}) {
         String(wo.woSource || "").toUpperCase() === "PREDICTIVE"
       )
     ) {
-      const schedule = await maintenanceScheduleModel.findById(wo.scheduleId);
-      if (schedule?.checklistTemplateId != null) {
-        preferredTemplateId = Number(schedule.checklistTemplateId);
+      const scheduleTemplateIds =
+        await scheduleTemplateModel.listTemplateIdsByScheduleId(wo.scheduleId);
+      if (scheduleTemplateIds.length === 1) {
+        preferredTemplateId = scheduleTemplateIds[0];
+      } else if (scheduleTemplateIds.length > 1) {
+        preferredTemplateId = null;
+      } else {
+        const schedule = await maintenanceScheduleModel.findById(wo.scheduleId);
+        if (schedule?.checklistTemplateId != null) {
+          preferredTemplateId = Number(schedule.checklistTemplateId);
+        }
       }
+      let slots =
+        await scheduledChecklistSlotModel.findAllByWorkOrderId(linkedWoId);
+      const dueDate =
+        slots[0]?.dueDate != null
+          ? String(slots[0].dueDate).slice(0, 10)
+          : wo.plannedDate
+            ? String(wo.plannedDate).slice(0, 10)
+            : new Date().toISOString().split("T")[0];
+      await scheduledChecklistSlotModel.ensureSlotsForWorkOrder({
+        scheduleId: Number(wo.scheduleId),
+        assetId: Number(wo.assetId),
+        workOrderId: linkedWoId,
+        dueDate,
+      });
+      slots = await scheduledChecklistSlotModel.findAllByWorkOrderId(linkedWoId);
+
+      const templateRows = await scheduleTemplateModel.listByScheduleId(
+        wo.scheduleId,
+      );
+      const slotRows =
+        templateRows.length > 0
+          ? templateRows.map((t) => {
+              const slot = slots.find(
+                (s) => Number(s.templateId) === Number(t.templateId),
+              );
+              const st = String(slot?.status || "OPEN").toUpperCase();
+              return {
+                templateId: t.templateId,
+                templateName: t.templateName,
+                slotStatus: st,
+                slotMissing: !slot,
+              };
+            })
+          : slots.map((s) => ({
+              templateId: s.templateId,
+              templateName: s.templateName,
+              slotStatus: String(s.status || ""),
+              slotMissing: false,
+            }));
+
       const assigns = await workOrderModel.getAssignments(linkedWoId);
       const amLeader =
         viewerEmployeeId != null &&
@@ -273,13 +322,29 @@ export async function getQRInfo(assetId, viewer = {}) {
       const amAssigned =
         viewerEmployeeId != null &&
         assigns.some((a) => Number(a.employeeId) === viewerEmployeeId);
-      const slot = await scheduledChecklistSlotModel.findByWorkOrderId(linkedWoId);
+      const openSlots = slotRows.filter((s) =>
+        ["OPEN", "OVERDUE"].includes(String(s.slotStatus).toUpperCase()),
+      );
+      const slot = openSlots[0] || slotRows[0] || null;
       woChecklist = {
         woId: linkedWoId,
-        slotStatus: String(slot?.status || ""),
-        canSubmit: Boolean(amLeader),
+        slotStatus: String(slot?.slotStatus || ""),
+        canSubmit: Boolean(amLeader) && openSlots.length > 0,
         amLeader: Boolean(amLeader),
         amAssigned: Boolean(amAssigned),
+        scheduleTemplateIds,
+        checklistSlots: slotRows.map((s) => ({
+          templateId: s.templateId,
+          templateName: s.templateName,
+          slotStatus: s.slotStatus,
+          canSubmit:
+            Boolean(amLeader) &&
+            !s.slotMissing &&
+            ["OPEN", "OVERDUE"].includes(String(s.slotStatus).toUpperCase()),
+        })),
+        openTemplateIds: openSlots
+          .filter((row) => row.templateId != null && !row.slotMissing)
+          .map((row) => row.templateId),
       };
     }
   }
@@ -475,15 +540,14 @@ export async function submitResult({
     if (String(wo.status).toUpperCase() === "CANCELLED") {
       throw createError("Phiếu việc đã hủy — không nộp checklist gắn phiếu này", 400);
     }
-    const slot = await scheduledChecklistSlotModel.findByWorkOrderId(wid);
-    if (!slot) {
+    const scheduleTemplateIds =
+      await scheduleTemplateModel.listTemplateIdsByScheduleId(wo.scheduleId);
+    const slots = await scheduledChecklistSlotModel.findAllByWorkOrderId(wid);
+    if (!slots.length) {
       throw createError(
         "Phiếu này chưa có yêu cầu checklist từ lịch. Liên hệ quản trị để đồng bộ lại slot checklist.",
         409,
       );
-    }
-    if (!["OPEN", "OVERDUE"].includes(String(slot.status).toUpperCase())) {
-      throw createError("Checklist của phiếu này đã được thực hiện trước đó.", 409);
     }
     const assigns = await workOrderModel.getAssignments(wid);
     const isLeader = assigns.some(
@@ -499,7 +563,7 @@ export async function submitResult({
     }
     if (woSource === "PREDICTIVE_SCHEDULE" || woSource === "PREDICTIVE") {
       const today = new Date().toISOString().split("T")[0];
-      const dueDate = String(slot.dueDate || "").slice(0, 10);
+      const dueDate = String(slots[0]?.dueDate || "").slice(0, 10);
       if (!dueDate || dueDate !== today) {
         throw createError(
           `Checklist dự báo chỉ được thực hiện trong ngày đến hạn (${dueDate || "không xác định"}).`,
@@ -527,6 +591,21 @@ export async function submitResult({
   }
 
   let resolvedTemplateId = null;
+  let scheduleTemplateIds = [];
+  if (linkedWorkOrder?.scheduleId) {
+    scheduleTemplateIds = await scheduleTemplateModel.listTemplateIdsByScheduleId(
+      linkedWorkOrder.scheduleId,
+    );
+    if (!scheduleTemplateIds.length) {
+      const schedule = await maintenanceScheduleModel.findById(
+        linkedWorkOrder.scheduleId,
+      );
+      if (schedule?.checklistTemplateId != null) {
+        scheduleTemplateIds = [Number(schedule.checklistTemplateId)];
+      }
+    }
+  }
+
   if (templateId != null && templateId !== "") {
     const tid = Number(templateId);
     if (!Number.isFinite(tid) || tid <= 0) {
@@ -538,16 +617,59 @@ export async function submitResult({
       throw createError("Mẫu checklist không thuộc loại tài sản của thiết bị này", 400);
     }
     resolvedTemplateId = tid;
+  } else if (linkedWorkOrder?.scheduleId && scheduleTemplateIds.length === 1) {
+    resolvedTemplateId = scheduleTemplateIds[0];
+  } else if (linkedWorkOrder?.scheduleId && scheduleTemplateIds.length > 1) {
+    throw createError(
+      "Phiếu có nhiều mẫu checklist — vui lòng chọn đúng mẫu trước khi nộp.",
+      400,
+    );
   } else if (linkedWorkOrder?.scheduleId) {
-    const schedule = await maintenanceScheduleModel.findById(linkedWorkOrder.scheduleId);
-    resolvedTemplateId = schedule?.checklistTemplateId ?? null;
-    if (!resolvedTemplateId) {
-      const fallback = await templateModel.findByAssetTypeId(asset.assetTypeId);
-      resolvedTemplateId = fallback?.templateId ?? null;
-    }
+    const fallback = await templateModel.findByAssetTypeId(asset.assetTypeId);
+    resolvedTemplateId = fallback?.templateId ?? null;
   } else {
     const fallback = await templateModel.findByAssetTypeId(asset.assetTypeId);
     resolvedTemplateId = fallback?.templateId ?? null;
+  }
+
+  if (resolvedWoId != null && scheduleTemplateIds.length > 0) {
+    if (!resolvedTemplateId || !scheduleTemplateIds.includes(resolvedTemplateId)) {
+      throw createError(
+        "Mẫu checklist không nằm trong danh sách mẫu gắn lịch của phiếu này.",
+        400,
+      );
+    }
+    const slot = await scheduledChecklistSlotModel.findOpenByWorkOrderAndTemplate(
+      resolvedWoId,
+      resolvedTemplateId,
+    );
+    if (!slot) {
+      const existing = await scheduledChecklistSlotModel.findAllByWorkOrderId(resolvedWoId);
+      const forTpl = existing.find(
+        (s) => Number(s.templateId) === Number(resolvedTemplateId),
+      );
+      if (forTpl && !["OPEN", "OVERDUE"].includes(String(forTpl.status).toUpperCase())) {
+        throw createError(
+          "Checklist cho mẫu này trên phiếu đã được thực hiện trước đó.",
+          409,
+        );
+      }
+      throw createError(
+        "Phiếu chưa có slot checklist cho mẫu này. Liên hệ quản trị để đồng bộ.",
+        409,
+      );
+    }
+  } else if (resolvedWoId != null) {
+    const slot = await scheduledChecklistSlotModel.findByWorkOrderId(resolvedWoId);
+    if (!slot) {
+      throw createError(
+        "Phiếu này chưa có yêu cầu checklist từ lịch. Liên hệ quản trị để đồng bộ lại slot checklist.",
+        409,
+      );
+    }
+    if (!["OPEN", "OVERDUE"].includes(String(slot.status).toUpperCase())) {
+      throw createError("Checklist của phiếu này đã được thực hiện trước đó.", 409);
+    }
   }
 
   const tplFullForPhotos = resolvedTemplateId
@@ -673,8 +795,9 @@ export async function reviewChecklistResult(
   if (!updated) throw createError("Không thể xác nhận (đã xử lý?)", 409);
 
   if (row.woId != null) {
-    await scheduledChecklistSlotModel.fulfillByWorkOrder(
+    await scheduledChecklistSlotModel.fulfillByWorkOrderAndTemplate(
       Number(row.woId),
+      row.templateId,
       checklistId,
     );
   }

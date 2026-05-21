@@ -59,6 +59,13 @@ const SCHEDULE_KIND_BADGE = {
 function scheduleKindKey(s) {
   return s?.frequencyUnit === "HOURS" ? "predictive" : "periodic";
 }
+
+function formatScheduleChecklistNames(s) {
+  if (Array.isArray(s?.checklistTemplateNames) && s.checklistTemplateNames.length) {
+    return s.checklistTemplateNames.join(", ");
+  }
+  return s?.checklistTemplateName ?? "";
+}
 const UNIT_LABEL = {
   HOURS: "giờ",
   DAYS: "ngày",
@@ -406,7 +413,7 @@ export function SchedulesPage() {
         "Tài sản": s.assetName ?? "",
         "Kiểu lịch":
           SCHEDULE_KIND_BADGE[scheduleKindKey(s)]?.label ?? scheduleKindKey(s),
-        Checklist: s.checklistTemplateName ?? "",
+        Checklist: formatScheduleChecklistNames(s),
         "Trạng thái": STATUS_LABEL[s.status] ?? s.status ?? "",
         "Loại bảo trì":
           MAINTENANCE_TYPE_LABEL[s.maintenanceType] ?? s.maintenanceType ?? "",
@@ -635,10 +642,18 @@ export function SchedulesPage() {
                         })()}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {s.checklistTemplateName ? (
-                          <Badge color="indigo">
-                            {s.checklistTemplateName}
-                          </Badge>
+                        {formatScheduleChecklistNames(s) ? (
+                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                            {(Array.isArray(s.checklistTemplateNames) &&
+                            s.checklistTemplateNames.length
+                              ? s.checklistTemplateNames
+                              : [s.checklistTemplateName]
+                            ).map((name) => (
+                              <Badge key={name} color="indigo">
+                                {name}
+                              </Badge>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-xs text-gray-400 italic">
                             Chưa gắn template

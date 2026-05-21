@@ -123,7 +123,7 @@ export const checklistScheduleCompliance = asyncHandler(async (req, res) => {
       denominator:
         "Tổng số lượt yêu cầu trong kỳ: mọi slot có DueDate trong khoảng thời gian chọn (OPEN / OVERDUE / FULFILLED / WAIVED).",
       formula: "(fulfilledSlots / totalSlots) × 100%",
-      note: "Mỗi lượt = một WO sinh từ lịch bảo trì. Không dùng trực tiếp COUNT(ChecklistResults) làm mẫu số để tránh lệch khi có checklist ngoài lịch hoặc chưa gắn slot.",
+      note: "Mỗi lượt = một dòng ScheduledChecklistSlots (một mẫu checklist trên một WO từ lịch; lịch N mẫu → N slot/phiếu). Không dùng COUNT(ChecklistResults) làm mẫu số.",
     },
   });
 });

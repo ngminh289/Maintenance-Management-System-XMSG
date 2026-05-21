@@ -741,9 +741,34 @@ export function WorkOrderDetailPage() {
       (source === "PREDICTIVE" && wo.scheduleId != null);
     if (scheduleChecklistSource && wo.scheduleId != null) {
       q.set("woId", String(wo.woId));
+      const openSlot = (
+        wo.checklistRequirements?.length
+          ? wo.checklistRequirements
+          : wo.checklistSlots || []
+      ).find((s) =>
+        ["OPEN", "OVERDUE"].includes(String(s.status).toUpperCase()),
+      );
+      if (openSlot?.templateId) {
+        q.set("templateId", String(openSlot.templateId));
+      }
     }
     return `/checklists?${q.toString()}`;
   }, [wo]);
+
+  const checklistPendingByTemplate = useMemo(() => {
+    const linked = Array.isArray(wo?.woLinkedChecklists)
+      ? wo.woLinkedChecklists
+      : wo?.woLinkedChecklist
+        ? [wo.woLinkedChecklist]
+        : [];
+    const m = new Map();
+    for (const cl of linked) {
+      if (String(cl.reviewStatus || "").toUpperCase() === "PENDING") {
+        m.set(Number(cl.templateId), cl);
+      }
+    }
+    return m;
+  }, [wo?.woLinkedChecklists, wo?.woLinkedChecklist]);
 
   if (loading) return <PageLoader />;
   if (!wo)
@@ -805,24 +830,50 @@ export function WorkOrderDetailPage() {
   const machinePowerState = String(wo.machinePowerState || "STARTUP").toUpperCase();
   const machineIsShutdown = machinePowerState === "SHUTDOWN";
   const source = String(wo.woSource || "").toUpperCase();
+  const checklistSlots = Array.isArray(wo.checklistSlots)
+    ? wo.checklistSlots
+    : wo.checklistSlot
+      ? [wo.checklistSlot]
+      : [];
+  const checklistRequirements =
+    Array.isArray(wo.checklistRequirements) && wo.checklistRequirements.length
+      ? wo.checklistRequirements
+      : checklistSlots.filter((s) => s.templateId != null);
   const hasChecklistRequirement =
     (source === "SCHEDULE" ||
       source === "PREDICTIVE_SCHEDULE" ||
       (source === "PREDICTIVE" && wo.scheduleId != null)) &&
     wo.scheduleId != null &&
+    checklistRequirements.length > 0 &&
     !["COMPLETED", "CANCELLED"].includes(wo.status);
-  const checklistSlotStatus = String(
-    wo.checklistSlot?.status || "",
-  ).toUpperCase();
-  const checklistDueDate = wo.checklistSlot?.dueDate || null;
-  const checklistDone = checklistSlotStatus === "FULFILLED";
+  const checklistDueDate =
+    checklistRequirements[0]?.dueDate || checklistSlots[0]?.dueDate || null;
+  const fulfilledCount = checklistRequirements.filter((s) =>
+    ["FULFILLED", "WAIVED"].includes(String(s.status).toUpperCase()),
+  ).length;
+  const totalRequired = checklistRequirements.length;
+  const checklistDone =
+    wo.checklistRequirementsMet === true ||
+    (totalRequired > 0 && fulfilledCount >= totalRequired);
+  const woLinkedChecklists = Array.isArray(wo.woLinkedChecklists)
+    ? wo.woLinkedChecklists
+    : wo.woLinkedChecklist
+      ? [wo.woLinkedChecklist]
+      : [];
+  const checklistPendingCount = checklistPendingByTemplate.size;
+  const checklistStillToDoCount = checklistRequirements.filter((req) => {
+    const st = String(req.status || "").toUpperCase();
+    if (["FULFILLED", "WAIVED"].includes(st)) return false;
+    if (checklistPendingByTemplate.has(Number(req.templateId))) return false;
+    return ["OPEN", "OVERDUE"].includes(st) || req.slotMissing;
+  }).length;
   const checklistPendingReview =
-    String(wo.woLinkedChecklist?.reviewStatus || "").toUpperCase() === "PENDING";
-  const woLinkedChecklistApproved =
-    String(wo.woLinkedChecklist?.reviewStatus || "").toUpperCase() ===
-    "APPROVED";
+    !checklistDone && checklistPendingCount > 0;
+  const anyWoLinkedChecklistApproved = woLinkedChecklists.some(
+    (c) => String(c.reviewStatus || "").toUpperCase() === "APPROVED",
+  );
   const canSeeWoLinkedChecklist =
-    isTcPlus || amGroupLeader || woLinkedChecklistApproved;
+    isTcPlus || amGroupLeader || anyWoLinkedChecklistApproved;
 
   const twoStepApproval = Number(pendingApprovalLog?.totalLevels) === 2;
   const tpStepName =
@@ -1057,28 +1108,43 @@ export function WorkOrderDetailPage() {
                 ? "Checklist dự báo đính kèm"
                 : "Checklist định kỳ đính kèm"}
             </p>
+            {wo.checklistSlotSyncWarning && (
+              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                {wo.checklistSlotSyncWarning}
+              </p>
+            )}
             <p className="mt-1 leading-relaxed">
               {checklistDone
-                ? "Checklist đã được thực hiện và xác nhận."
-                : checklistPendingReview
-                  ? "Checklist đã nộp và đang chờ duyệt."
-                  : "Checklist chưa được thực hiện. Vui lòng hoàn tất checklist hiện trường cho phiếu này."}
+                ? totalRequired > 1
+                  ? `Đã hoàn thành và xác nhận đủ ${totalRequired} mẫu checklist.`
+                  : "Checklist đã được thực hiện và xác nhận."
+                : checklistPendingReview && checklistStillToDoCount > 0
+                  ? `Đã nộp ${checklistPendingCount + fulfilledCount}/${totalRequired} mẫu — ${checklistPendingCount} chờ duyệt. Vẫn cần làm ${checklistStillToDoCount} mẫu còn lại (bên dưới).`
+                  : checklistPendingReview
+                    ? `Đã nộp ${checklistPendingCount}/${totalRequired} mẫu — đang chờ giám sát duyệt.`
+                    : totalRequired > 1
+                      ? `Cần hoàn thành ${totalRequired} mẫu checklist (${fulfilledCount}/${totalRequired} đã duyệt xong).`
+                      : "Checklist chưa được thực hiện. Vui lòng hoàn tất checklist hiện trường cho phiếu này."}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Badge
                 color={
                   checklistDone
                     ? "green"
-                    : checklistPendingReview
+                    : checklistPendingReview && checklistStillToDoCount === 0
                       ? "orange"
-                      : "yellow"
+                      : checklistStillToDoCount > 0
+                        ? "yellow"
+                        : "orange"
                 }
               >
                 {checklistDone
                   ? "Đã thực hiện"
-                  : checklistPendingReview
-                    ? "Chờ duyệt"
-                    : "Chưa thực hiện"}
+                  : checklistStillToDoCount > 0
+                    ? `Còn ${checklistStillToDoCount} mẫu`
+                    : checklistPendingReview
+                      ? "Chờ duyệt"
+                      : "Chưa thực hiện"}
               </Badge>
               {checklistDueDate && (
                 <Badge color="blue">
@@ -1086,81 +1152,154 @@ export function WorkOrderDetailPage() {
                 </Badge>
               )}
             </div>
-            {!checklistPendingReview && (
-              <Link
-                to={checklistForAssetHref}
-                className="inline-block mt-2 text-sm font-semibold text-teal-900 underline hover:no-underline"
-              >
-                Mở trang checklist — tài sản #{wo.assetId}
-              </Link>
+            {!checklistDone && (
+              <div className="mt-3 space-y-2">
+                {checklistRequirements.length > 0 ? (
+                  checklistRequirements.map((slot) => {
+                    const st = String(slot.status || "").toUpperCase();
+                    const done = ["FULFILLED", "WAIVED"].includes(st);
+                    const open = ["OPEN", "OVERDUE"].includes(st);
+                    const pendingCl = checklistPendingByTemplate.get(
+                      Number(slot.templateId),
+                    );
+                    const q = new URLSearchParams({
+                      assetId: String(wo.assetId),
+                      woId: String(wo.woId),
+                    });
+                    if (slot.templateId != null) {
+                      q.set("templateId", String(slot.templateId));
+                    }
+                    return (
+                      <div
+                        key={slot.slotId ?? `${slot.templateId}-${st}`}
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-teal-100 bg-white/70 px-3 py-2"
+                      >
+                        <span className="font-medium text-teal-950">
+                          {slot.templateName ||
+                            (slot.templateId
+                              ? `Mẫu #${slot.templateId}`
+                              : "Checklist")}
+                        </span>
+                        <Badge
+                          color={
+                            done
+                              ? "green"
+                              : pendingCl
+                                ? "orange"
+                                : st === "OVERDUE"
+                                  ? "red"
+                                  : "yellow"
+                          }
+                        >
+                          {done
+                            ? "Đã duyệt xong"
+                            : pendingCl
+                              ? "Chờ duyệt"
+                              : st === "OVERDUE"
+                                ? "Quá hạn"
+                                : "Chưa làm"}
+                        </Badge>
+                        {pendingCl && (
+                          <Link
+                            to={`/checklists/history?assetId=${wo.assetId}&checklistId=${pendingCl.checklistId}`}
+                            className="text-sm font-semibold text-violet-800 underline"
+                          >
+                            Xem bản đã nộp
+                          </Link>
+                        )}
+                        {open && !pendingCl && (
+                          <Link
+                            to={`/checklists?${q.toString()}`}
+                            className="text-sm font-semibold text-teal-900 underline hover:no-underline"
+                          >
+                            Mở checklist mẫu này
+                          </Link>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <Link
+                    to={checklistForAssetHref}
+                    className="inline-block text-sm font-semibold text-teal-900 underline hover:no-underline"
+                  >
+                    Mở trang checklist — tài sản #{wo.assetId}
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         </div>
       )}
 
       {wo.recentChecklistsEligible &&
-        wo.woLinkedChecklist &&
+        woLinkedChecklists.length > 0 &&
         canSeeWoLinkedChecklist && (
           <Card title="Checklist đã nộp cho phiếu này">
-            <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  color={
-                    CHECKLIST_STATUS_COLOR[
-                      wo.woLinkedChecklist.overallStatus
-                    ] ?? "gray"
-                  }
+            <div className="space-y-3">
+              {woLinkedChecklists.map((cl) => (
+                <div
+                  key={cl.checklistId}
+                  className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm space-y-2"
                 >
-                  {wo.woLinkedChecklist.overallStatus}
-                </Badge>
-                <Badge
-                  color={
-                    APPROVAL_STATUS_COLOR[wo.woLinkedChecklist.reviewStatus] ??
-                    "yellow"
-                  }
-                >
-                  {wo.woLinkedChecklist.reviewStatus === "PENDING"
-                    ? "Chờ duyệt"
-                    : wo.woLinkedChecklist.reviewStatus === "APPROVED"
-                      ? "Đã duyệt"
-                      : wo.woLinkedChecklist.reviewStatus === "REJECTED"
-                        ? "Từ chối"
-                        : wo.woLinkedChecklist.reviewStatus}
-                </Badge>
-                <span className="text-xs font-mono text-gray-500">
-                  #{wo.woLinkedChecklist.checklistId}
-                </span>
-              </div>
-              <p className="text-gray-800">
-                <span className="font-semibold">
-                  {wo.woLinkedChecklist.checkerName ?? "—"}
-                </span>
-                <span className="text-gray-500">
-                  {" "}
-                  · {fDateTime(wo.woLinkedChecklist.checkTime)}
-                </span>
-              </p>
-              {wo.woLinkedChecklist.templateName && (
-                <p className="text-xs text-gray-600">
-                  Mẫu: {wo.woLinkedChecklist.templateName}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Link
-                  to={`/checklists/history?assetId=${wo.assetId}&checklistId=${wo.woLinkedChecklist.checklistId}`}
-                  className="text-sm font-semibold text-violet-800 underline"
-                >
-                  Xem chi tiết / ảnh câu hỏi
-                </Link>
-                {canDo(user, "CHECKLIST_RESULT:APPROVE") && (
-                  <Link
-                    to={`/checklists/review?checklistId=${wo.woLinkedChecklist.checklistId}`}
-                    className="text-sm font-semibold text-blue-700 underline"
-                  >
-                    Mở tiếp nhận checklist
-                  </Link>
-                )}
-              </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      color={
+                        CHECKLIST_STATUS_COLOR[cl.overallStatus] ?? "gray"
+                      }
+                    >
+                      {cl.overallStatus}
+                    </Badge>
+                    <Badge
+                      color={
+                        APPROVAL_STATUS_COLOR[cl.reviewStatus] ?? "yellow"
+                      }
+                    >
+                      {cl.reviewStatus === "PENDING"
+                        ? "Chờ duyệt"
+                        : cl.reviewStatus === "APPROVED"
+                          ? "Đã duyệt"
+                          : cl.reviewStatus === "REJECTED"
+                            ? "Từ chối"
+                            : cl.reviewStatus}
+                    </Badge>
+                    <span className="text-xs font-mono text-gray-500">
+                      #{cl.checklistId}
+                    </span>
+                  </div>
+                  <p className="text-gray-800">
+                    <span className="font-semibold">
+                      {cl.checkerName ?? "—"}
+                    </span>
+                    <span className="text-gray-500">
+                      {" "}
+                      · {fDateTime(cl.checkTime)}
+                    </span>
+                  </p>
+                  {cl.templateName && (
+                    <p className="text-xs text-gray-600">
+                      Mẫu: {cl.templateName}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Link
+                      to={`/checklists/history?assetId=${wo.assetId}&checklistId=${cl.checklistId}`}
+                      className="text-sm font-semibold text-violet-800 underline"
+                    >
+                      Xem chi tiết / ảnh câu hỏi
+                    </Link>
+                    {canDo(user, "CHECKLIST_RESULT:APPROVE") &&
+                      cl.reviewStatus === "PENDING" && (
+                        <Link
+                          to={`/checklists/review?checklistId=${cl.checklistId}`}
+                          className="text-sm font-semibold text-blue-700 underline"
+                        >
+                          Mở tiếp nhận checklist
+                        </Link>
+                      )}
+                  </div>
+                </div>
+              ))}
             </div>
           </Card>
         )}

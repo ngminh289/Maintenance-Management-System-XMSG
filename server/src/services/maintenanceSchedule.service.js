@@ -19,6 +19,7 @@ import * as approvalSvc from "./approval.service.js";
 import * as approvalLogModel from "../models/approvalLog.model.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
 import * as checklistTemplateModel from "../models/checklistTemplate.model.js";
+import * as scheduleTemplateModel from "../models/maintenanceScheduleChecklistTemplate.model.js";
 
 /** Số ngày cảnh báo trước khi đến hạn */
 const WARN_DAYS = 7;
@@ -81,6 +82,62 @@ function daysUntil(nextDueDateStr) {
   return Math.round(diff / (1000 * 60 * 60 * 24));
 }
 
+/** Chuẩn hoá checklistTemplateIds từ body (hỗ trợ checklistTemplateId đơn legacy). */
+function normalizeChecklistTemplateIds(data) {
+  if (Array.isArray(data.checklistTemplateIds)) {
+    return [
+      ...new Set(
+        data.checklistTemplateIds
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    ];
+  }
+  if (
+    data.checklistTemplateId != null &&
+    data.checklistTemplateId !== "" &&
+    Number.isFinite(Number(data.checklistTemplateId)) &&
+    Number(data.checklistTemplateId) > 0
+  ) {
+    return [Number(data.checklistTemplateId)];
+  }
+  return [];
+}
+
+async function validateTemplatesForAsset(templateIds, asset) {
+  for (const tid of templateIds) {
+    const tpl = await checklistTemplateModel.findById(tid);
+    if (!tpl) throw createError("Không tìm thấy checklist template", 404);
+    if (Number(tpl.assetTypeId) !== Number(asset.assetTypeId)) {
+      throw createError(
+        "Checklist template không thuộc loại tài sản của lịch bảo trì này.",
+        400,
+      );
+    }
+  }
+}
+
+function attachTemplatesToSchedule(schedule, templateRows = []) {
+  if (!schedule) return schedule;
+  const ids = templateRows.map((r) => Number(r.templateId));
+  const names = templateRows.map((r) => r.templateName);
+  return {
+    ...schedule,
+    checklistTemplateIds: ids,
+    checklistTemplateNames: names,
+    checklistTemplates: templateRows,
+    checklistTemplateId: ids[0] ?? schedule.checklistTemplateId ?? null,
+    checklistTemplateName:
+      names[0] ?? schedule.checklistTemplateName ?? null,
+  };
+}
+
+async function enrichSchedule(schedule) {
+  if (!schedule) return schedule;
+  const rows = await scheduleTemplateModel.listByScheduleId(schedule.scheduleId);
+  return attachTemplatesToSchedule(schedule, rows);
+}
+
 export async function getAll(query) {
   const { page, limit, offset } = getPagination(query);
   const filters = {
@@ -96,32 +153,27 @@ export async function getAll(query) {
     model.findAll({ ...filters, limit, offset }),
     model.count(filters),
   ]);
-  return paginatedResult(items, total, page, limit);
+  const templateMap = await scheduleTemplateModel.listGroupedByScheduleIds(
+    items.map((s) => s.scheduleId),
+  );
+  const enriched = items.map((s) =>
+    attachTemplatesToSchedule(s, templateMap.get(Number(s.scheduleId)) || []),
+  );
+  return paginatedResult(enriched, total, page, limit);
 }
 
 export async function getById(id) {
   const schedule = await model.findById(id);
   if (!schedule) throw createError("Không tìm thấy lịch bảo trì", 404);
-  return schedule;
+  return enrichSchedule(schedule);
 }
 
 export async function create(data, createdBy) {
   const asset = await assetModel.findById(data.assetId);
   if (!asset) throw createError("Không tìm thấy tài sản", 404);
-  const checklistTemplateId =
-    data.checklistTemplateId == null || data.checklistTemplateId === ""
-      ? null
-      : Number(data.checklistTemplateId);
-  if (checklistTemplateId != null) {
-    const tpl = await checklistTemplateModel.findById(checklistTemplateId);
-    if (!tpl) throw createError("Không tìm thấy checklist template", 404);
-    if (Number(tpl.assetTypeId) !== Number(asset.assetTypeId)) {
-      throw createError(
-        "Checklist template không thuộc loại tài sản của lịch bảo trì này.",
-        400,
-      );
-    }
-  }
+  const templateIds = normalizeChecklistTemplateIds(data);
+  await validateTemplatesForAsset(templateIds, asset);
+  const checklistTemplateId = templateIds[0] ?? null;
   const normalized = {
     ...data,
     scheduleName: data.scheduleName?.trim() || "",
@@ -145,11 +197,21 @@ export async function create(data, createdBy) {
     );
   }
   const id = await model.create(normalized);
-  return model.findById(id);
+  await scheduleTemplateModel.replaceForSchedule(id, templateIds);
+  return enrichSchedule(await model.findById(id));
 }
 
 const EDITABLE_STATUSES_PRE_APPROVAL = ["DRAFT", "REJECTED"];
 const EDITABLE_STATUSES_POST_APPROVAL = ["PENDING", "IN_PROGRESS", "OVERDUE"];
+
+/** WO còn hoạt động — đồng bộ slot checklist khi sửa danh sách mẫu trên lịch. */
+const WO_STATUSES_ENSURE_CHECKLIST_SLOTS = [
+  "PENDING_APPROVAL",
+  "WAITING",
+  "IN_PROGRESS",
+  "PAUSED",
+  "AWAITING_CLOSURE",
+];
 
 /** WO sẽ huỷ kèm khi xoá lịch (chưa khởi động → an toàn). */
 const WO_CANCELLABLE_ON_SCHEDULE_DELETE = ["PENDING_APPROVAL", "WAITING"];
@@ -226,36 +288,64 @@ export async function update(id, data, opts = {}) {
   }
   const payload = { ...data };
   delete payload.status;
-  if (payload.checklistTemplateId !== undefined) {
+  delete payload.checklistTemplateIds;
+
+  const effectiveAssetId =
+    payload.assetId != null && payload.assetId !== ""
+      ? Number(payload.assetId)
+      : Number(schedule.assetId);
+  const assetForCheck = await assetModel.findById(effectiveAssetId);
+  if (!assetForCheck) throw createError("Không tìm thấy tài sản", 404);
+
+  let templateIdsToSave = null;
+  if (data.checklistTemplateIds !== undefined) {
+    templateIdsToSave = normalizeChecklistTemplateIds(data);
+    await validateTemplatesForAsset(templateIdsToSave, assetForCheck);
+    payload.checklistTemplateId = templateIdsToSave[0] ?? null;
+  } else if (payload.checklistTemplateId !== undefined) {
     if (payload.checklistTemplateId === "" || payload.checklistTemplateId == null) {
       payload.checklistTemplateId = null;
+      templateIdsToSave = [];
     } else {
       const tid = Number(payload.checklistTemplateId);
       if (!Number.isFinite(tid) || tid <= 0) {
         throw createError("ChecklistTemplateID không hợp lệ", 400);
       }
-      const tpl = await checklistTemplateModel.findById(tid);
-      if (!tpl) throw createError("Không tìm thấy checklist template", 404);
-      const effectiveAssetId =
-        payload.assetId != null && payload.assetId !== ""
-          ? Number(payload.assetId)
-          : Number(schedule.assetId);
-      if (!Number.isFinite(effectiveAssetId)) {
-        throw createError("AssetID trên lịch không hợp lệ", 400);
-      }
-      const assetForCheck = await assetModel.findById(effectiveAssetId);
-      if (!assetForCheck) throw createError("Không tìm thấy tài sản", 404);
-      if (Number(tpl.assetTypeId) !== Number(assetForCheck.assetTypeId)) {
-        throw createError(
-          "Checklist template không thuộc loại tài sản của lịch bảo trì này.",
-          400,
-        );
-      }
+      templateIdsToSave = [tid];
+      await validateTemplatesForAsset(templateIdsToSave, assetForCheck);
       payload.checklistTemplateId = tid;
     }
   }
+
   await model.update(id, payload);
-  return model.findById(id);
+  if (templateIdsToSave !== null) {
+    await scheduleTemplateModel.replaceForSchedule(id, templateIdsToSave);
+    const openWos = await workOrderModel.findByScheduleAndStatuses(
+      id,
+      WO_STATUSES_ENSURE_CHECKLIST_SLOTS,
+    );
+    for (const w of openWos) {
+      const slots = await scheduledChecklistSlotModel.findAllByWorkOrderId(
+        w.woId,
+      );
+      let dueDate = w.plannedDate
+        ? String(w.plannedDate).trim().slice(0, 10)
+        : null;
+      if (dueDate === "0000-00-00" || !dueDate) {
+        dueDate = slots[0]?.dueDate
+          ? String(slots[0].dueDate).slice(0, 10)
+          : new Date().toISOString().split("T")[0];
+      }
+      await scheduledChecklistSlotModel.ensureSlotsForWorkOrder({
+        scheduleId: Number(id),
+        assetId: effectiveAssetId,
+        workOrderId: Number(w.woId),
+        dueDate,
+        templateIds: templateIdsToSave,
+      });
+    }
+  }
+  return enrichSchedule(await model.findById(id));
 }
 
 /**
@@ -369,7 +459,7 @@ export async function generateWorkOrder(scheduleId, createdBy) {
     createdBy,
   });
 
-  await scheduledChecklistSlotModel.insertForScheduleWorkOrder({
+  await scheduledChecklistSlotModel.ensureSlotsForWorkOrder({
     scheduleId,
     assetId: schedule.assetId,
     dueDate: dueDateForSlot,

@@ -26,6 +26,7 @@ import { assignFieldTechnicianToWorkOrder, assignGroupToWorkOrder } from "./work
 import * as employeeModel from "../models/employee.model.js";
 import * as checklistResultModel from "../models/checklistResult.model.js";
 import * as scheduledChecklistSlotModel from "../models/scheduledChecklistSlot.model.js";
+import * as scheduleTemplateModel from "../models/maintenanceScheduleChecklistTemplate.model.js";
 import * as downtimeEventModel from "../models/assetDowntimeEvent.model.js";
 
 /** Level ≥ 3: Trưởng ca / Trưởng phòng — nghiệm thu đóng phiếu */
@@ -48,6 +49,30 @@ const POSITION = {
 };
 
 const ADMIN_OR_TP = new Set([POSITION.ADMIN, POSITION.HEAD_BT, POSITION.DEP_BT, POSITION.HEAD_PKT, POSITION.DEP_PKT]);
+
+function isScheduleLinkedWorkOrder(wo) {
+  const source = String(wo.woSource || "").toUpperCase();
+  return (
+    wo.scheduleId != null &&
+    (source === "SCHEDULE" ||
+      source === "PREDICTIVE_SCHEDULE" ||
+      (source === "PREDICTIVE" && wo.scheduleId != null))
+  );
+}
+
+function pickDueDateForChecklistSlots(wo, existingSlots = []) {
+  const fromSlot = existingSlots[0]?.dueDate;
+  if (fromSlot != null && fromSlot !== "") {
+    const s = String(fromSlot).trim().slice(0, 10);
+    if (s !== "0000-00-00" && /^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  }
+  const planned = wo.plannedDate;
+  if (planned != null && planned !== "") {
+    const p = String(planned).trim().slice(0, 10);
+    if (p !== "0000-00-00" && /^\d{4}-\d{2}-\d{2}$/.test(p)) return p;
+  }
+  return new Date().toISOString().split("T")[0];
+}
 
 /** Phiếu chỉ được sửa khi đang ở trạng thái "tiền nghiệm thu" (theo yêu cầu user). */
 const EDITABLE_STATUSES = new Set(["PENDING_APPROVAL", "WAITING"]);
@@ -188,10 +213,82 @@ export async function getById(id, viewer = null) {
     suggestedActualHours,
     machinePowerState,
   };
-  const checklistSlot = await scheduledChecklistSlotModel.findByWorkOrderId(id);
+
+  if (
+    isScheduleLinkedWorkOrder(wo) &&
+    !["COMPLETED", "CANCELLED"].includes(String(wo.status).toUpperCase())
+  ) {
+    const dueDateBase = pickDueDateForChecklistSlots(
+      wo,
+      await scheduledChecklistSlotModel.findAllByWorkOrderId(id),
+    );
+    const ensureArgs = {
+      scheduleId: Number(wo.scheduleId),
+      assetId: Number(wo.assetId),
+      workOrderId: id,
+      dueDate: dueDateBase,
+    };
+    await scheduledChecklistSlotModel.ensureSlotsForWorkOrder(ensureArgs);
+    const templateRows = await scheduleTemplateModel.listByScheduleId(
+      Number(wo.scheduleId),
+    );
+    const slotsAfter = await scheduledChecklistSlotModel.findAllByWorkOrderId(id);
+    const slotTplCount = slotsAfter.filter((s) => s.templateId != null).length;
+    if (templateRows.length > slotTplCount) {
+      await scheduledChecklistSlotModel.ensureSlotsForWorkOrder(ensureArgs);
+    }
+  }
+
+  const checklistSlots = await scheduledChecklistSlotModel.findAllByWorkOrderId(id);
+  const checklistSlot = checklistSlots[0] || null;
+
+  let checklistRequirements = checklistSlots.filter((s) => s.templateId != null);
+  if (isScheduleLinkedWorkOrder(wo)) {
+    const templateRows = await scheduleTemplateModel.listByScheduleId(
+      Number(wo.scheduleId),
+    );
+    if (templateRows.length) {
+      const dueDate = pickDueDateForChecklistSlots(wo, checklistSlots);
+      checklistRequirements = templateRows.map((t) => {
+        const slot = checklistSlots.find(
+          (s) => Number(s.templateId) === Number(t.templateId),
+        );
+        if (slot) return slot;
+        return {
+          scheduleId: Number(wo.scheduleId),
+          assetId: Number(wo.assetId),
+          workOrderId: id,
+          templateId: t.templateId,
+          templateName: t.templateName,
+          status: "OPEN",
+          dueDate,
+          slotMissing: true,
+        };
+      });
+    }
+  }
+
+  const checklistRequirementsMet =
+    checklistRequirements.length === 0 ||
+    checklistRequirements.every((s) =>
+      ["FULFILLED", "WAIVED"].includes(String(s.status).toUpperCase()),
+    );
+
+  let checklistSlotSyncWarning = null;
+  if (
+    isScheduleLinkedWorkOrder(wo) &&
+    checklistRequirements.some((r) => r.slotMissing)
+  ) {
+    const multiOk =
+      await scheduledChecklistSlotModel.supportsMultipleSlotsPerWorkOrder();
+    checklistSlotSyncWarning = multiOk
+      ? "Không tạo được đủ slot checklist trong DB — thử chạy migration 075 hoặc liên hệ quản trị."
+      : "Database chưa hỗ trợ nhiều checklist trên một phiếu. Chạy migration 074_multi_schedule_checklist_templates.sql rồi 075_backfill_missing_checklist_slots.sql, khởi động lại server.";
+  }
   let recentChecklists = [];
   let recentChecklistsEligible = false;
   let woLinkedChecklist = null;
+  let woLinkedChecklists = [];
   if (viewer?.employeeId != null) {
     recentChecklistsEligible = userMaySeeAssetChecklistDigest(
       assignments,
@@ -203,17 +300,21 @@ export async function getById(id, viewer = null) {
         wo.assetId,
         3,
       );
-      woLinkedChecklist = await checklistResultModel.findLatestByWorkOrderId(
-        id,
-      );
+      woLinkedChecklists = await checklistResultModel.findAllByWorkOrderId(id);
+      woLinkedChecklist = woLinkedChecklists[0] || null;
     }
   }
   return {
     ...base,
     checklistSlot,
+    checklistSlots,
+    checklistRequirements,
+    checklistRequirementsMet,
+    checklistSlotSyncWarning,
     recentChecklists,
     recentChecklistsEligible,
     woLinkedChecklist,
+    woLinkedChecklists,
   };
 }
 
@@ -266,7 +367,7 @@ export async function createAutomatic({
     const dueDate =
       String(checklistDueDate || "").trim() ||
       new Date().toISOString().split("T")[0];
-    await scheduledChecklistSlotModel.insertForScheduleWorkOrder({
+    await scheduledChecklistSlotModel.ensureSlotsForWorkOrder({
       scheduleId: Number(scheduleId),
       assetId,
       dueDate,

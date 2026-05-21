@@ -11,6 +11,19 @@ function up(v) {
   return typeof v === "string" ? v.toUpperCase() : v;
 }
 
+function validateChecklistTemplateIds(body) {
+  if (body.checklistTemplateIds === undefined) return null;
+  if (!Array.isArray(body.checklistTemplateIds)) {
+    return "checklistTemplateIds phải là mảng";
+  }
+  for (const id of body.checklistTemplateIds) {
+    if (!Number.isFinite(Number(id)) || Number(id) <= 0) {
+      return "ChecklistTemplateID trong mảng không hợp lệ";
+    }
+  }
+  return null;
+}
+
 export function createScheduleSchema(body) {
   if (!body.assetId || isNaN(Number(body.assetId)))
     return "AssetID không hợp lệ";
@@ -33,6 +46,8 @@ export function createScheduleSchema(body) {
   ) {
     return "ChecklistTemplateID không hợp lệ";
   }
+  const idsErr = validateChecklistTemplateIds(body);
+  if (idsErr) return idsErr;
   return null;
 }
 
@@ -52,5 +67,7 @@ export function updateScheduleSchema(body) {
   ) {
     return "ChecklistTemplateID không hợp lệ";
   }
+  const idsErr = validateChecklistTemplateIds(body);
+  if (idsErr) return idsErr;
   return null;
 }

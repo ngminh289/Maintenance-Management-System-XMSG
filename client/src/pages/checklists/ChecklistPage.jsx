@@ -99,10 +99,23 @@ export function ChecklistPage() {
   const [fbSending, setFbSending] = useState(false);
   /** WO từ lịch — truyền từ WorkOrderDetail (?woId=) để nộp checklist gắn phiếu. */
   const linkedWoId = searchParams.get("woId")?.trim() || "";
+  const templateIdFromQuery = searchParams.get("templateId")?.trim() || "";
   const canSubmitLinkedWoChecklist = useMemo(() => {
     if (!linkedWoId) return true;
     return qrData?.woChecklist?.canSubmit !== false;
   }, [linkedWoId, qrData?.woChecklist?.canSubmit]);
+
+  const templatesForSubmit = useMemo(() => {
+    const all = qrData?.checklistTemplates ?? [];
+    if (!linkedWoId) return all;
+    const openIds = qrData?.woChecklist?.openTemplateIds;
+    if (Array.isArray(openIds) && openIds.length > 0) {
+      return all.filter((tpl) =>
+        openIds.includes(Number(tpl.templateId)),
+      );
+    }
+    return all;
+  }, [qrData, linkedWoId]);
 
   const assetIdFromQuery = searchParams.get("assetId")?.trim() || "";
   const assetIdFromUrl = (assetIdFromPath || assetIdFromQuery || "").trim();
@@ -128,10 +141,13 @@ export function ChecklistPage() {
         });
         if (cancelled) return;
         setQrData(res.data.data);
+        const openTpl = res.data.data?.woChecklist?.openTemplateIds?.[0];
         setSelectedTemplateId(
           String(
-            res.data.data?.preferredTemplateId ??
-              res.data.data?.checklistTemplate?.templateId ??
+            templateIdFromQuery ||
+              openTpl ||
+              res.data.data?.preferredTemplateId ||
+              res.data.data?.checklistTemplate?.templateId ||
               "",
           ),
         );
@@ -148,7 +164,7 @@ export function ChecklistPage() {
     return () => {
       cancelled = true;
     };
-  }, [assetIdFromUrl, linkedWoId]);
+  }, [assetIdFromUrl, linkedWoId, templateIdFromQuery]);
 
   const assetIdForMaint = qrData?.asset?.assetId;
 
@@ -235,7 +251,10 @@ export function ChecklistPage() {
   };
 
   const activeChecklistTemplate = useMemo(() => {
-    const allTemplates = qrData?.checklistTemplates;
+    const allTemplates =
+      templatesForSubmit.length > 0
+        ? templatesForSubmit
+        : qrData?.checklistTemplates;
     if (Array.isArray(allTemplates) && allTemplates.length > 0) {
       return (
         allTemplates.find(
@@ -244,7 +263,7 @@ export function ChecklistPage() {
       );
     }
     return qrData?.checklistTemplate ?? null;
-  }, [qrData, selectedTemplateId]);
+  }, [qrData, selectedTemplateId, templatesForSubmit]);
 
   const overallSuggestion = useMemo(
     () =>
@@ -455,10 +474,24 @@ export function ChecklistPage() {
       </div>
 
       {linkedWoId ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950 space-y-1">
           <p className="font-semibold text-emerald-900">
             Checklist gắn với WO #{linkedWoId}.
           </p>
+          {Array.isArray(qrData?.woChecklist?.checklistSlots) &&
+            qrData.woChecklist.checklistSlots.length > 1 && (
+              <p className="text-emerald-800">
+                Phiếu yêu cầu{" "}
+                <strong>{qrData.woChecklist.checklistSlots.length}</strong> mẫu
+                checklist — nộp từng mẫu còn thiếu.
+              </p>
+            )}
+          {templatesForSubmit.length === 0 && qrData?.woChecklist && (
+            <p className="text-emerald-800">
+              Tất cả checklist bắt buộc trên phiếu đã hoàn thành hoặc phiếu không
+              gắn mẫu cố định.
+            </p>
+          )}
         </div>
       ) : null}
 
@@ -824,7 +857,10 @@ export function ChecklistPage() {
                     {/* Danh sách câu hỏi */}
                     {activeChecklistTemplate?.items?.length > 0 ? (
                       <div className="space-y-4">
-                        {(qrData.checklistTemplates?.length ?? 0) > 1 && (
+                        {(templatesForSubmit.length > 1 ||
+                          (linkedWoId &&
+                            (qrData?.woChecklist?.scheduleTemplateIds?.length ??
+                              0) > 1)) && (
                           <Select
                             label="Mẫu checklist áp dụng"
                             value={selectedTemplateId}
@@ -834,7 +870,7 @@ export function ChecklistPage() {
                               setItemPhotos({});
                             }}
                           >
-                            {(qrData.checklistTemplates || []).map((tpl) => (
+                            {templatesForSubmit.map((tpl) => (
                               <option
                                 key={tpl.templateId}
                                 value={tpl.templateId}
