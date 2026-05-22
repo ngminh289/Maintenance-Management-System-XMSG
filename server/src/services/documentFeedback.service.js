@@ -43,7 +43,11 @@ export async function createForAsset(digitalAssetId, { employeeId, positionId, p
 
   const da = await digitalAssetModel.findById(digitalAssetId);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
-  assertCanReadDigitalAsset(da, { sub: employeeId, positionLevel: positionLevel ?? 0 });
+  await assertCanReadDigitalAsset(da, {
+    sub: employeeId,
+    positionLevel: positionLevel ?? 0,
+    positionId: positionId ?? 0,
+  });
 
   const id = await model.insert({
     digitalAssetId: Number(digitalAssetId),
@@ -71,7 +75,11 @@ export async function listForAsset(
 
   const da = await digitalAssetModel.findById(digitalAssetId);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
-  assertCanReadDigitalAsset(da, { sub: employeeId, positionLevel: positionLevel ?? 0 });
+  await assertCanReadDigitalAsset(da, {
+    sub: employeeId,
+    positionLevel: positionLevel ?? 0,
+    positionId: positionId ?? 0,
+  });
 
   const reviewerViewAll = await hasPermission(positionId, 'DOCUMENT_FEEDBACK', 'UPDATE');
   return model.listByAsset(Number(digitalAssetId), {

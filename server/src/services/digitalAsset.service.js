@@ -7,8 +7,8 @@
  * Quyền sửa / gửi duyệt / phiên bản / tag (đồng bộ rules nghiệp vụ user):
  *   - QTV (positionLevel ≥ 4)               → đủ quyền mọi status (trừ PENDING — phải thu hồi).
  *   - Trưởng/Phó PKT (positionId 7, 9)      → đủ quyền mọi status (trừ PENDING).
- *   - Tác giả (UploadedBy) ở DRAFT/REJECTED → được sửa/submit/version.
- *   - Tác giả ở APPROVED                    → KHÔNG được sửa (chỉ admin/PKT).
+ *   - CV KTS / PKT có DIGITAL_ASSET UPDATE: sửa DRAFT/REJECTED (mọi tài liệu, không chỉ chủ).
+ *   - APPROVED: upload phiên bản mới (→ DRAFT) — ai có UPDATE; metadata vẫn khoá đến khi về nháp.
  *   - Vai khác (TC, Trưởng phòng Bảo trì, KTV HT, BGD) → chỉ xem.
  *
  * Lưu trữ (migration 072) chỉ sau khi đã duyệt (APPROVED):
@@ -53,17 +53,18 @@ function isOwner(da, ctx) {
 }
 
 /**
- * Kiểm tra quyền chỉnh sửa / xoá / gửi duyệt / version cho tài liệu.
- * Trả về `null` nếu OK, hoặc Error 403 nếu không đủ quyền.
- *
- * - Admin / PKT: full access.
- * - Owner + DRAFT/REJECTED: full.
- * - Owner + APPROVED: chỉ được tạo phiên bản mới (handled riêng). Update/Delete → cấm.
- *   (Theo bảng nghiệp vụ: CV KTS sau duyệt chỉ xem.)
+ * Kiểm tra quyền chỉnh sửa metadata / gửi duyệt / tag / xoá nháp.
+ * Upload phiên bản: addVersion (route UPDATE + status).
  */
-function assertCanManageDigitalAsset(da, ctx, actionLabel) {
+async function assertCanManageDigitalAsset(da, ctx, actionLabel) {
   if (isAdmin(ctx) || isPktHead(ctx)) return;
-  if (isOwner(da, ctx) && (da.status === 'DRAFT' || da.status === 'REJECTED')) return;
+  if (da.status === 'DRAFT' || da.status === 'REJECTED') {
+    const pid = Number(ctx?.positionId ?? 0);
+    if (Number.isFinite(pid) && pid >= 1) {
+      const canUpdate = await permissionModel.hasPermission(pid, 'UPDATE', 'DIGITAL_ASSET');
+      if (canUpdate) return;
+    }
+  }
   throw createError(
     `Bạn không có quyền ${actionLabel} tài liệu này ở trạng thái hiện tại.`,
     403,
@@ -71,20 +72,37 @@ function assertCanManageDigitalAsset(da, ctx, actionLabel) {
 }
 
 /**
- * Đọc chi tiết: APPROVED/ARCHIVED — công khai trong phạm vi có quyền READ.
- * DRAFT/REJECTED/PENDING — CHỈ người upload mới thấy, không có ngoại lệ.
- * Người duyệt xem PENDING ở tab Phê duyệt, không phải mục Tài liệu số.
+ * Đọc chi tiết / versions:
+ * - APPROVED/ARCHIVED: mọi người có quyền READ.
+ * - DRAFT/REJECTED: chủ upload, hoặc Admin/PKT, hoặc ai có DIGITAL_ASSET UPDATE (CV KTS).
+ * - PENDING: chủ + luồng phê duyệt (assertCanReadForApprovalFlow).
  */
-export function assertCanReadDigitalAsset(da, viewer) {
+export async function assertCanReadDigitalAsset(da, viewer) {
   if (!da) return;
   const st = da.status;
   if (st === 'APPROVED' || st === 'ARCHIVED') return;
-  // Chỉ người upload mới thấy — không ai khác kể cả Admin / Giám đốc
+
   const eid = viewer?.sub != null ? Number(viewer.sub) : Number(viewer?.employeeId);
   if (!Number.isFinite(eid)) {
     throw createError('Không tìm thấy tài liệu', 404);
   }
   if (Number(da.uploadedBy) === eid) return;
+
+  const ctx = {
+    actorId: eid,
+    positionLevel: viewer?.positionLevel ?? 0,
+    positionId: viewer?.positionId ?? 0,
+  };
+  if (isAdmin(ctx) || isPktHead(ctx)) return;
+
+  if (st === 'DRAFT' || st === 'REJECTED') {
+    const pid = Number(viewer?.positionId ?? 0);
+    if (Number.isFinite(pid) && pid >= 1) {
+      const canUpdate = await permissionModel.hasPermission(pid, 'UPDATE', 'DIGITAL_ASSET');
+      if (canUpdate) return;
+    }
+  }
+
   throw createError('Không tìm thấy tài liệu', 404);
 }
 
@@ -94,7 +112,7 @@ export function assertCanReadDigitalAsset(da, viewer) {
  */
 async function assertCanReadForApprovalFlow(da, viewer) {
   try {
-    assertCanReadDigitalAsset(da, viewer);
+    await assertCanReadDigitalAsset(da, viewer);
     return;
   } catch (err) {
     if (err?.status !== 404) throw err;
@@ -138,6 +156,18 @@ export async function getAll(query, viewer) {
   if (!Number.isFinite(viewerId)) {
     throw createError('Phiên đăng nhập không hợp lệ', 401);
   }
+  const viewerCtx = {
+    actorId: viewerId,
+    positionLevel: viewer?.positionLevel ?? 0,
+    positionId: viewer?.positionId ?? 0,
+  };
+  let skipDraftPrivacy = isAdmin(viewerCtx) || isPktHead(viewerCtx);
+  if (!skipDraftPrivacy) {
+    const pid = Number(viewer?.positionId ?? 0);
+    if (Number.isFinite(pid) && pid >= 1) {
+      skipDraftPrivacy = await permissionModel.hasPermission(pid, 'UPDATE', 'DIGITAL_ASSET');
+    }
+  }
   const filters = {
     status:               query.status     || undefined,
     assetId:              query.assetId    ? Number(query.assetId)    : undefined,
@@ -150,10 +180,12 @@ export async function getAll(query, viewer) {
       return Number.isFinite(n) && n > 0 ? n : undefined;
     })(),
     q:                    query.q || undefined,
-    draftPrivacy: {
-      viewerEmployeeId: viewerId,
-      isAdmin: false, // Chỉ người upload thấy DRAFT/PENDING/REJECTED — không ngoại lệ
-    },
+    draftPrivacy: skipDraftPrivacy
+      ? undefined
+      : {
+          viewerEmployeeId: viewerId,
+          isAdmin: false,
+        },
   };
   const [items, total] = await Promise.all([
     model.findAll({ ...filters, limit, offset }),
@@ -173,7 +205,7 @@ export async function getById(id, viewer, options = {}) {
   if (options.forApproval) {
     await assertCanReadForApprovalFlow(da, viewer);
   } else {
-    assertCanReadDigitalAsset(da, viewer);
+    await assertCanReadDigitalAsset(da, viewer);
   }
   const [tags, versions] = await Promise.all([
     tagModel.getTagsByDigitalAsset(id),
@@ -220,7 +252,7 @@ export async function update(
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
   assertNotPending(da, 'cập nhật mô tả / tài sản / phân loại / thẻ');
-  assertCanManageDigitalAsset(da, ctx, 'cập nhật');
+  await assertCanManageDigitalAsset(da, ctx, 'cập nhật');
   if (documentCategoryId !== undefined) await assertCategoryId(documentCategoryId);
   await model.update(id, { description, assetId, documentCategoryId });
   if (tagIds !== undefined) {
@@ -250,7 +282,11 @@ export async function update(
       ...toRemove.map((tid) => tagModel.removeTag(id, tid)),
     ]);
   }
-  return getById(id, { sub: ctx.actorId, positionLevel: ctx.positionLevel ?? 0 });
+  return getById(id, {
+    sub: ctx.actorId,
+    positionLevel: ctx.positionLevel ?? 0,
+    positionId: ctx.positionId ?? 0,
+  });
 }
 
 /** Gửi phê duyệt: DRAFT → PENDING */
@@ -263,7 +299,7 @@ export async function submitForApproval(
 ) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
-  assertCanManageDigitalAsset(
+  await assertCanManageDigitalAsset(
     da,
     { actorId: submitterId, positionLevel, positionId },
     'gửi phê duyệt',
@@ -280,15 +316,31 @@ export async function submitForApproval(
   return { logId, status: 'PENDING' };
 }
 
-/** Lưu phiên bản mới → trạng thái tự về DRAFT */
+/** Lưu phiên bản mới → trạng thái tự về DRAFT (kể cả khi trước đó là APPROVED). */
 export async function addVersion(id, { filePath, fileSizeKB, changedBy, changeNote }, ctx) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
   assertNotPending(da, 'upload phiên bản mới');
-  // Phiên bản mới được phép cả khi APPROVED (Admin/PKT — flow bình thường);
-  // CV KTS chỉ tạo version mới khi DRAFT/REJECTED.
+  if (da.status === 'ARCHIVED') {
+    throw createError(
+      'Tài liệu đã lưu trữ — không thể thêm phiên bản. Khôi phục tài liệu trước.',
+      400,
+    );
+  }
+  // Route đã yêu cầu DIGITAL_ASSET UPDATE — mọi CV KTS/PKT có quyền upload, không giới hạn chủ.
   if (!isAdmin(ctx) && !isPktHead(ctx)) {
-    if (!isOwner(da, ctx) || (da.status !== 'DRAFT' && da.status !== 'REJECTED')) {
+    const pid = Number(ctx?.positionId ?? 0);
+    const canUpdate =
+      Number.isFinite(pid) &&
+      pid >= 1 &&
+      (await permissionModel.hasPermission(pid, 'UPDATE', 'DIGITAL_ASSET'));
+    if (!canUpdate) {
+      throw createError(
+        'Bạn không có quyền tạo phiên bản mới cho tài liệu này.',
+        403,
+      );
+    }
+    if (!['DRAFT', 'REJECTED', 'APPROVED'].includes(da.status)) {
       throw createError(
         'Bạn không có quyền tạo phiên bản mới cho tài liệu này.',
         403,
@@ -316,7 +368,7 @@ export async function addTag(id, tagId, ctx) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
   assertNotPending(da, 'gắn thẻ');
-  assertCanManageDigitalAsset(da, ctx, 'gắn thẻ');
+  await assertCanManageDigitalAsset(da, ctx, 'gắn thẻ');
   const tag = await tagModel.findById(tagId);
   if (!tag) throw createError('Không tìm thấy tag', 404);
   await tagModel.addTag(id, tagId);
@@ -327,7 +379,7 @@ export async function removeTag(id, tagId, ctx) {
   const da = await model.findById(id);
   if (!da) throw createError('Không tìm thấy tài liệu', 404);
   assertNotPending(da, 'gỡ thẻ');
-  assertCanManageDigitalAsset(da, ctx, 'gỡ thẻ');
+  await assertCanManageDigitalAsset(da, ctx, 'gỡ thẻ');
   await tagModel.removeTag(id, tagId);
   return tagModel.getTagsByDigitalAsset(id);
 }
@@ -535,7 +587,7 @@ export async function remove(id, ctx) {
       400,
     );
   }
-  assertCanManageDigitalAsset(da, ctx, 'xoá vĩnh viễn');
+  await assertCanManageDigitalAsset(da, ctx, 'xoá vĩnh viễn');
   const vers = await model.getVersions(id, { includeArchived: true });
   const seen = new Set();
   for (const v of vers) {

@@ -28,6 +28,8 @@ import {
   PIDS_TP_KT_HEAD,
 } from '../constants/positionIds.js';
 
+const PIDS_PKT_HEAD_UI = [PID_TRUONG_PHONG_KT, PID_PHO_PHONG_KT];
+
 // ── 1. Chuyển user thành role key ────────────────────────────────────────────
 export const POSITION_TRUONG_PHONG = PID_TRUONG_PHONG_BAO_TRI;
 
@@ -370,6 +372,17 @@ function canApproveByPid(pid, list) {
  * Phân công WO (UI): DB chỉ có WORK_ORDER READ/CREATE/UPDATE/DELETE/APPROVE — không có ASSIGN.
  * API dùng UPDATE + actorLevel >= 3 (workOrderFieldAssign.service.js).
  */
+/**
+ * Upload phiên bản mới (DAM): ai có DOCUMENT:UPDATE (CV KTS, PKT, Admin).
+ * Không giới hạn người tạo (uploadedBy).
+ */
+export function canAddDocumentVersion(user, doc) {
+  if (!user || !doc) return false;
+  if (!canDo(user, "DOCUMENT:UPDATE")) return false;
+  if (doc.status === "PENDING" || doc.status === "ARCHIVED") return false;
+  return true;
+}
+
 export function canAssignWorkOrder(user) {
   if (!user) return false;
   const role = getRoleKey(user);
@@ -508,7 +521,7 @@ export function canRestoreWorkOrder(user) {
 
 // ── Digital Asset (Tài liệu số) row helpers ─────────────────────────────────
 // Lưu trữ (072): chỉ khi đã APPROVED — Admin/PKT.
-// Xoá vĩnh viễn DB: chỉ bản nháp DRAFT — chủ CV KTS (trước duyệt) hoặc Admin/PKT.
+// Xoá vĩnh viễn DB: chỉ bản nháp DRAFT — CV KTS có quyền hoặc Admin/PKT.
 const DA_EDITABLE_STATUSES = new Set(["DRAFT", "REJECTED", "APPROVED"]);
 
 function isDaFullAccess(role) {

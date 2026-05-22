@@ -52,6 +52,7 @@ import { fDateTime } from "../../utils/format.js";
 import { useAuth } from "../../contexts/AuthContext.jsx";
 import {
   canDo,
+  canAddDocumentVersion,
   canEditDigitalAssetRow,
   canArchiveDigitalAssetRow,
   canHardDeleteDraftDigitalAssetRow,
@@ -1675,7 +1676,7 @@ export function DocumentsPage() {
             </p>
           )}
 
-          {canNewVersion && verDoc?.status !== "PENDING" && (
+          {canAddDocumentVersion(user, verDoc) && (
             <div className="border-t border-gray-200 pt-4">
               <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                 <RefreshCw size={14} /> Upload phiên bản mới
@@ -1700,7 +1701,8 @@ export function DocumentsPage() {
                 />
                 <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5">
                   Sau khi upload, tài liệu về <strong>DRAFT</strong> và cần gửi
-                  phê duyệt lại.
+                  phê duyệt lại. Tên tài liệu trong kho giữ nguyên (chỉ đổi file
+                  và số phiên bản); có thể đổi tên/mô tả sau khi về bản nháp.
                 </p>
                 <div className="flex justify-end">
                   <Button type="submit" loading={verUploading} size="sm">
